@@ -117,3 +117,100 @@
 2026-07-02 11:11:35,310 | INFO | AFC is enabled with max remote calls: 10.
 2026-07-02 11:11:36,505 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
 2026-07-02 11:12:41,422 | INFO | Mike stopped by user.
+2026-07-02 11:20:08,181 | INFO | Starting Mike
+2026-07-02 11:20:08,181 | INFO | Creating Mike...
+2026-07-02 11:20:08,181 | INFO | Initializing Runtime...
+2026-07-02 11:20:08,181 | INFO | Initializing Conversation...
+2026-07-02 11:20:08,221 | INFO | Starting subsystems...
+2026-07-02 11:20:08,221 | INFO | 🎤 Microphone initialized
+2026-07-02 11:20:08,221 | INFO | 🧠 Assistant initialized
+2026-07-02 11:20:08,221 | INFO | Mike is ready.
+2026-07-02 11:20:13,378 | INFO | Received: open youtube
+2026-07-02 11:20:13,378 | INFO | User: open youtube
+2026-07-02 11:20:13,379 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 11:20:14,896 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 11:20:14,900 | INFO | Opening https://www.youtube.com
+2026-07-02 11:20:14,983 | INFO | AFC remote call 1 is done.
+2026-07-02 11:20:15,770 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 11:20:27,892 | INFO | Received: open google
+2026-07-02 11:20:27,893 | INFO | User: open google
+2026-07-02 11:20:27,894 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 11:20:29,518 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 11:20:29,519 | INFO | Opening https://www.google.com
+2026-07-02 11:20:29,579 | INFO | AFC remote call 1 is done.
+2026-07-02 11:20:31,080 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:48:45,209 | INFO | Received: my name is navdeep
+2026-07-02 12:48:45,213 | INFO | User: my name is navdeep
+2026-07-02 12:48:45,218 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:48:47,736 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:48:53,608 | INFO | Received: whats your name
+2026-07-02 12:48:53,608 | INFO | User: whats your name
+2026-07-02 12:48:53,609 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:48:55,185 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:49:01,296 | INFO | Mike stopped by user.
+2026-07-02 12:55:01,754 | INFO | Initializing Runtime...
+2026-07-02 12:55:01,754 | INFO | Initializing Conversation...
+2026-07-02 12:55:13,940 | INFO | Received: hi mike
+2026-07-02 12:55:13,940 | INFO | User: hi mike
+2026-07-02 12:55:13,941 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:55:15,179 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:55:26,142 | INFO | Received: write a simple python code
+2026-07-02 12:55:26,142 | INFO | User: write a simple python code
+2026-07-02 12:55:26,142 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:55:27,483 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:55:43,991 | INFO | Received: a code to multiply 2 numbers
+2026-07-02 12:55:43,991 | INFO | User: a code to multiply 2 numbers
+2026-07-02 12:55:43,991 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:55:45,165 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:55:45,166 | ERROR | 'run_code'
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/core/conversation.py", line 34, in send
+    response = self.chat.send_message(message)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/chats.py", line 258, in send_message
+    response = self._modules.generate_content(
+        model=self._model,
+        contents=self._curated_history + [input_content],  # type: ignore[arg-type]
+        config=method_config,
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6540, in generate_content
+    func_response_parts = _extra_utils.get_function_response_parts(
+        response, function_map
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_extra_utils.py", line 345, in get_function_response_parts
+    func = function_map[func_name]
+           ~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'run_code'
+2026-07-02 12:55:45,170 | ERROR | 'run_code'
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/core/runtime.py", line 21, in process
+    response = self.conversation.send(message)
+  File "/Users/navdeepcn/Developer/NavAI/core/conversation.py", line 34, in send
+    response = self.chat.send_message(message)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/chats.py", line 258, in send_message
+    response = self._modules.generate_content(
+        model=self._model,
+        contents=self._curated_history + [input_content],  # type: ignore[arg-type]
+        config=method_config,
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6540, in generate_content
+    func_response_parts = _extra_utils.get_function_response_parts(
+        response, function_map
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_extra_utils.py", line 345, in get_function_response_parts
+    func = function_map[func_name]
+           ~~~~~~~~~~~~^^^^^^^^^^^
+KeyError: 'run_code'
+2026-07-02 12:56:13,990 | INFO | Received: search for reusable rockets
+2026-07-02 12:56:13,990 | INFO | User: search for reusable rockets
+2026-07-02 12:56:13,990 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:56:15,390 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:56:15,391 | INFO | Opening https://www.google.com/search?q=reusable%20rockets
+2026-07-02 12:56:15,468 | INFO | AFC remote call 1 is done.
+2026-07-02 12:56:16,664 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:56:26,641 | INFO | Received: open yt
+2026-07-02 12:56:26,641 | INFO | User: open yt
+2026-07-02 12:56:26,641 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 12:56:27,781 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 12:56:27,782 | INFO | Opening https://www.youtube.com
+2026-07-02 12:56:27,839 | INFO | AFC remote call 1 is done.
+2026-07-02 12:56:29,008 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"

@@ -4,7 +4,6 @@ from google.genai import types
 from config.settings import GEMINI_API_KEY
 from brain.prompts import SYSTEM_PROMPT
 from tools.registry import TOOLS
-
 from logs.logger import logger
 
 
@@ -30,6 +29,28 @@ class Conversation:
 
         logger.info(f"User: {message}")
 
-        response = self.chat.send_message(message)
+        try:
 
-        return response
+            response = self.chat.send_message(message)
+
+            return response
+
+        except Exception as e:
+
+            logger.exception(e)
+            raise
+
+    def continue_chat(self, message: str):
+
+        logger.info("Continuing conversation...")
+
+        try:
+
+            response = self.chat.send_message(message)
+
+            return response
+
+        except Exception as e:
+
+            logger.exception(e)
+            raise

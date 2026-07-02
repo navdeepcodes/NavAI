@@ -1,6 +1,7 @@
 from logs.logger import logger
 
 from core.conversation import Conversation
+from tools.registry import execute
 
 
 class Runtime:
@@ -15,6 +16,16 @@ class Runtime:
 
         logger.info(f"Received: {message}")
 
-        response = self.conversation.send(message)
+        try:
 
-        return response
+            response = self.conversation.send(message)
+
+            # Temporary debug output
+
+            return response
+
+        except Exception as e:
+
+            logger.exception(e)
+
+            raise
