@@ -1,0 +1,65 @@
+2026-07-01 19:00:13,144 | INFO | Starting Mike
+2026-07-01 19:02:08,086 | INFO | Starting Mike
+2026-07-01 19:02:08,086 | INFO | 🎤 Microphone initialized
+2026-07-01 19:03:29,799 | INFO | Starting Mike
+2026-07-01 19:03:29,799 | INFO | 🎤 Microphone initialized
+2026-07-01 19:03:29,799 | INFO | 🧠 Assistant initialized
+2026-07-01 19:03:29,799 | INFO | 🛠️ Tools initialized
+2026-07-02 07:42:07,147 | INFO | Starting NavAI
+2026-07-02 07:42:07,147 | INFO | Creating Mike...
+2026-07-02 07:42:07,147 | INFO | Starting subsystems...
+2026-07-02 07:42:07,147 | INFO | 🎤 Microphone initialized
+2026-07-02 07:42:07,148 | INFO | 🧠 Assistant initialized
+2026-07-02 07:42:07,148 | INFO | 🛠️ Tool Manager created
+2026-07-02 07:42:07,148 | INFO | Mike is ready.
+2026-07-02 07:42:14,110 | INFO | Executing tool: browser
+2026-07-02 07:43:41,666 | INFO | Starting NavAI
+2026-07-02 07:43:41,666 | INFO | Creating Mike...
+2026-07-02 07:43:41,666 | INFO | Starting subsystems...
+2026-07-02 07:43:41,666 | INFO | 🎤 Microphone initialized
+2026-07-02 07:43:41,666 | INFO | 🧠 Assistant initialized
+2026-07-02 07:43:41,666 | INFO | 🛠️ Tool Manager created
+2026-07-02 07:43:41,666 | INFO | Mike is ready.
+2026-07-02 07:43:46,791 | INFO | Executing tool: browser
+2026-07-02 07:43:46,791 | INFO | Opening Google Chrome...
+2026-07-02 07:43:46,858 | INFO | Google Chrome opened successfully.
+2026-07-02 08:28:12,920 | INFO | Starting NavAI
+2026-07-02 08:28:12,920 | INFO | Creating Mike...
+2026-07-02 08:28:12,920 | INFO | Starting subsystems...
+2026-07-02 08:28:12,920 | INFO | 🎤 Microphone initialized
+2026-07-02 08:28:12,920 | INFO | 🧠 Assistant initialized
+2026-07-02 08:28:12,920 | INFO | 🛠️ Tool Manager ready
+2026-07-02 08:28:12,920 | INFO | Mike is ready.
+2026-07-02 08:28:21,933 | INFO | Opening Google Chrome...
+2026-07-02 08:28:21,998 | INFO | Chrome opened.
+2026-07-02 08:38:11,943 | INFO | Starting NavAI
+2026-07-02 08:38:11,943 | INFO | Creating Mike...
+2026-07-02 08:38:11,943 | INFO | Starting subsystems...
+2026-07-02 08:38:11,943 | INFO | 🎤 Microphone initialized
+2026-07-02 08:38:11,943 | INFO | 🧠 Assistant initialized
+2026-07-02 08:38:11,943 | INFO | 🛠️ Tool Manager ready
+2026-07-02 08:38:11,943 | INFO | Mike is ready.
+2026-07-02 08:38:17,136 | INFO | Recording for 5 seconds...
+2026-07-02 08:38:24,797 | INFO | Recording saved to audio/recordings/recording.wav
+2026-07-02 08:38:24,797 | INFO | Playing audio/recordings/recording.wav
+2026-07-02 08:38:29,969 | INFO | Playback finished.
+2026-07-02 08:59:37,827 | INFO | Starting Mike
+2026-07-02 08:59:37,827 | INFO | Creating Mike...
+2026-07-02 08:59:37,827 | INFO | Starting subsystems...
+2026-07-02 08:59:37,827 | INFO | 🎤 Microphone initialized
+2026-07-02 08:59:37,827 | INFO | 🧠 Assistant initialized
+2026-07-02 08:59:37,827 | INFO | 🛠️ Tool Manager ready
+2026-07-02 08:59:37,827 | INFO | Mike is ready.
+2026-07-02 08:59:44,631 | INFO | Opening Google Chrome...
+2026-07-02 08:59:44,698 | INFO | Chrome opened.
+2026-07-02 09:04:46,211 | INFO | Mike stopped by user (Ctrl+C).
+2026-07-02 09:04:51,962 | INFO | Starting Mike
+2026-07-02 09:04:51,962 | INFO | Creating Mike...
+2026-07-02 09:04:51,962 | INFO | Starting subsystems...
+2026-07-02 09:04:51,962 | INFO | 🎤 Microphone initialized
+2026-07-02 09:04:51,962 | INFO | 🧠 Assistant initialized
+2026-07-02 09:04:51,962 | INFO | 🛠️ Tool Manager ready
+2026-07-02 09:04:51,962 | INFO | Mike is ready.
+2026-07-02 09:04:56,656 | INFO | Opening Google Chrome...
+2026-07-02 09:04:56,724 | INFO | Chrome opened.
+2026-07-02 09:35:24,040 | INFO | Mike stopped by user (Ctrl+C).
