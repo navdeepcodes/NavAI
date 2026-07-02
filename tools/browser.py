@@ -3,53 +3,51 @@ import urllib.parse
 
 from config.settings import DEFAULT_BROWSER
 from logs.logger import logger
-from tools.base_tool import BaseTool
 
 
-class BrowserTool(BaseTool):
+def open_browser() -> str:
+    """
+    Opens the user's default web browser.
+    """
 
-    @property
-    def name(self):
-        return "browser"
+    logger.info(f"Opening {DEFAULT_BROWSER}")
 
-    def execute(self, action, **kwargs):
+    subprocess.run(
+        ["open", "-a", DEFAULT_BROWSER],
+        check=True
+    )
 
-        if action == "open_browser":
-            return self.open_browser()
+    return "Browser opened successfully."
 
-        elif action == "open_url":
-            return self.open_url(kwargs.get("url"))
 
-        elif action == "search":
-            return self.search(kwargs.get("query"))
+def open_url(url: str) -> str:
+    """
+    Opens the given URL in the user's browser.
 
-        logger.warning(f"Unknown browser action: {action}")
-        return False
+    Args:
+        url: Website URL.
+    """
 
-    def open_browser(self):
+    logger.info(f"Opening {url}")
 
-        logger.info(f"Opening {DEFAULT_BROWSER}")
+    subprocess.run(
+        ["open", "-a", DEFAULT_BROWSER, url],
+        check=True
+    )
 
-        subprocess.run(
-            ["open", "-a", DEFAULT_BROWSER]
-        )
+    return f"Opened {url}"
 
-        return True
 
-    def open_url(self, url):
+def search(query: str) -> str:
+    """
+    Search Google.
 
-        logger.info(f"Opening URL: {url}")
+    Args:
+        query: Search query.
+    """
 
-        subprocess.run(
-            ["open", "-a", DEFAULT_BROWSER, url]
-        )
+    encoded = urllib.parse.quote(query)
 
-        return True
-
-    def search(self, query):
-
-        encoded = urllib.parse.quote(query)
-
-        url = f"https://www.google.com/search?q={encoded}"
-
-        return self.open_url(url)
+    return open_url(
+        f"https://www.google.com/search?q={encoded}"
+    )

@@ -63,3 +63,57 @@
 2026-07-02 09:04:56,656 | INFO | Opening Google Chrome...
 2026-07-02 09:04:56,724 | INFO | Chrome opened.
 2026-07-02 09:35:24,040 | INFO | Mike stopped by user (Ctrl+C).
+2026-07-02 10:22:37,894 | INFO | Starting Mike
+2026-07-02 10:22:37,894 | INFO | Creating Mike...
+2026-07-02 10:22:37,894 | INFO | Initializing Runtime...
+2026-07-02 10:22:37,894 | INFO | Starting Conversation...
+2026-07-02 10:22:37,933 | INFO | Starting subsystems...
+2026-07-02 10:22:37,934 | INFO | 🎤 Microphone initialized
+2026-07-02 10:22:37,934 | INFO | 🧠 Assistant initialized
+2026-07-02 10:22:37,934 | INFO | Mike is ready.
+2026-07-02 10:22:44,728 | INFO | Received: hi mike
+2026-07-02 10:22:44,728 | INFO | User: hi mike
+2026-07-02 10:22:44,729 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 10:22:46,475 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 10:22:46,477 | INFO | Mike: {
+    "type":"chat",
+    "response":"Hello Navdeep! How can I help you today?"
+}
+2026-07-02 10:23:05,955 | INFO | Received: whats the capital of japan
+2026-07-02 10:23:05,956 | INFO | User: whats the capital of japan
+2026-07-02 10:23:05,956 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 10:23:07,205 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 10:23:07,206 | INFO | Mike: {
+    "type":"chat",
+    "response":"The capital of Japan is Tokyo."
+}
+2026-07-02 10:23:15,692 | INFO | Received: what ques did i just ask??
+2026-07-02 10:23:15,693 | INFO | User: what ques did i just ask??
+2026-07-02 10:23:15,693 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 10:23:17,244 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 10:23:17,245 | INFO | Mike: {
+    "type":"chat",
+    "response":"You just asked, \"What's the capital of Japan?\""
+}
+2026-07-02 10:28:11,966 | INFO | Mike stopped by user.
+2026-07-02 11:11:05,966 | INFO | Starting Mike
+2026-07-02 11:11:05,966 | INFO | Creating Mike...
+2026-07-02 11:11:05,966 | INFO | Initializing Runtime...
+2026-07-02 11:11:05,966 | INFO | Initializing Conversation...
+2026-07-02 11:11:06,007 | INFO | Starting subsystems...
+2026-07-02 11:11:06,007 | INFO | 🎤 Microphone initialized
+2026-07-02 11:11:06,008 | INFO | 🧠 Assistant initialized
+2026-07-02 11:11:06,008 | INFO | Mike is ready.
+2026-07-02 11:11:12,125 | INFO | Received: hi mike
+2026-07-02 11:11:12,126 | INFO | User: hi mike
+2026-07-02 11:11:12,126 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 11:11:13,262 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 11:11:21,605 | INFO | Received: how are you
+2026-07-02 11:11:21,606 | INFO | User: how are you
+2026-07-02 11:11:21,606 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 11:11:22,478 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 11:11:35,309 | INFO | Received: what did i ask now??
+2026-07-02 11:11:35,309 | INFO | User: what did i ask now??
+2026-07-02 11:11:35,310 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 11:11:36,505 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 11:12:41,422 | INFO | Mike stopped by user.

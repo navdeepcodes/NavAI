@@ -5,29 +5,27 @@ from voice.recorder import Recorder
 from voice.player import Player
 
 from brain.assistant import initialize_brain
-from brain.brain import Brain
 
-from tools.manager import ToolManager
+from core.runtime import Runtime
 
 
 class Mike:
 
     def __init__(self):
+
         logger.info("Creating Mike...")
 
-        self.tool_manager = None
-        self.brain = Brain()
+        self.runtime = Runtime()
 
         self.recorder = Recorder()
         self.player = Player()
 
     def startup(self):
+
         logger.info("Starting subsystems...")
 
         initialize_microphone()
         initialize_brain()
-
-        self.tool_manager = ToolManager()
 
         logger.info("Mike is ready.")
 
@@ -37,37 +35,33 @@ class Mike:
 
         while True:
 
-            user_input = input("\nYou: ").strip()
-
-            if user_input.lower() == "exit":
-
-                logger.info("Mike shutting down.")
-                print("👋 Goodbye!")
-                break
-
             try:
 
-                action = self.brain.think(user_input)
+                user_input = input("\nYou: ").strip()
 
-                if action.is_tool:
+                if not user_input:
+                    continue
 
-                    success = self.tool_manager.execute(
-                        action.tool,
-                        action.action,
-                        **action.parameters
-                    )
+                if user_input.lower() == "exit":
 
-                    if success:
+                    logger.info("Mike shutting down.")
 
-                        print(f"\n🤖 Mike: {action.response}")
+                    print("👋 Goodbye!")
 
-                    else:
+                    break
 
-                        print("\n🤖 Mike: Sorry, I couldn't complete that action.")
+                response = self.runtime.process(user_input)
 
-                else:
+                # Print Gemini's reply
+                print(f"\n🤖 Mike: {response.text}")
 
-                    print(f"\n🤖 Mike: {action.response}")
+            except KeyboardInterrupt:
+
+                logger.info("Mike stopped by user.")
+
+                print("\n👋 Goodbye!")
+
+                break
 
             except Exception as e:
 
