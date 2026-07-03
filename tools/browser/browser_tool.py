@@ -6,10 +6,12 @@ from tools.tool_metadata import ToolMetadata
 from tools.tool_permission import Permission
 from tools.tool_result import ToolResult
 
-from tools.terminal.actions import run
+from tools.browser.open_browser import open_browser
+from tools.browser.open_url import open_url
+from tools.browser.search_browser import search_browser
 
 
-class TerminalTool(BaseTool):
+class BrowserTool(BaseTool):
 
     # ---------------------------------------------------------
     # Metadata
@@ -20,22 +22,17 @@ class TerminalTool(BaseTool):
 
         return ToolMetadata(
 
-            name="terminal",
+            name="browser",
 
-            description="Execute terminal commands.",
+            description="Open the browser, open URLs and perform web searches.",
 
-            category="terminal",
+            category="browser",
 
             tags=[
-
-                "terminal",
-
-                "shell",
-
-                "command",
-
-                "cli",
-
+                "browser",
+                "web",
+                "internet",
+                "search",
             ],
 
         )
@@ -47,7 +44,7 @@ class TerminalTool(BaseTool):
     @property
     def permission(self) -> Permission:
 
-        return Permission.TERMINAL
+        return Permission.BROWSER
 
     # ---------------------------------------------------------
     # Supported Actions
@@ -58,7 +55,11 @@ class TerminalTool(BaseTool):
 
         return {
 
-            "run": self._run,
+            "open_browser": self._open_browser,
+
+            "open_url": self._open_url,
+
+            "search": self._search,
 
         }
 
@@ -69,13 +70,19 @@ class TerminalTool(BaseTool):
     def validate(
         self,
         action: str,
-        **kwargs,
+        **kwargs
     ) -> bool:
 
         validators = {
 
-            "run": lambda: bool(
-                kwargs.get("command")
+            "open_browser": lambda: True,
+
+            "open_url": lambda: bool(
+                kwargs.get("url")
+            ),
+
+            "search": lambda: bool(
+                kwargs.get("query")
             ),
 
         }
@@ -92,7 +99,7 @@ class TerminalTool(BaseTool):
         self,
         action: str,
         context: ToolContext,
-        **kwargs,
+        **kwargs
     ) -> ToolResult:
 
         handler = self.actions.get(action)
@@ -107,7 +114,7 @@ class TerminalTool(BaseTool):
 
                 action=action,
 
-                error=f"Unknown terminal action '{action}'.",
+                error=f"Unknown browser action '{action}'."
 
             )
 
@@ -123,13 +130,7 @@ class TerminalTool(BaseTool):
 
                 action=action,
 
-                message="Command executed successfully.",
-
-                data={
-
-                    "output": result
-
-                },
+                message=str(result)
 
             )
 
@@ -143,7 +144,7 @@ class TerminalTool(BaseTool):
 
                 action=action,
 
-                error=str(exc),
+                error=str(exc)
 
             )
 
@@ -151,10 +152,29 @@ class TerminalTool(BaseTool):
     # Action Handlers
     # ---------------------------------------------------------
 
-    def _run(
+    def _open_browser(
         self,
-        command: str,
-        **kwargs,
-    ):
+        **kwargs
+    ) -> str:
 
-        return run(command)
+        return open_browser()
+
+    # ---------------------------------------------------------
+
+    def _open_url(
+        self,
+        url: str,
+        **kwargs
+    ) -> str:
+
+        return open_url(url)
+
+    # ---------------------------------------------------------
+
+    def _search(
+        self,
+        query: str,
+        **kwargs
+    ) -> str:
+
+        return search_browser(query)

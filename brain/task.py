@@ -1,9 +1,11 @@
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Any
 
 
-@dataclass
+@dataclass(slots=True)
 class Task:
+
+    # ---------------------------------------------------------
 
     id: int
 
@@ -11,8 +13,51 @@ class Task:
 
     tool: str | None = None
 
-    arguments: Dict = field(default_factory=dict)
+    action: str | None = None
+
+    arguments: dict[str, Any] = field(
+
+        default_factory=dict
+
+    )
 
     completed: bool = False
 
-    result: str = ""
+    result: str | None = None
+
+    # ---------------------------------------------------------
+
+    @property
+    def executable(self) -> bool:
+
+        return self.tool is not None
+
+    # ---------------------------------------------------------
+
+    def mark_complete(
+
+        self,
+
+        result: Any = None
+
+    ):
+
+        self.completed = True
+
+        if result is not None:
+
+            self.result = str(result)
+
+    # ---------------------------------------------------------
+
+    def mark_failed(
+
+        self,
+
+        error: Exception | str
+
+    ):
+
+        self.completed = False
+
+        self.result = str(error)

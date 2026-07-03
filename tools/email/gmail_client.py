@@ -1,5 +1,6 @@
-import base64
+from __future__ import annotations
 
+import base64
 from email.mime.text import MIMEText
 
 from googleapiclient.discovery import build
@@ -17,12 +18,14 @@ class GmailClient:
             credentials=get_credentials()
         )
 
+    # ---------------------------------------------------------
+
     def send_email(
         self,
         to: str,
         subject: str,
         body: str
-    ) -> bool:
+    ) -> str:
 
         message = MIMEText(body)
 
@@ -33,7 +36,7 @@ class GmailClient:
             message.as_bytes()
         ).decode()
 
-        self.service.users().messages().send(
+        response = self.service.users().messages().send(
 
             userId="me",
 
@@ -43,4 +46,15 @@ class GmailClient:
 
         ).execute()
 
-        return True
+        return response["id"]
+
+    # ---------------------------------------------------------
+
+    def read_email(
+        self,
+        max_results: int = 10
+    ):
+
+        raise NotImplementedError(
+            "read_email() not implemented yet."
+        )

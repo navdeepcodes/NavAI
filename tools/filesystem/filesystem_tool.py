@@ -1,178 +1,197 @@
-from tools.filesystem.file_manager import FileManager
+from __future__ import annotations
+
+from tools.base_tool import BaseTool
+from tools.tool_context import ToolContext
+from tools.tool_metadata import ToolMetadata
+from tools.tool_permission import Permission
+from tools.tool_result import ToolResult
+
+from tools.filesystem import actions
 
 
-manager = FileManager()
+class FilesystemTool(BaseTool):
 
+    # ---------------------------------------------------------
+    # Metadata
+    # ---------------------------------------------------------
 
-def create_folder(path: str):
-    """
-    Create a folder.
+    @property
+    def metadata(self) -> ToolMetadata:
 
-    Args:
-        path: Folder path.
-    """
+        return ToolMetadata(
 
-    folder = manager.create_folder(path)
+            name="filesystem",
 
-    return f"Folder created successfully at {folder}."
+            description="Manage files and directories.",
 
+            category="filesystem",
 
-def create_file(path: str):
-    """
-    Create a file.
+            tags=[
 
-    Args:
-        path: File path.
-    """
+                "filesystem",
 
-    file = manager.create_file(path)
+                "files",
 
-    return f"File created successfully at {file}."
+                "folders",
 
+                "storage",
 
-def read_file(path: str):
-    """
-    Read a text file.
+                "directory",
 
-    Args:
-        path: File path.
-    """
+            ],
 
-    return manager.read_file(path)
+        )
 
+    # ---------------------------------------------------------
+    # Permission
+    # ---------------------------------------------------------
 
-def write_file(
-    path: str,
-    content: str
-):
-    """
-    Write text to a file.
+    @property
+    def permission(self) -> Permission:
 
-    Args:
-        path: File path.
-        content: Text to write.
-    """
+        return Permission.FILESYSTEM
 
-    manager.write_file(
-        path,
-        content
-    )
+    # ---------------------------------------------------------
+    # Supported Actions
+    # ---------------------------------------------------------
 
-    return f"Successfully wrote to {path}."
+    @property
+    def actions(self):
 
+        return {
 
-def append_file(
-    path: str,
-    content: str
-):
-    """
-    Append text to a file.
+            "create_folder": actions.create_folder,
 
-    Args:
-        path: File path.
-        content: Text to append.
-    """
+            "create_file": actions.create_file,
 
-    manager.append_file(
-        path,
-        content
-    )
+            "read_file": actions.read_file,
 
-    return f"Successfully appended text to {path}."
+            "write_file": actions.write_file,
 
+            "append_file": actions.append_file,
 
-def list_directory(path: str):
-    """
-    List files and folders inside a directory.
+            "list_directory": actions.list_directory,
 
-    Args:
-        path: Directory path.
-    """
+            "delete": actions.delete,
 
-    return manager.list_directory(path)
+            "rename": actions.rename,
 
+            "move": actions.move,
 
-def delete(path: str):
-    """
-    Delete a file or folder.
+            "copy": actions.copy,
 
-    Args:
-        path: Target path.
-    """
+            "open_path": actions.open_path,
 
-    manager.delete(path)
+        }
 
-    return f"Deleted '{path}' successfully."
+    # ---------------------------------------------------------
+    # Validation
+    # ---------------------------------------------------------
 
+    def validate(
+        self,
+        action: str,
+        **kwargs,
+    ) -> bool:
 
-def rename(
-    source: str,
-    new_name: str
-):
-    """
-    Rename a file or folder.
+        validators = {
 
-    Args:
-        source: Existing path.
-        new_name: New filename.
-    """
+            "create_folder": lambda: bool(kwargs.get("path")),
 
-    new_path = manager.rename(
-        source,
-        new_name
-    )
+            "create_file": lambda: bool(kwargs.get("path")),
 
-    return f"Renamed successfully to '{new_path}'."
+            "read_file": lambda: bool(kwargs.get("path")),
 
+            "write_file": lambda: (
+                bool(kwargs.get("path"))
+                and kwargs.get("content") is not None
+            ),
 
-def move(
-    source: str,
-    destination: str
-):
-    """
-    Move a file or folder.
+            "append_file": lambda: (
+                bool(kwargs.get("path"))
+                and kwargs.get("content") is not None
+            ),
 
-    Args:
-        source: Existing path.
-        destination: Destination path.
-    """
+            "list_directory": lambda: bool(kwargs.get("path")),
 
-    manager.move(
-        source,
-        destination
-    )
+            "delete": lambda: bool(kwargs.get("path")),
 
-    return f"Moved '{source}' to '{destination}'."
+            "rename": lambda: (
+                bool(kwargs.get("source"))
+                and bool(kwargs.get("new_name"))
+            ),
 
+            "move": lambda: (
+                bool(kwargs.get("source"))
+                and bool(kwargs.get("destination"))
+            ),
 
-def copy(
-    source: str,
-    destination: str
-):
-    """
-    Copy a file or folder.
+            "copy": lambda: (
+                bool(kwargs.get("source"))
+                and bool(kwargs.get("destination"))
+            ),
 
-    Args:
-        source: Existing path.
-        destination: Destination path.
-    """
+            "open_path": lambda: bool(kwargs.get("path")),
 
-    manager.copy(
-        source,
-        destination
-    )
+        }
 
-    return f"Copied '{source}' to '{destination}'."
+        validator = validators.get(action)
 
+        return validator() if validator else False
 
-def open_path(path: str):
-    """
-    Open a file or folder in Finder.
+    # ---------------------------------------------------------
+    # Execute
+    # ---------------------------------------------------------
 
-    Args:
-        path: File or folder path.
-    """
+    def execute(
+        self,
+        action: str,
+        context: ToolContext,
+        **kwargs,
+    ) -> ToolResult:
 
-    manager.open(path)
+        handler = self.actions.get(action)
 
-    return f"Opened '{path}'."
+        if handler is None:
+
+            return ToolResult(
+
+                success=False,
+
+                tool=self.metadata.name,
+
+                action=action,
+
+                error=f"Unknown filesystem action '{action}'.",
+
+            )
+
+        try:
+
+            result = handler(**kwargs)
+
+            return ToolResult(
+
+                success=True,
+
+                tool=self.metadata.name,
+
+                action=action,
+
+                message=str(result),
+
+            )
+
+        except Exception as exc:
+
+            return ToolResult(
+
+                success=False,
+
+                tool=self.metadata.name,
+
+                action=action,
+
+                error=str(exc),
+
+            )

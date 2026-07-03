@@ -1,178 +1,96 @@
-from tools.filesystem.file_manager import FileManager
+from pathlib import Path
+
+from tools.tool_context import ToolContext
+from tools.tool_registry import ToolRegistry
 
 
-manager = FileManager()
+def main():
 
+    registry = ToolRegistry()
 
-def create_folder(path: str):
-    """
-    Create a folder.
+    filesystem = registry.get("filesystem")
 
-    Args:
-        path: Folder path.
-    """
+    assert filesystem is not None
 
-    folder = manager.create_folder(path)
+    context = ToolContext()
 
-    return f"Folder created successfully at {folder}."
+    test_file = Path("navai_test.txt")
 
+    # ---------------------------------------------------------
+    # Create
+    # ---------------------------------------------------------
 
-def create_file(path: str):
-    """
-    Create a file.
+    result = filesystem.execute(
 
-    Args:
-        path: File path.
-    """
+        action="create_file",
 
-    file = manager.create_file(path)
+        context=context,
 
-    return f"File created successfully at {file}."
+        path=str(test_file),
 
-
-def read_file(path: str):
-    """
-    Read a text file.
-
-    Args:
-        path: File path.
-    """
-
-    return manager.read_file(path)
-
-
-def write_file(
-    path: str,
-    content: str
-):
-    """
-    Write text to a file.
-
-    Args:
-        path: File path.
-        content: Text to write.
-    """
-
-    manager.write_file(
-        path,
-        content
     )
 
-    return f"Written successfully to {path}."
+    assert result.success
 
+    assert test_file.exists()
 
-def append_file(
-    path: str,
-    content: str
-):
-    """
-    Append text to a file.
+    # ---------------------------------------------------------
+    # Write
+    # ---------------------------------------------------------
 
-    Args:
-        path: File path.
-        content: Text to append.
-    """
+    result = filesystem.execute(
 
-    manager.append_file(
-        path,
-        content
+        action="write_file",
+
+        context=context,
+
+        path=str(test_file),
+
+        content="Hello NavAI",
+
     )
 
-    return f"Appended text to {path}."
+    assert result.success
 
+    # ---------------------------------------------------------
+    # Read
+    # ---------------------------------------------------------
 
-def list_directory(path: str):
-    """
-    List directory contents.
+    result = filesystem.execute(
 
-    Args:
-        path: Folder path.
-    """
+        action="read_file",
 
-    return manager.list_directory(path)
+        context=context,
 
+        path=str(test_file),
 
-def delete(path: str):
-    """
-    Delete a file or folder.
-
-    Args:
-        path: Target path.
-    """
-
-    manager.delete(path)
-
-    return f"{path} deleted."
-
-
-def rename(
-    source: str,
-    new_name: str
-):
-    """
-    Rename a file or folder.
-
-    Args:
-        source: Existing path.
-        new_name: New filename.
-    """
-
-    new_path = manager.rename(
-        source,
-        new_name
     )
 
-    return f"Renamed successfully to {new_path}."
+    assert result.success
 
+    assert "Hello NavAI" in result.message
 
-def move(
-    source: str,
-    destination: str
-):
-    """
-    Move a file or folder.
+    # ---------------------------------------------------------
+    # Delete
+    # ---------------------------------------------------------
 
-    Args:
-        source: Existing path.
-        destination: Destination folder.
-    """
+    result = filesystem.execute(
 
-    manager.move(
-        source,
-        destination
+        action="delete",
+
+        context=context,
+
+        path=str(test_file),
+
     )
 
-    return f"Moved successfully."
+    assert result.success
+
+    assert not test_file.exists()
+
+    print("✅ FilesystemTool passed.")
 
 
-def copy(
-    source: str,
-    destination: str
-):
-    """
-    Copy a file or folder.
+if __name__ == "__main__":
 
-    Args:
-        source: Existing path.
-        destination: Destination folder.
-    """
-
-    manager.copy(
-        source,
-        destination
-    )
-
-    return f"Copied successfully."
-
-
-def open_path(path: str):
-    """
-    Open a file or folder.
-
-    Args:
-        path: Path to open.
-    """
-
-    manager.open(path)
-
-    return f"Opened {path}."
+    main()

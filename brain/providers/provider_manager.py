@@ -47,9 +47,7 @@ class ProviderManager:
         for provider in candidates:
 
             logger.info(
-
                 f"Checking {provider.name}..."
-
             )
 
             try:
@@ -57,9 +55,7 @@ class ProviderManager:
                 if provider.health_check():
 
                     logger.info(
-
                         f"{provider.name} available."
-
                     )
 
                     self.providers.append(
@@ -69,9 +65,7 @@ class ProviderManager:
                 else:
 
                     logger.warning(
-
                         f"{provider.name} unavailable."
-
                     )
 
             except Exception as e:
@@ -81,14 +75,16 @@ class ProviderManager:
         if not self.providers:
 
             raise RuntimeError(
-
                 "No AI providers are available."
-
             )
 
     # ---------------------------------------------------------
 
     def reload(self):
+
+        logger.info(
+            "Reloading providers..."
+        )
 
         self.providers.clear()
 
@@ -123,12 +119,49 @@ class ProviderManager:
         )
 
         logger.info(
-
             f"Selected Provider -> {provider.name}"
-
         )
 
         return provider
+
+    # ---------------------------------------------------------
+    # Internal lightweight tasks
+    # ---------------------------------------------------------
+
+    def best_for_text(self):
+
+        """
+        Used for internal lightweight tasks
+        such as intent detection.
+        """
+
+        priority = [
+
+            "Groq",
+
+            "Ollama",
+
+            "OpenRouter",
+
+            "Gemini"
+
+        ]
+
+        for name in priority:
+
+            for provider in self.providers:
+
+                if provider.name == name:
+
+                    return provider
+
+        if self.providers:
+
+            return self.providers[0]
+
+        raise RuntimeError(
+            "No providers available."
+        )
 
     # ---------------------------------------------------------
 
@@ -306,6 +339,10 @@ class ProviderManager:
 
     ):
 
+        """
+        Returns a provider by name.
+        """
+
         for provider in self.providers:
 
             if provider.name.lower() == name.lower():
@@ -317,3 +354,20 @@ class ProviderManager:
             f"Unknown provider: {name}"
 
         )
+
+    # ---------------------------------------------------------
+
+    def default(self):
+
+        """
+        Returns the first available provider.
+        Mainly useful for debugging.
+        """
+
+        if not self.providers:
+
+            raise RuntimeError(
+                "No providers available."
+            )
+
+        return self.providers[0]

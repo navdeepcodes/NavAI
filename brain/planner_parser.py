@@ -1,77 +1,132 @@
 import json
 
+from logs.logger import logger
+
 from brain.task import Task
 
 
 class PlannerParser:
 
+    # ---------------------------------------------------------
+
     def parse(
+
         self,
+
         text: str
-    ):
+
+    ) -> list[Task]:
 
         try:
 
-            # Remove markdown code blocks if present
-            text = text.strip()
+            text = self._clean(
 
-            if text.startswith("```"):
+                text
 
-                text = text.replace(
-                    "```json",
-                    ""
-                )
+            )
 
-                text = text.replace(
-                    "```",
-                    ""
-                )
+            data = json.loads(
 
-                text = text.strip()
+                text
 
-            # Parse JSON
-            data = json.loads(text)
+            )
 
-            # Allow a single object instead of a list
-            if isinstance(data, dict):
+            if isinstance(
+
+                data,
+
+                dict
+
+            ):
 
                 data = [data]
 
             tasks = []
 
-            for i, item in enumerate(data):
+            for index, item in enumerate(
+
+                data,
+
+                start=1
+
+            ):
 
                 tasks.append(
 
                     Task(
 
-                        id=i + 1,
+                        id=index,
 
                         description=item.get(
+
                             "description",
+
                             ""
+
                         ),
 
                         tool=item.get(
+
                             "tool"
+
+                        ),
+
+                        action=item.get(
+
+                            "action"
+
                         ),
 
                         arguments=item.get(
+
                             "arguments",
+
                             {}
+
                         )
 
                     )
 
                 )
 
+            logger.info(
+
+                f"Planner produced {len(tasks)} task(s)."
+
+            )
+
             return tasks
 
         except Exception as e:
 
-            print(
-                "[PlannerParser]",
-                e
-            )
+            logger.exception(e)
 
             return []
+
+    # ---------------------------------------------------------
+
+    def _clean(
+
+        self,
+
+        text: str
+
+    ) -> str:
+
+        text = text.strip()
+
+        if text.startswith("```"):
+
+            lines = text.splitlines()
+
+            if lines:
+
+                lines = lines[1:]
+
+            if lines and lines[-1].strip() == "```":
+
+                lines = lines[:-1]
+
+            text = "\n".join(lines)
+
+        return text.strip()

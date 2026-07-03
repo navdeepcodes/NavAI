@@ -3,7 +3,7 @@ from logs.logger import logger
 from brain.intent import IntentEngine
 from brain.agent import Agent
 
-from core.conversation import Conversation
+from core.conversation_service import ConversationService
 
 from brain.models import ProviderResponse
 
@@ -20,7 +20,7 @@ class Runtime:
 
         self.intent = IntentEngine()
 
-        self.conversation = Conversation()
+        self.conversation = ConversationService()
 
         self.agent = Agent()
 
@@ -72,7 +72,7 @@ class Runtime:
     def _chat(
         self,
         message: str
-    ):
+    ) -> ProviderResponse:
 
         return self.conversation.send(
             message
@@ -85,7 +85,7 @@ class Runtime:
     def _memory(
         self,
         message: str
-    ):
+    ) -> ProviderResponse:
 
         return self.conversation.send(
             message
@@ -98,7 +98,7 @@ class Runtime:
     def _vision(
         self,
         message: str
-    ):
+    ) -> ProviderResponse:
 
         return self.conversation.send(
             message
@@ -111,7 +111,7 @@ class Runtime:
     def _plan(
         self,
         message: str
-    ):
+    ) -> ProviderResponse:
 
         tasks = self.agent.planner.plan(
             message
@@ -144,7 +144,7 @@ class Runtime:
     def _tool(
         self,
         message: str
-    ):
+    ) -> ProviderResponse:
 
         results = self.agent.run(
             message
@@ -154,7 +154,15 @@ class Runtime:
 
         for item in results:
 
-            status = "SUCCESS" if item["success"] else "FAILED"
+            status = (
+
+                "SUCCESS"
+
+                if item["success"]
+
+                else "FAILED"
+
+            )
 
             lines.append(
 
@@ -166,7 +174,7 @@ class Runtime:
 
                 lines.append(
 
-                    item["result"]
+                    str(item["result"])
 
                 )
 

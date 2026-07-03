@@ -1056,3 +1056,1436 @@ google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429,
 2026-07-03 11:17:06,934 | INFO | Selected Provider -> Groq
 2026-07-03 11:17:06,934 | INFO | [Groq] Chat
 2026-07-03 11:17:07,148 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:38:02,470 | INFO | Discovering tools...
+2026-07-03 11:38:02,490 | INFO | Registering tool: browser
+2026-07-03 11:39:11,829 | INFO | Initializing Provider Manager...
+2026-07-03 11:39:11,829 | INFO | Initializing Gemini Provider...
+2026-07-03 11:39:11,846 | INFO | Initializing Groq Provider...
+2026-07-03 11:39:11,854 | INFO | Initializing Ollama Provider...
+2026-07-03 11:39:11,862 | INFO | Initializing OpenRouter Provider...
+2026-07-03 11:39:11,871 | INFO | Checking Gemini...
+2026-07-03 11:39:11,871 | INFO | [Gemini] Complete
+2026-07-03 11:39:12,813 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 11:39:12,814 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:39:12,822 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:39:12,822 | WARNING | Gemini unavailable.
+2026-07-03 11:39:12,822 | INFO | Checking Groq...
+2026-07-03 11:39:12,822 | INFO | [Groq] Complete
+2026-07-03 11:39:13,132 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:39:13,143 | INFO | Groq available.
+2026-07-03 11:39:13,144 | INFO | Checking Ollama...
+2026-07-03 11:39:13,172 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 11:39:13,172 | INFO | Ollama available.
+2026-07-03 11:39:13,172 | INFO | Checking OpenRouter...
+2026-07-03 11:39:13,172 | INFO | [OpenRouter] Complete
+2026-07-03 11:39:14,119 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:39:15,425 | INFO | OpenRouter available.
+2026-07-03 11:39:15,638 | INFO | Initializing Runtime...
+2026-07-03 11:44:07,365 | INFO | Initializing Provider Manager...
+2026-07-03 11:44:07,365 | INFO | Initializing Gemini Provider...
+2026-07-03 11:44:07,382 | INFO | Initializing Groq Provider...
+2026-07-03 11:44:07,390 | INFO | Initializing Ollama Provider...
+2026-07-03 11:44:07,398 | INFO | Initializing OpenRouter Provider...
+2026-07-03 11:44:07,407 | INFO | Checking Gemini...
+2026-07-03 11:44:07,407 | INFO | [Gemini] Complete
+2026-07-03 11:44:08,040 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 11:44:08,041 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:44:08,050 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:44:08,050 | WARNING | Gemini unavailable.
+2026-07-03 11:44:08,050 | INFO | Checking Groq...
+2026-07-03 11:44:08,050 | INFO | [Groq] Complete
+2026-07-03 11:44:08,224 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:44:08,236 | INFO | Groq available.
+2026-07-03 11:44:08,236 | INFO | Checking Ollama...
+2026-07-03 11:44:08,239 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 11:44:08,240 | INFO | Ollama available.
+2026-07-03 11:44:08,240 | INFO | Checking OpenRouter...
+2026-07-03 11:44:08,240 | INFO | [OpenRouter] Complete
+2026-07-03 11:44:09,082 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:44:09,880 | INFO | OpenRouter available.
+2026-07-03 11:44:10,066 | INFO | Initializing Runtime...
+2026-07-03 11:44:10,066 | INFO | Initializing Conversation...
+2026-07-03 11:44:10,067 | INFO | Initializing Executor...
+2026-07-03 11:44:10,067 | INFO | Discovering tools...
+2026-07-03 11:44:10,067 | INFO | Registering tool: browser
+2026-07-03 11:44:30,211 | INFO | [Groq] Complete
+2026-07-03 11:44:30,488 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:44:30,489 | INFO | Detected Intent: CHAT
+2026-07-03 11:44:30,489 | INFO | User: heyy mike
+2026-07-03 11:44:30,491 | INFO | [Groq] Chat
+2026-07-03 11:57:29,487 | INFO | Initializing Provider Manager...
+2026-07-03 11:57:29,488 | INFO | Initializing Gemini Provider...
+2026-07-03 11:57:29,504 | INFO | Initializing Groq Provider...
+2026-07-03 11:57:29,512 | INFO | Initializing Ollama Provider...
+2026-07-03 11:57:29,521 | INFO | Initializing OpenRouter Provider...
+2026-07-03 11:57:29,529 | INFO | Checking Gemini...
+2026-07-03 11:57:29,529 | INFO | [Gemini] Complete
+2026-07-03 11:57:30,342 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 11:57:30,343 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:57:30,352 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:57:30,353 | WARNING | Gemini unavailable.
+2026-07-03 11:57:30,353 | INFO | Checking Groq...
+2026-07-03 11:57:30,353 | INFO | [Groq] Complete
+2026-07-03 11:57:30,636 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:57:30,649 | INFO | Groq available.
+2026-07-03 11:57:30,649 | INFO | Checking Ollama...
+2026-07-03 11:57:30,653 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 11:57:30,654 | INFO | Ollama available.
+2026-07-03 11:57:30,654 | INFO | Checking OpenRouter...
+2026-07-03 11:57:30,654 | INFO | [OpenRouter] Complete
+2026-07-03 11:57:31,473 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:57:33,662 | INFO | OpenRouter available.
+2026-07-03 12:02:47,688 | INFO | Initializing Provider Manager...
+2026-07-03 12:02:47,688 | INFO | Initializing Gemini Provider...
+2026-07-03 12:02:47,705 | INFO | Initializing Groq Provider...
+2026-07-03 12:02:47,713 | INFO | Initializing Ollama Provider...
+2026-07-03 12:02:47,721 | INFO | Initializing OpenRouter Provider...
+2026-07-03 12:02:47,729 | INFO | Checking Gemini...
+2026-07-03 12:02:47,729 | INFO | [Gemini] Complete
+2026-07-03 12:02:48,440 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 12:02:48,441 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 12:02:48,447 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 12:02:48,447 | WARNING | Gemini unavailable.
+2026-07-03 12:02:48,447 | INFO | Checking Groq...
+2026-07-03 12:02:48,447 | INFO | [Groq] Complete
+2026-07-03 12:02:48,634 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:02:48,643 | INFO | Groq available.
+2026-07-03 12:02:48,643 | INFO | Checking Ollama...
+2026-07-03 12:02:48,645 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 12:02:48,645 | INFO | Ollama available.
+2026-07-03 12:02:48,645 | INFO | Checking OpenRouter...
+2026-07-03 12:02:48,645 | INFO | [OpenRouter] Complete
+2026-07-03 12:02:49,483 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:02:50,769 | INFO | OpenRouter available.
+2026-07-03 12:02:50,946 | INFO | Initializing Runtime...
+2026-07-03 12:02:50,946 | INFO | Initializing Conversation Service...
+2026-07-03 12:02:50,947 | INFO | Initializing Executor...
+2026-07-03 12:02:50,947 | INFO | Discovering tools...
+2026-07-03 12:02:50,947 | INFO | Registering tool: browser
+2026-07-03 12:02:58,878 | INFO | [Groq] Complete
+2026-07-03 12:02:59,193 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:02:59,194 | INFO | Detected Intent: CHAT
+2026-07-03 12:02:59,194 | INFO | User: hey mike
+2026-07-03 12:02:59,196 | INFO | Using Provider: Groq
+2026-07-03 12:02:59,196 | INFO | [Groq] Chat
+2026-07-03 12:02:59,910 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:02:59,911 | INFO | Groq: How's it going, Navdeep? Is there something I can help you with or would you like to chat?
+2026-07-03 12:03:12,112 | INFO | [Groq] Complete
+2026-07-03 12:03:12,374 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:03:12,375 | INFO | Detected Intent: CHAT
+2026-07-03 12:03:12,375 | INFO | User: tell me what things you can do
+2026-07-03 12:03:12,376 | INFO | Using Provider: Groq
+2026-07-03 12:03:12,376 | INFO | [Groq] Chat
+2026-07-03 12:03:13,221 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:03:13,222 | INFO | Groq: Navdeep, I can help with a wide range of tasks. I can answer your questions, provide information on various topics, and even assist with basic operating system tasks. I can also help you create folders, files, and more, right from our conversation. What would you like me to help you with today?
+2026-07-03 12:03:29,664 | INFO | [Groq] Complete
+2026-07-03 12:03:29,791 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:03:29,791 | INFO | Detected Intent: TOOL
+2026-07-03 12:03:29,792 | INFO | [Groq] Complete
+2026-07-03 12:03:30,115 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:03:30,116 | INFO | Executing task: Open Facebook
+2026-07-03 12:03:30,116 | ERROR | ToolExecutor.execute() missing 1 required positional argument: 'action'
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/executor.py", line 41, in execute
+    result = self.tools.execute(
+    
+    ...<3 lines>...
+    
+    )
+TypeError: ToolExecutor.execute() missing 1 required positional argument: 'action'
+2026-07-03 12:03:30,117 | INFO | [Groq] Complete
+2026-07-03 12:03:30,227 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:11,377 | INFO | Initializing Provider Manager...
+2026-07-03 12:12:11,377 | INFO | Initializing Gemini Provider...
+2026-07-03 12:12:11,394 | INFO | Initializing Groq Provider...
+2026-07-03 12:12:11,402 | INFO | Initializing Ollama Provider...
+2026-07-03 12:12:11,410 | INFO | Initializing OpenRouter Provider...
+2026-07-03 12:12:11,419 | INFO | Checking Gemini...
+2026-07-03 12:12:11,419 | INFO | [Gemini] Complete
+2026-07-03 12:12:12,241 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 12:12:12,242 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 12:12:12,250 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 12:12:12,250 | WARNING | Gemini unavailable.
+2026-07-03 12:12:12,250 | INFO | Checking Groq...
+2026-07-03 12:12:12,250 | INFO | [Groq] Complete
+2026-07-03 12:12:12,488 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:12,503 | INFO | Groq available.
+2026-07-03 12:12:12,503 | INFO | Checking Ollama...
+2026-07-03 12:12:12,506 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 12:12:12,507 | INFO | Ollama available.
+2026-07-03 12:12:12,507 | INFO | Checking OpenRouter...
+2026-07-03 12:12:12,507 | INFO | [OpenRouter] Complete
+2026-07-03 12:12:13,388 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:14,828 | INFO | OpenRouter available.
+2026-07-03 12:12:15,000 | INFO | Initializing Runtime...
+2026-07-03 12:12:15,000 | INFO | Initializing Conversation Service...
+2026-07-03 12:12:15,000 | INFO | Initializing Executor...
+2026-07-03 12:12:15,000 | INFO | Discovering tools...
+2026-07-03 12:12:15,001 | INFO | Registering tool: browser
+2026-07-03 12:12:31,311 | INFO | [Groq] Complete
+2026-07-03 12:12:31,554 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:31,554 | INFO | Detected Intent: CHAT
+2026-07-03 12:12:31,554 | INFO | User: yo
+2026-07-03 12:12:31,557 | INFO | Using Provider: Groq
+2026-07-03 12:12:31,557 | INFO | [Groq] Chat
+2026-07-03 12:12:31,925 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:31,926 | INFO | Groq: How's it going, Navdeep? Is there something I can help you with or would you like to chat?
+2026-07-03 12:12:41,194 | INFO | [Groq] Complete
+2026-07-03 12:12:41,329 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:41,330 | INFO | Detected Intent: TOOL
+2026-07-03 12:12:41,330 | INFO | [Groq] Complete
+2026-07-03 12:12:41,653 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:12:41,654 | INFO | Planner produced 1 task(s).
+2026-07-03 12:12:41,654 | INFO | Executing Tool: open_url
+2026-07-03 12:12:41,654 | INFO | Arguments: {'url': 'https://youtube.com'}
+2026-07-03 12:12:41,654 | ERROR | ToolExecutor.execute() missing 1 required positional argument: 'action'
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/executor.py", line 75, in execute
+    result = self.tools.execute(
+    
+    ...<3 lines>...
+    
+    )
+TypeError: ToolExecutor.execute() missing 1 required positional argument: 'action'
+2026-07-03 12:12:41,655 | INFO | [Groq] Complete
+2026-07-03 12:12:41,761 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:24,381 | INFO | [Groq] Complete
+2026-07-03 12:13:24,620 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:24,621 | INFO | Detected Intent: CHAT
+2026-07-03 12:13:24,621 | INFO | User: whats your name
+2026-07-03 12:13:24,624 | INFO | Using Provider: Groq
+2026-07-03 12:13:24,624 | INFO | [Groq] Chat
+2026-07-03 12:13:25,071 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:25,072 | INFO | Groq: My name is Mike!
+2026-07-03 12:13:34,413 | INFO | [Groq] Complete
+2026-07-03 12:13:35,268 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:35,269 | INFO | Detected Intent: CHAT
+2026-07-03 12:13:35,269 | INFO | User: what are you
+2026-07-03 12:13:35,271 | INFO | Using Provider: Groq
+2026-07-03 12:13:35,271 | INFO | [Groq] Chat
+2026-07-03 12:13:36,129 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:36,130 | INFO | Groq: I'm Mike, your AI assistant inside NavAI, running locally on your computer. I'm here to help you with any questions or tasks you may have, and provide assistance with various topics. How can I help you today, Navdeep?
+2026-07-03 12:13:52,179 | INFO | [Groq] Complete
+2026-07-03 12:13:52,435 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:52,436 | INFO | Detected Intent: PLAN
+2026-07-03 12:13:52,436 | INFO | [Groq] Complete
+2026-07-03 12:13:53,128 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:13:53,128 | INFO | Planner produced 4 task(s).
+2026-07-03 12:14:13,312 | INFO | [Groq] Complete
+2026-07-03 12:14:13,443 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:14:13,444 | INFO | Detected Intent: PLAN
+2026-07-03 12:14:13,444 | INFO | [Groq] Complete
+2026-07-03 12:14:13,914 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:14:13,915 | INFO | Planner produced 3 task(s).
+2026-07-03 12:17:50,598 | INFO | [Groq] Complete
+2026-07-03 12:17:50,825 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:17:50,826 | INFO | Detected Intent: CHAT
+2026-07-03 12:17:50,826 | INFO | User: you're still dumb , i'll fix you soon enough
+2026-07-03 12:17:50,828 | INFO | Using Provider: Groq
+2026-07-03 12:17:50,828 | INFO | [Groq] Chat
+2026-07-03 12:17:51,228 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:17:51,229 | INFO | Groq: No worries, Navdeep. I'm here to learn and improve. If there's something specific you'd like me to work on or a particular issue you're experiencing, feel free to let me know and I'll do my best to assist you.
+2026-07-03 12:18:24,561 | INFO | [Groq] Complete
+2026-07-03 12:18:24,732 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:18:24,732 | INFO | Detected Intent: CHAT
+2026-07-03 12:18:24,733 | INFO | User: what LLM are you using rn??
+2026-07-03 12:18:24,734 | INFO | Using Provider: Groq
+2026-07-03 12:18:24,734 | INFO | [Groq] Chat
+2026-07-03 12:18:25,207 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:18:25,209 | INFO | Groq: I'm currently using the LLM provided by Groq, our current provider. Would you like to know more about it or is there something specific you'd like to explore?
+2026-07-03 12:18:36,628 | INFO | [Groq] Complete
+2026-07-03 12:18:37,484 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:18:37,485 | INFO | Detected Intent: TOOL
+2026-07-03 12:18:37,485 | INFO | [Groq] Complete
+2026-07-03 12:18:37,874 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:18:37,875 | INFO | Planner produced 1 task(s).
+2026-07-03 12:18:37,875 | INFO | Executing Tool: search
+2026-07-03 12:18:37,875 | INFO | Arguments: {'query': 'ollama'}
+2026-07-03 12:18:37,875 | ERROR | ToolExecutor.execute() missing 1 required positional argument: 'action'
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/executor.py", line 75, in execute
+    result = self.tools.execute(
+    
+    ...<3 lines>...
+    
+    )
+TypeError: ToolExecutor.execute() missing 1 required positional argument: 'action'
+2026-07-03 12:18:37,876 | INFO | [Groq] Complete
+2026-07-03 12:18:38,038 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:21:46,322 | INFO | Discovering tools...
+2026-07-03 12:22:13,540 | INFO | Discovering tools...
+2026-07-03 12:51:38,078 | INFO | Discovering package: tools
+2026-07-03 12:51:38,097 | INFO | Registering tool: browser
+2026-07-03 12:51:38,097 | INFO | Discovering package: tools.browser
+2026-07-03 12:51:38,098 | WARNING | Tool already registered: browser
+2026-07-03 12:51:38,098 | INFO | Discovering package: tools.email
+2026-07-03 12:51:38,236 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 12:51:38,238 | INFO | Discovering package: tools.filesystem
+2026-07-03 12:51:38,239 | INFO | Discovering package: tools.permissions
+2026-07-03 12:51:38,242 | INFO | Discovering package: tools.system
+2026-07-03 12:51:38,242 | INFO | Discovering package: tools.terminal
+2026-07-03 12:56:31,643 | INFO | Discovering package: tools
+2026-07-03 12:56:31,662 | INFO | Registering tool: browser
+2026-07-03 12:56:31,663 | INFO | Discovering package: tools.browser
+2026-07-03 12:56:31,663 | WARNING | Tool already registered: browser
+2026-07-03 12:56:31,663 | INFO | Discovering package: tools.email
+2026-07-03 12:56:31,795 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 12:56:31,798 | INFO | Discovering package: tools.filesystem
+2026-07-03 12:56:31,800 | INFO | Registering tool: filesystem
+2026-07-03 12:56:31,800 | INFO | Discovering package: tools.permissions
+2026-07-03 12:56:31,801 | INFO | Discovering package: tools.system
+2026-07-03 12:56:31,801 | INFO | Discovering package: tools.terminal
+2026-07-03 12:57:15,042 | INFO | Initializing Provider Manager...
+2026-07-03 12:57:15,042 | INFO | Initializing Gemini Provider...
+2026-07-03 12:57:15,059 | INFO | Initializing Groq Provider...
+2026-07-03 12:57:15,067 | INFO | Initializing Ollama Provider...
+2026-07-03 12:57:15,075 | INFO | Initializing OpenRouter Provider...
+2026-07-03 12:57:15,083 | INFO | Checking Gemini...
+2026-07-03 12:57:15,083 | INFO | [Gemini] Complete
+2026-07-03 12:57:15,976 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 12:57:15,978 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 12:57:15,988 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 12:57:15,988 | WARNING | Gemini unavailable.
+2026-07-03 12:57:15,988 | INFO | Checking Groq...
+2026-07-03 12:57:15,988 | INFO | [Groq] Complete
+2026-07-03 12:57:16,289 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:57:16,303 | INFO | Groq available.
+2026-07-03 12:57:16,303 | INFO | Checking Ollama...
+2026-07-03 12:57:16,313 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 12:57:16,314 | INFO | Ollama available.
+2026-07-03 12:57:16,314 | INFO | Checking OpenRouter...
+2026-07-03 12:57:16,314 | INFO | [OpenRouter] Complete
+2026-07-03 12:57:17,543 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:57:23,211 | INFO | OpenRouter available.
+2026-07-03 12:57:23,384 | INFO | Initializing Runtime...
+2026-07-03 12:57:23,384 | INFO | Initializing Conversation Service...
+2026-07-03 12:57:23,385 | INFO | Initializing Executor...
+2026-07-03 12:57:23,385 | INFO | Discovering package: tools
+2026-07-03 12:57:23,386 | INFO | Registering tool: browser
+2026-07-03 12:57:23,386 | INFO | Discovering package: tools.browser
+2026-07-03 12:57:23,386 | WARNING | Tool already registered: browser
+2026-07-03 12:57:23,386 | INFO | Discovering package: tools.email
+2026-07-03 12:57:23,424 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 12:57:23,428 | INFO | Discovering package: tools.filesystem
+2026-07-03 12:57:23,428 | INFO | Registering tool: filesystem
+2026-07-03 12:57:23,429 | INFO | Discovering package: tools.permissions
+2026-07-03 12:57:23,429 | INFO | Discovering package: tools.system
+2026-07-03 12:57:23,430 | INFO | Discovering package: tools.terminal
+2026-07-03 12:57:31,647 | INFO | [Groq] Complete
+2026-07-03 12:57:31,790 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:57:31,790 | INFO | Detected Intent: CHAT
+2026-07-03 12:57:31,790 | INFO | User: hey mike
+2026-07-03 12:57:31,793 | INFO | Using Provider: Groq
+2026-07-03 12:57:31,793 | INFO | [Groq] Chat
+2026-07-03 12:57:32,256 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:57:32,258 | INFO | Groq: Hello again, Navdeep! How can I assist you today? Is there something on your mind or a specific task you'd like me to help with?
+2026-07-03 12:57:38,280 | INFO | [Groq] Complete
+2026-07-03 12:57:38,528 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:57:38,529 | INFO | Detected Intent: TOOL
+2026-07-03 12:57:38,529 | INFO | [Groq] Complete
+2026-07-03 12:57:38,796 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:57:38,797 | INFO | Planner produced 1 task(s).
+2026-07-03 12:57:38,797 | INFO | Executing Tool: open_url
+2026-07-03 12:57:38,797 | INFO | Arguments: {'url': 'https://youtube.com'}
+2026-07-03 12:57:38,797 | INFO | Executing Tool: open_url
+2026-07-03 12:57:38,797 | ERROR | Unknown tool: open_url
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/executor.py", line 75, in execute
+    result = self.tools.execute(
+    
+    ...<3 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/core/tool_executor.py", line 46, in execute
+    raise ValueError(
+    ...<3 lines>...
+    )
+ValueError: Unknown tool: open_url
+2026-07-03 12:57:38,798 | INFO | [Groq] Complete
+2026-07-03 12:57:38,890 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 12:58:31,983 | INFO | Discovering package: tools
+2026-07-03 12:58:32,003 | INFO | Registering tool: browser
+2026-07-03 12:58:32,003 | INFO | Discovering package: tools.browser
+2026-07-03 12:58:32,003 | WARNING | Tool already registered: browser
+2026-07-03 12:58:32,003 | INFO | Discovering package: tools.email
+2026-07-03 12:58:32,142 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 12:58:32,144 | INFO | Discovering package: tools.filesystem
+2026-07-03 12:58:32,145 | INFO | Registering tool: filesystem
+2026-07-03 12:58:32,145 | INFO | Discovering package: tools.permissions
+2026-07-03 12:58:32,145 | INFO | Discovering package: tools.system
+2026-07-03 12:58:32,146 | INFO | Discovering package: tools.terminal
+2026-07-03 13:01:29,493 | INFO | Initializing Provider Manager...
+2026-07-03 13:01:29,493 | INFO | Initializing Gemini Provider...
+2026-07-03 13:01:29,510 | INFO | Initializing Groq Provider...
+2026-07-03 13:01:29,518 | INFO | Initializing Ollama Provider...
+2026-07-03 13:01:29,526 | INFO | Initializing OpenRouter Provider...
+2026-07-03 13:01:29,534 | INFO | Checking Gemini...
+2026-07-03 13:01:29,534 | INFO | [Gemini] Complete
+2026-07-03 13:01:30,344 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 13:01:30,345 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:01:30,355 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:01:30,356 | WARNING | Gemini unavailable.
+2026-07-03 13:01:30,356 | INFO | Checking Groq...
+2026-07-03 13:01:30,356 | INFO | [Groq] Complete
+2026-07-03 13:01:30,735 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:01:30,750 | INFO | Groq available.
+2026-07-03 13:01:30,750 | INFO | Checking Ollama...
+2026-07-03 13:01:30,758 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 13:01:30,759 | INFO | Ollama available.
+2026-07-03 13:01:30,759 | INFO | Checking OpenRouter...
+2026-07-03 13:01:30,759 | INFO | [OpenRouter] Complete
+2026-07-03 13:01:31,652 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:01:33,925 | INFO | OpenRouter available.
+2026-07-03 13:01:34,108 | INFO | Initializing Runtime...
+2026-07-03 13:01:34,108 | INFO | Initializing Conversation Service...
+2026-07-03 13:01:34,108 | INFO | Initializing Executor...
+2026-07-03 13:01:34,108 | INFO | Discovering package: tools
+2026-07-03 13:01:34,109 | INFO | Registering tool: browser
+2026-07-03 13:01:34,109 | INFO | Discovering package: tools.browser
+2026-07-03 13:01:34,109 | WARNING | Tool already registered: browser
+2026-07-03 13:01:34,110 | INFO | Discovering package: tools.email
+2026-07-03 13:01:34,147 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:01:34,151 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:01:34,152 | INFO | Registering tool: filesystem
+2026-07-03 13:01:34,152 | INFO | Discovering package: tools.permissions
+2026-07-03 13:01:34,152 | INFO | Discovering package: tools.system
+2026-07-03 13:01:34,153 | INFO | Discovering package: tools.terminal
+2026-07-03 13:01:45,763 | INFO | [Groq] Complete
+2026-07-03 13:01:46,213 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:01:46,214 | INFO | Detected Intent: TOOL
+2026-07-03 13:01:46,214 | INFO | [Groq] Complete
+2026-07-03 13:01:46,516 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:01:46,517 | INFO | Planner produced 1 task(s).
+2026-07-03 13:01:46,517 | INFO | Executing Tool : open_url
+2026-07-03 13:01:46,517 | INFO | Action         : None
+2026-07-03 13:01:46,517 | INFO | Arguments      : {'url': 'https://youtube.com'}
+2026-07-03 13:01:46,517 | INFO | Executing Tool: open_url
+2026-07-03 13:01:46,517 | ERROR | Unknown tool: open_url
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/executor.py", line 64, in execute
+    result = self.tools.execute(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/core/tool_executor.py", line 46, in execute
+    raise ValueError(
+    ...<3 lines>...
+    )
+ValueError: Unknown tool: open_url
+2026-07-03 13:01:46,518 | INFO | [Groq] Complete
+2026-07-03 13:01:46,739 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:20,603 | INFO | Initializing Provider Manager...
+2026-07-03 13:03:20,603 | INFO | Initializing Gemini Provider...
+2026-07-03 13:03:20,619 | INFO | Initializing Groq Provider...
+2026-07-03 13:03:20,628 | INFO | Initializing Ollama Provider...
+2026-07-03 13:03:20,636 | INFO | Initializing OpenRouter Provider...
+2026-07-03 13:03:20,645 | INFO | Checking Gemini...
+2026-07-03 13:03:20,645 | INFO | [Gemini] Complete
+2026-07-03 13:03:21,345 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 13:03:21,346 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:03:21,355 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:03:21,355 | WARNING | Gemini unavailable.
+2026-07-03 13:03:21,356 | INFO | Checking Groq...
+2026-07-03 13:03:21,356 | INFO | [Groq] Complete
+2026-07-03 13:03:21,714 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:21,728 | INFO | Groq available.
+2026-07-03 13:03:21,729 | INFO | Checking Ollama...
+2026-07-03 13:03:21,733 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 13:03:21,734 | INFO | Ollama available.
+2026-07-03 13:03:21,734 | INFO | Checking OpenRouter...
+2026-07-03 13:03:21,734 | INFO | [OpenRouter] Complete
+2026-07-03 13:03:22,587 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:24,060 | INFO | OpenRouter available.
+2026-07-03 13:03:24,233 | INFO | Initializing Runtime...
+2026-07-03 13:03:24,233 | INFO | Initializing Conversation Service...
+2026-07-03 13:03:24,234 | INFO | Initializing Executor...
+2026-07-03 13:03:24,234 | INFO | Discovering package: tools
+2026-07-03 13:03:24,236 | INFO | Registering tool: browser
+2026-07-03 13:03:24,236 | INFO | Discovering package: tools.browser
+2026-07-03 13:03:24,236 | WARNING | Tool already registered: browser
+2026-07-03 13:03:24,236 | INFO | Discovering package: tools.email
+2026-07-03 13:03:24,275 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:03:24,279 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:03:24,280 | INFO | Registering tool: filesystem
+2026-07-03 13:03:24,280 | INFO | Discovering package: tools.permissions
+2026-07-03 13:03:24,281 | INFO | Discovering package: tools.system
+2026-07-03 13:03:24,281 | INFO | Discovering package: tools.terminal
+2026-07-03 13:03:31,962 | INFO | [Groq] Complete
+2026-07-03 13:03:32,102 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:32,103 | INFO | Detected Intent: TOOL
+2026-07-03 13:03:32,103 | INFO | [Groq] Complete
+2026-07-03 13:03:32,404 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:32,404 | INFO | Planner produced 1 task(s).
+2026-07-03 13:03:32,405 | INFO | Executing Tool : browser
+2026-07-03 13:03:32,405 | INFO | Action         : open_url
+2026-07-03 13:03:32,405 | INFO | Arguments      : {'url': 'https://youtube.com'}
+2026-07-03 13:03:32,405 | INFO | Executing Tool: browser
+2026-07-03 13:03:32,405 | INFO | Opening URL: https://youtube.com
+2026-07-03 13:03:32,544 | INFO | browser completed in 139.42 ms
+2026-07-03 13:03:32,545 | INFO | [Groq] Complete
+2026-07-03 13:03:32,654 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:44,397 | INFO | [Groq] Complete
+2026-07-03 13:03:44,694 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:44,694 | INFO | Detected Intent: TOOL
+2026-07-03 13:03:44,694 | INFO | [Groq] Complete
+2026-07-03 13:03:45,048 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:45,048 | INFO | Planner produced 1 task(s).
+2026-07-03 13:03:45,049 | INFO | Executing Tool : browser
+2026-07-03 13:03:45,049 | INFO | Action         : open_url
+2026-07-03 13:03:45,049 | INFO | Arguments      : {'url': 'https://web.whatsapp.com'}
+2026-07-03 13:03:45,049 | INFO | Executing Tool: browser
+2026-07-03 13:03:45,049 | INFO | Opening URL: https://web.whatsapp.com
+2026-07-03 13:03:45,129 | INFO | browser completed in 80.10 ms
+2026-07-03 13:03:45,129 | INFO | [Groq] Complete
+2026-07-03 13:03:45,229 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:53,131 | INFO | [Groq] Complete
+2026-07-03 13:03:53,368 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:53,369 | INFO | Detected Intent: TOOL
+2026-07-03 13:03:53,369 | INFO | [Groq] Complete
+2026-07-03 13:03:53,701 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:03:53,702 | INFO | Planner produced 1 task(s).
+2026-07-03 13:03:53,702 | INFO | Executing Tool : browser
+2026-07-03 13:03:53,702 | INFO | Action         : open_url
+2026-07-03 13:03:53,702 | INFO | Arguments      : {'url': 'https://facebook.com'}
+2026-07-03 13:03:53,702 | INFO | Executing Tool: browser
+2026-07-03 13:03:53,702 | INFO | Opening URL: https://facebook.com
+2026-07-03 13:03:53,768 | INFO | browser completed in 66.13 ms
+2026-07-03 13:03:53,769 | INFO | [Groq] Complete
+2026-07-03 13:03:53,866 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:12:58,156 | INFO | Discovering package: tools
+2026-07-03 13:12:58,175 | INFO | Registering tool: browser
+2026-07-03 13:12:58,175 | INFO | Discovering package: tools.browser
+2026-07-03 13:12:58,175 | WARNING | Tool already registered: browser
+2026-07-03 13:12:58,175 | INFO | Discovering package: tools.email
+2026-07-03 13:12:58,316 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:12:58,318 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:12:58,319 | INFO | Registering tool: filesystem
+2026-07-03 13:12:58,319 | INFO | Discovering package: tools.permissions
+2026-07-03 13:12:58,320 | INFO | Discovering package: tools.system
+2026-07-03 13:12:58,320 | INFO | Discovering package: tools.terminal
+2026-07-03 13:19:00,980 | INFO | Initializing Provider Manager...
+2026-07-03 13:19:00,981 | INFO | Initializing Gemini Provider...
+2026-07-03 13:19:00,998 | INFO | Initializing Groq Provider...
+2026-07-03 13:19:01,007 | INFO | Initializing Ollama Provider...
+2026-07-03 13:19:01,015 | INFO | Initializing OpenRouter Provider...
+2026-07-03 13:19:01,025 | INFO | Checking Gemini...
+2026-07-03 13:19:01,025 | INFO | [Gemini] Complete
+2026-07-03 13:19:01,902 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 13:19:01,903 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:19:01,910 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:19:01,910 | WARNING | Gemini unavailable.
+2026-07-03 13:19:01,910 | INFO | Checking Groq...
+2026-07-03 13:19:01,910 | INFO | [Groq] Complete
+2026-07-03 13:19:02,192 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:19:02,204 | INFO | Groq available.
+2026-07-03 13:19:02,204 | INFO | Checking Ollama...
+2026-07-03 13:19:02,208 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 13:19:02,210 | INFO | Ollama available.
+2026-07-03 13:19:02,210 | INFO | Checking OpenRouter...
+2026-07-03 13:19:02,210 | INFO | [OpenRouter] Complete
+2026-07-03 13:19:03,121 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:19:03,894 | INFO | OpenRouter available.
+2026-07-03 13:19:04,090 | INFO | Initializing Runtime...
+2026-07-03 13:19:04,090 | INFO | Initializing Conversation Service...
+2026-07-03 13:19:04,090 | INFO | Initializing Executor...
+2026-07-03 13:19:04,090 | INFO | Discovering package: tools
+2026-07-03 13:19:04,092 | INFO | Registering tool: browser
+2026-07-03 13:19:04,092 | INFO | Discovering package: tools.browser
+2026-07-03 13:19:04,092 | WARNING | Tool already registered: browser
+2026-07-03 13:19:04,092 | INFO | Discovering package: tools.email
+2026-07-03 13:19:04,130 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:19:04,134 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:19:04,136 | WARNING | Failed importing tools.filesystem.filesystem_tool: cannot import name 'filesystem_actions' from 'tools.filesystem' (/Users/navdeepcn/Developer/NavAI/tools/filesystem/__init__.py)
+2026-07-03 13:19:04,136 | INFO | Discovering package: tools.permissions
+2026-07-03 13:19:04,136 | INFO | Discovering package: tools.system
+2026-07-03 13:19:04,137 | INFO | Discovering package: tools.terminal
+2026-07-03 13:19:18,977 | INFO | [Groq] Complete
+2026-07-03 13:19:19,237 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:19:19,238 | INFO | Detected Intent: CHAT
+2026-07-03 13:19:19,238 | INFO | User: hey mike
+2026-07-03 13:19:19,241 | INFO | Using Provider: Groq
+2026-07-03 13:19:19,241 | INFO | [Groq] Chat
+2026-07-03 13:19:19,717 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:19:19,718 | INFO | Groq: Hello again, Navdeep! How can I assist you today? Is there something on your mind or a specific task you'd like me to help with?
+2026-07-03 13:19:28,759 | INFO | [Groq] Complete
+2026-07-03 13:19:29,342 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:19:29,343 | INFO | Detected Intent: CHAT
+2026-07-03 13:19:29,343 | INFO | User: i was feeling a lil off today
+2026-07-03 13:19:29,344 | INFO | Using Provider: Groq
+2026-07-03 13:19:29,344 | INFO | [Groq] Chat
+2026-07-03 13:19:29,957 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:19:29,959 | INFO | Groq: Sorry to hear that, Navdeep. Hopefully, you're feeling a bit better now. Would you like to talk about what's been on your mind or is there something I can help you with to take your mind off things?
+2026-07-03 13:33:23,197 | INFO | Discovering package: tools
+2026-07-03 13:33:23,217 | INFO | Registering tool: browser
+2026-07-03 13:33:23,217 | INFO | Discovering package: tools.browser
+2026-07-03 13:33:23,217 | WARNING | Tool already registered: browser
+2026-07-03 13:33:23,217 | INFO | Discovering package: tools.email
+2026-07-03 13:33:23,353 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:33:23,356 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:33:23,356 | WARNING | Failed importing tools.filesystem.filesystem_tool: cannot import name 'filesystem_actions' from 'tools.filesystem' (/Users/navdeepcn/Developer/NavAI/tools/filesystem/__init__.py)
+2026-07-03 13:33:23,357 | INFO | Discovering package: tools.permissions
+2026-07-03 13:33:23,357 | INFO | Discovering package: tools.system
+2026-07-03 13:33:23,358 | INFO | Discovering package: tools.terminal
+2026-07-03 13:33:23,359 | INFO | Registering tool: terminal
+2026-07-03 13:34:58,592 | INFO | Discovering package: tools
+2026-07-03 13:34:58,610 | INFO | Registering tool: browser
+2026-07-03 13:34:58,610 | INFO | Discovering package: tools.browser
+2026-07-03 13:34:58,610 | WARNING | Tool already registered: browser
+2026-07-03 13:34:58,611 | INFO | Discovering package: tools.email
+2026-07-03 13:34:58,745 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:34:58,749 | INFO | Registering tool: filesystem
+2026-07-03 13:34:58,749 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:34:58,749 | WARNING | Tool already registered: filesystem
+2026-07-03 13:34:58,749 | INFO | Discovering package: tools.permissions
+2026-07-03 13:34:58,750 | INFO | Discovering package: tools.system
+2026-07-03 13:34:58,750 | INFO | Discovering package: tools.terminal
+2026-07-03 13:34:58,751 | INFO | Registering tool: terminal
+2026-07-03 13:41:12,299 | INFO | Discovering package: tools
+2026-07-03 13:41:12,319 | INFO | Registering tool: browser
+2026-07-03 13:41:12,319 | INFO | Discovering package: tools.browser
+2026-07-03 13:41:12,466 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:41:12,467 | INFO | Registering tool: email
+2026-07-03 13:41:12,467 | INFO | Discovering package: tools.email
+2026-07-03 13:41:12,469 | INFO | Registering tool: filesystem
+2026-07-03 13:41:12,469 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:41:12,469 | INFO | Discovering package: tools.permissions
+2026-07-03 13:41:12,470 | INFO | Discovering package: tools.system
+2026-07-03 13:41:12,470 | INFO | Discovering package: tools.terminal
+2026-07-03 13:41:12,471 | INFO | Registering tool: terminal
+2026-07-03 13:41:24,565 | INFO | Initializing Provider Manager...
+2026-07-03 13:41:24,565 | INFO | Initializing Gemini Provider...
+2026-07-03 13:41:24,582 | INFO | Initializing Groq Provider...
+2026-07-03 13:41:24,590 | INFO | Initializing Ollama Provider...
+2026-07-03 13:41:24,598 | INFO | Initializing OpenRouter Provider...
+2026-07-03 13:41:24,606 | INFO | Checking Gemini...
+2026-07-03 13:41:24,606 | INFO | [Gemini] Complete
+2026-07-03 13:41:25,495 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 13:41:25,496 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:41:25,506 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 13:41:25,506 | WARNING | Gemini unavailable.
+2026-07-03 13:41:25,506 | INFO | Checking Groq...
+2026-07-03 13:41:25,506 | INFO | [Groq] Complete
+2026-07-03 13:41:25,802 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:41:25,815 | INFO | Groq available.
+2026-07-03 13:41:25,816 | INFO | Checking Ollama...
+2026-07-03 13:41:25,820 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 13:41:25,821 | INFO | Ollama available.
+2026-07-03 13:41:25,821 | INFO | Checking OpenRouter...
+2026-07-03 13:41:25,821 | INFO | [OpenRouter] Complete
+2026-07-03 13:41:26,854 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:41:29,202 | INFO | OpenRouter available.
+2026-07-03 13:41:29,379 | INFO | Initializing Runtime...
+2026-07-03 13:41:29,379 | INFO | Initializing Conversation Service...
+2026-07-03 13:41:29,379 | INFO | Initializing Executor...
+2026-07-03 13:41:29,379 | INFO | Discovering package: tools
+2026-07-03 13:41:29,381 | INFO | Registering tool: browser
+2026-07-03 13:41:29,381 | INFO | Discovering package: tools.browser
+2026-07-03 13:41:29,417 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:41:29,419 | INFO | Registering tool: email
+2026-07-03 13:41:29,419 | INFO | Discovering package: tools.email
+2026-07-03 13:41:29,421 | INFO | Registering tool: filesystem
+2026-07-03 13:41:29,421 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:41:29,421 | INFO | Discovering package: tools.permissions
+2026-07-03 13:41:29,422 | INFO | Discovering package: tools.system
+2026-07-03 13:41:29,422 | INFO | Discovering package: tools.terminal
+2026-07-03 13:41:29,423 | INFO | Registering tool: terminal
+2026-07-03 13:41:53,940 | INFO | [Groq] Complete
+2026-07-03 13:41:54,181 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:41:54,182 | INFO | Detected Intent: TOOL
+2026-07-03 13:41:54,182 | INFO | [Groq] Complete
+2026-07-03 13:41:54,592 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:41:54,593 | INFO | Planner produced 1 task(s).
+2026-07-03 13:41:54,593 | INFO | Executing Tool | tool=email action=send_email
+2026-07-03 13:41:54,593 | INFO | Executing Tool: email
+2026-07-03 13:41:55,616 | INFO | email completed in 1022.97 ms
+2026-07-03 13:41:55,616 | INFO | Task 1 completed successfully.
+2026-07-03 13:41:55,616 | INFO | [Groq] Complete
+2026-07-03 13:41:55,792 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 13:49:38,444 | INFO | Discovering package: tools
+2026-07-03 13:49:38,462 | INFO | Registering tool: browser
+2026-07-03 13:49:38,462 | INFO | Discovering package: tools.browser
+2026-07-03 13:49:38,575 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 13:49:38,576 | INFO | Registering tool: email
+2026-07-03 13:49:38,576 | INFO | Discovering package: tools.email
+2026-07-03 13:49:38,578 | INFO | Registering tool: filesystem
+2026-07-03 13:49:38,578 | INFO | Discovering package: tools.filesystem
+2026-07-03 13:49:38,578 | INFO | Discovering package: tools.permissions
+2026-07-03 13:49:38,581 | INFO | Registering tool: system
+2026-07-03 13:49:38,581 | INFO | Discovering package: tools.system
+2026-07-03 13:49:38,581 | INFO | Discovering package: tools.terminal
+2026-07-03 13:49:38,581 | INFO | Registering tool: terminal
+2026-07-03 14:02:39,278 | INFO | Discovering package: tools
+2026-07-03 14:02:39,300 | INFO | Registering tool: browser
+2026-07-03 14:02:39,300 | INFO | Discovering package: tools.browser
+2026-07-03 14:02:39,448 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:02:39,449 | INFO | Registering tool: email
+2026-07-03 14:02:39,449 | INFO | Discovering package: tools.email
+2026-07-03 14:02:39,451 | INFO | Registering tool: filesystem
+2026-07-03 14:02:39,451 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:02:39,452 | INFO | Discovering package: tools.permissions
+2026-07-03 14:02:39,453 | INFO | Registering tool: system
+2026-07-03 14:02:39,453 | INFO | Discovering package: tools.system
+2026-07-03 14:02:39,453 | INFO | Discovering package: tools.terminal
+2026-07-03 14:02:39,454 | INFO | Registering tool: terminal
+2026-07-03 14:04:20,023 | INFO | Initializing Provider Manager...
+2026-07-03 14:04:20,023 | INFO | Initializing Gemini Provider...
+2026-07-03 14:04:20,040 | INFO | Initializing Groq Provider...
+2026-07-03 14:04:20,048 | INFO | Initializing Ollama Provider...
+2026-07-03 14:04:20,056 | INFO | Initializing OpenRouter Provider...
+2026-07-03 14:04:20,064 | INFO | Checking Gemini...
+2026-07-03 14:04:20,064 | INFO | [Gemini] Complete
+2026-07-03 14:04:20,945 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 14:04:20,946 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 14:04:20,956 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 14:04:20,956 | WARNING | Gemini unavailable.
+2026-07-03 14:04:20,956 | INFO | Checking Groq...
+2026-07-03 14:04:20,956 | INFO | [Groq] Complete
+2026-07-03 14:04:21,198 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:21,212 | INFO | Groq available.
+2026-07-03 14:04:21,212 | INFO | Checking Ollama...
+2026-07-03 14:04:21,216 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 14:04:21,217 | INFO | Ollama available.
+2026-07-03 14:04:21,217 | INFO | Checking OpenRouter...
+2026-07-03 14:04:21,217 | INFO | [OpenRouter] Complete
+2026-07-03 14:04:22,006 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:23,584 | INFO | OpenRouter available.
+2026-07-03 14:04:23,769 | INFO | Initializing Runtime...
+2026-07-03 14:04:23,769 | INFO | Initializing Conversation Service...
+2026-07-03 14:04:23,770 | INFO | Discovering package: tools
+2026-07-03 14:04:23,772 | INFO | Registering tool: browser
+2026-07-03 14:04:23,772 | INFO | Discovering package: tools.browser
+2026-07-03 14:04:23,812 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:04:23,814 | INFO | Registering tool: email
+2026-07-03 14:04:23,814 | INFO | Discovering package: tools.email
+2026-07-03 14:04:23,816 | INFO | Registering tool: filesystem
+2026-07-03 14:04:23,816 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:04:23,817 | INFO | Discovering package: tools.permissions
+2026-07-03 14:04:23,817 | INFO | Registering tool: system
+2026-07-03 14:04:23,817 | INFO | Discovering package: tools.system
+2026-07-03 14:04:23,818 | INFO | Discovering package: tools.terminal
+2026-07-03 14:04:23,818 | INFO | Registering tool: terminal
+2026-07-03 14:04:23,818 | INFO | Initializing Executor...
+2026-07-03 14:04:23,818 | INFO | Discovering package: tools
+2026-07-03 14:04:23,818 | INFO | Registering tool: browser
+2026-07-03 14:04:23,818 | INFO | Discovering package: tools.browser
+2026-07-03 14:04:23,818 | INFO | Registering tool: email
+2026-07-03 14:04:23,818 | INFO | Discovering package: tools.email
+2026-07-03 14:04:23,818 | INFO | Registering tool: filesystem
+2026-07-03 14:04:23,818 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:04:23,819 | INFO | Discovering package: tools.permissions
+2026-07-03 14:04:23,819 | INFO | Registering tool: system
+2026-07-03 14:04:23,819 | INFO | Discovering package: tools.system
+2026-07-03 14:04:23,819 | INFO | Discovering package: tools.terminal
+2026-07-03 14:04:23,819 | INFO | Registering tool: terminal
+2026-07-03 14:04:38,792 | INFO | [Groq] Complete
+2026-07-03 14:04:39,499 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:39,500 | INFO | Detected Intent: TOOL
+2026-07-03 14:04:39,500 | INFO | Planning request...
+2026-07-03 14:04:39,500 | INFO | [Groq] Complete
+2026-07-03 14:04:40,425 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:40,426 | INFO | Planner produced 1 task(s).
+2026-07-03 14:04:40,426 | INFO | PlannerValidator: 1/1 task(s) validated.
+2026-07-03 14:04:40,426 | INFO | Planning complete: 1 task(s).
+2026-07-03 14:04:40,426 | INFO | Executing Tool | tool=terminal action=run
+2026-07-03 14:04:40,426 | INFO | Executing Tool: terminal
+2026-07-03 14:04:40,427 | INFO | Running command: pwd
+2026-07-03 14:04:40,466 | INFO | terminal completed in 39.48 ms
+2026-07-03 14:04:40,466 | INFO | Task 1 completed successfully.
+2026-07-03 14:04:40,467 | INFO | [Groq] Complete
+2026-07-03 14:04:40,937 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:52,891 | INFO | [Groq] Complete
+2026-07-03 14:04:53,225 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:53,225 | INFO | Detected Intent: TOOL
+2026-07-03 14:04:53,225 | INFO | Planning request...
+2026-07-03 14:04:53,225 | INFO | [Groq] Complete
+2026-07-03 14:04:53,495 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:04:53,495 | INFO | Planner produced 1 task(s).
+2026-07-03 14:04:53,495 | INFO | PlannerValidator: 1/1 task(s) validated.
+2026-07-03 14:04:53,495 | INFO | Planning complete: 1 task(s).
+2026-07-03 14:04:53,495 | INFO | Executing Tool | tool=terminal action=run
+2026-07-03 14:04:53,495 | INFO | Executing Tool: terminal
+2026-07-03 14:04:53,496 | INFO | Running command: pwd
+2026-07-03 14:04:53,523 | INFO | terminal completed in 27.52 ms
+2026-07-03 14:04:53,523 | INFO | Task 1 completed successfully.
+2026-07-03 14:04:53,523 | INFO | [Groq] Complete
+2026-07-03 14:04:53,652 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 14:06:06,945 | INFO | Discovering package: tools
+2026-07-03 14:06:06,964 | INFO | Registering tool: browser
+2026-07-03 14:06:06,964 | INFO | Discovering package: tools.browser
+2026-07-03 14:06:07,109 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:06:07,110 | INFO | Registering tool: email
+2026-07-03 14:06:07,110 | INFO | Discovering package: tools.email
+2026-07-03 14:06:07,112 | INFO | Registering tool: filesystem
+2026-07-03 14:06:07,112 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:06:07,112 | INFO | Discovering package: tools.permissions
+2026-07-03 14:06:07,113 | INFO | Registering tool: system
+2026-07-03 14:06:07,113 | INFO | Discovering package: tools.system
+2026-07-03 14:06:07,113 | INFO | Discovering package: tools.terminal
+2026-07-03 14:06:07,114 | INFO | Registering tool: terminal
+2026-07-03 14:08:23,153 | INFO | Discovering package: tools
+2026-07-03 14:08:23,173 | INFO | Registering tool: browser
+2026-07-03 14:08:23,173 | INFO | Discovering package: tools.browser
+2026-07-03 14:08:23,316 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:08:23,317 | INFO | Registering tool: email
+2026-07-03 14:08:23,317 | INFO | Discovering package: tools.email
+2026-07-03 14:08:23,319 | INFO | Registering tool: filesystem
+2026-07-03 14:08:23,319 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:08:23,319 | INFO | Discovering package: tools.permissions
+2026-07-03 14:08:23,320 | INFO | Registering tool: system
+2026-07-03 14:08:23,320 | INFO | Discovering package: tools.system
+2026-07-03 14:08:23,320 | INFO | Discovering package: tools.terminal
+2026-07-03 14:08:23,321 | INFO | Registering tool: terminal
+2026-07-03 14:09:42,479 | INFO | Discovering package: tools
+2026-07-03 14:09:42,497 | INFO | Registering tool: browser
+2026-07-03 14:09:42,497 | INFO | Discovering package: tools.browser
+2026-07-03 14:09:42,631 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:09:42,632 | INFO | Registering tool: email
+2026-07-03 14:09:42,632 | INFO | Discovering package: tools.email
+2026-07-03 14:09:42,634 | INFO | Registering tool: filesystem
+2026-07-03 14:09:42,634 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:09:42,634 | INFO | Discovering package: tools.permissions
+2026-07-03 14:09:42,635 | INFO | Registering tool: system
+2026-07-03 14:09:42,635 | INFO | Discovering package: tools.system
+2026-07-03 14:09:42,635 | INFO | Discovering package: tools.terminal
+2026-07-03 14:09:42,636 | INFO | Registering tool: terminal
+2026-07-03 14:10:27,762 | INFO | Discovering package: tools
+2026-07-03 14:10:27,783 | INFO | Registering tool: browser
+2026-07-03 14:10:27,783 | INFO | Discovering package: tools.browser
+2026-07-03 14:10:27,920 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:10:27,921 | INFO | Registering tool: email
+2026-07-03 14:10:27,921 | INFO | Discovering package: tools.email
+2026-07-03 14:10:27,923 | INFO | Registering tool: filesystem
+2026-07-03 14:10:27,923 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:10:27,924 | INFO | Discovering package: tools.permissions
+2026-07-03 14:10:27,924 | INFO | Registering tool: system
+2026-07-03 14:10:27,924 | INFO | Discovering package: tools.system
+2026-07-03 14:10:27,925 | INFO | Discovering package: tools.terminal
+2026-07-03 14:10:27,925 | INFO | Registering tool: terminal
+2026-07-03 14:11:02,272 | INFO | Discovering package: tools
+2026-07-03 14:11:02,291 | INFO | Registering tool: browser
+2026-07-03 14:11:02,291 | INFO | Discovering package: tools.browser
+2026-07-03 14:11:02,424 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:11:02,425 | INFO | Registering tool: email
+2026-07-03 14:11:02,425 | INFO | Discovering package: tools.email
+2026-07-03 14:11:02,427 | INFO | Registering tool: filesystem
+2026-07-03 14:11:02,427 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:11:02,428 | INFO | Discovering package: tools.permissions
+2026-07-03 14:11:02,428 | INFO | Registering tool: system
+2026-07-03 14:11:02,428 | INFO | Discovering package: tools.system
+2026-07-03 14:11:02,429 | INFO | Discovering package: tools.terminal
+2026-07-03 14:11:02,429 | INFO | Registering tool: terminal
+2026-07-03 14:11:43,323 | INFO | Discovering package: tools
+2026-07-03 14:11:43,343 | INFO | Registering tool: browser
+2026-07-03 14:11:43,343 | INFO | Discovering package: tools.browser
+2026-07-03 14:11:43,482 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-03 14:11:43,482 | INFO | Registering tool: email
+2026-07-03 14:11:43,482 | INFO | Discovering package: tools.email
+2026-07-03 14:11:43,485 | INFO | Registering tool: filesystem
+2026-07-03 14:11:43,485 | INFO | Discovering package: tools.filesystem
+2026-07-03 14:11:43,485 | INFO | Discovering package: tools.permissions
+2026-07-03 14:11:43,486 | INFO | Registering tool: system
+2026-07-03 14:11:43,486 | INFO | Discovering package: tools.system
+2026-07-03 14:11:43,486 | INFO | Discovering package: tools.terminal
+2026-07-03 14:11:43,486 | INFO | Registering tool: terminal
+2026-07-03 14:11:43,486 | INFO | PlannerValidator: 1/1 task(s) validated.
+2026-07-03 14:11:43,486 | WARNING | Task 2: unknown tool 'fake_tool'.
+2026-07-03 14:11:43,486 | INFO | PlannerValidator: 0/1 task(s) validated.
+2026-07-03 14:11:43,486 | WARNING | Task 3: unsupported action 'explode' for tool 'browser'.
+2026-07-03 14:11:43,486 | INFO | PlannerValidator: 0/1 task(s) validated.
+2026-07-03 14:11:43,486 | WARNING | Task 4: argument validation failed.
+2026-07-03 14:11:43,486 | INFO | PlannerValidator: 0/1 task(s) validated.

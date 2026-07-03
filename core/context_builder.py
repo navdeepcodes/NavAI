@@ -1,5 +1,11 @@
 from memory.working_memory import WorkingMemory
 
+from brain.models import (
+    Conversation,
+    Message,
+    Role,
+)
+
 
 class ContextBuilder:
 
@@ -7,64 +13,114 @@ class ContextBuilder:
 
         self.working = WorkingMemory()
 
+    # ---------------------------------------------------------
+
     def build(
 
         self,
 
-        system_prompt,
+        system_prompt: str,
 
-        long_term,
+        long_term: str,
 
-        history
+        history,
 
-    ):
+    ) -> Conversation:
 
-        messages = []
+        conversation = Conversation()
 
-        messages.append({
+        # -------------------------------------------------
+        # System Prompt
+        # -------------------------------------------------
 
-            "role": "system",
+        conversation.add(
 
-            "content": system_prompt
+            Message(
 
-        })
+                role=Role.SYSTEM,
+
+                content=system_prompt,
+
+            )
+
+        )
+
+        # -------------------------------------------------
+        # Working Memory
+        # -------------------------------------------------
 
         working = self.working.all()
 
         if working:
 
-            text = ""
+            text = "\n".join(
 
-            for key, value in working.items():
+                f"{key}: {value}"
 
-                text += f"{key}: {value}\n"
+                for key, value in working.items()
 
-            messages.append({
+            )
 
-                "role": "system",
+            conversation.add(
 
-                "content":
+                Message(
 
-                "Working Memory\n\n"
+                    role=Role.SYSTEM,
 
-                + text
+                    content=
 
-            })
+                    "Working Memory\n\n"
+
+                    + text,
+
+                )
+
+            )
+
+        # -------------------------------------------------
+        # Long-Term Memory
+        # -------------------------------------------------
 
         if long_term:
 
-            messages.append({
+            conversation.add(
 
-                "role": "system",
+                Message(
 
-                "content":
+                    role=Role.SYSTEM,
 
-                "Long Term Memory\n\n"
+                    content=
 
-                + long_term
+                    "Long-Term Memory\n\n"
 
-            })
+                    + long_term,
 
-        messages.extend(history)
+                )
 
-        return messages
+            )
+
+        # -------------------------------------------------
+        # Previous Conversation
+        # -------------------------------------------------
+
+        for item in history:
+
+            role = Role(
+
+                item["role"]
+
+            )
+
+            conversation.add(
+
+                Message(
+
+                    role=role,
+
+                    content=item["content"],
+
+                )
+
+            )
+
+        return conversation

@@ -158,5 +158,89 @@
     {
         "role": "assistant",
         "content": "My name is Mike!"
+    },
+    {
+        "role": "user",
+        "content": "heyy mike"
+    },
+    {
+        "role": "user",
+        "content": "hey mike"
+    },
+    {
+        "role": "assistant",
+        "content": "How's it going, Navdeep? Is there something I can help you with or would you like to chat?"
+    },
+    {
+        "role": "user",
+        "content": "tell me what things you can do"
+    },
+    {
+        "role": "assistant",
+        "content": "Navdeep, I can help with a wide range of tasks. I can answer your questions, provide information on various topics, and even assist with basic operating system tasks. I can also help you create folders, files, and more, right from our conversation. What would you like me to help you with today?"
+    },
+    {
+        "role": "user",
+        "content": "yo"
+    },
+    {
+        "role": "assistant",
+        "content": "How's it going, Navdeep? Is there something I can help you with or would you like to chat?"
+    },
+    {
+        "role": "user",
+        "content": "whats your name"
+    },
+    {
+        "role": "assistant",
+        "content": "My name is Mike!"
+    },
+    {
+        "role": "user",
+        "content": "what are you"
+    },
+    {
+        "role": "assistant",
+        "content": "I'm Mike, your AI assistant inside NavAI, running locally on your computer. I'm here to help you with any questions or tasks you may have, and provide assistance with various topics. How can I help you today, Navdeep?"
+    },
+    {
+        "role": "user",
+        "content": "you're still dumb , i'll fix you soon enough"
+    },
+    {
+        "role": "assistant",
+        "content": "No worries, Navdeep. I'm here to learn and improve. If there's something specific you'd like me to work on or a particular issue you're experiencing, feel free to let me know and I'll do my best to assist you."
+    },
+    {
+        "role": "user",
+        "content": "what LLM are you using rn??"
+    },
+    {
+        "role": "assistant",
+        "content": "I'm currently using the LLM provided by Groq, our current provider. Would you like to know more about it or is there something specific you'd like to explore?"
+    },
+    {
+        "role": "user",
+        "content": "hey mike"
+    },
+    {
+        "role": "assistant",
+        "content": "Hello again, Navdeep! How can I assist you today? Is there something on your mind or a specific task you'd like me to help with?"
+    },
+    {
+        "role": "user",
+        "content": "hey mike"
+    },
+    {
+        "role": "assistant",
+        "content": "Hello again, Navdeep! How can I assist you today? Is there something on your mind or a specific task you'd like me to help with?"
+    },
+    {
+        "role": "user",
+        "content": "i was feeling a lil off today"
+    },
+    {
+        "role": "assistant",
+        "content": "Sorry to hear that, Navdeep. Hopefully, you're feeling a bit better now. Would you like to talk about what's been on your mind or is there something I can help you with to take your mind off things?"
     }
 ]
