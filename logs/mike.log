@@ -214,3 +214,845 @@ KeyError: 'run_code'
 2026-07-02 12:56:27,782 | INFO | Opening https://www.youtube.com
 2026-07-02 12:56:27,839 | INFO | AFC remote call 1 is done.
 2026-07-02 12:56:29,008 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:22:12,718 | INFO | Initializing Runtime...
+2026-07-02 13:22:12,718 | INFO | Initializing Conversation...
+2026-07-02 13:36:22,475 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 13:41:11,991 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 13:42:39,449 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 13:42:39,618 | INFO | Initializing Runtime...
+2026-07-02 13:42:39,618 | INFO | Initializing Conversation...
+2026-07-02 13:42:50,729 | INFO | Received: hi mike
+2026-07-02 13:42:50,730 | INFO | User: hi mike
+2026-07-02 13:42:50,730 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:42:51,868 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:43:15,865 | INFO | Received: can you send an email to navdeepnmns@gmail.com
+2026-07-02 13:43:15,865 | INFO | User: can you send an email to navdeepnmns@gmail.com
+2026-07-02 13:43:15,865 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:43:17,059 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:43:34,981 | INFO | Received: subject is hi , body is hello
+2026-07-02 13:43:34,981 | INFO | User: subject is hi , body is hello
+2026-07-02 13:43:34,981 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:43:36,311 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:43:36,924 | INFO | AFC remote call 1 is done.
+2026-07-02 13:43:37,641 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:44:07,932 | INFO | Received: sorry send to navdeepnmns17@gmail.com
+2026-07-02 13:44:07,932 | INFO | User: sorry send to navdeepnmns17@gmail.com
+2026-07-02 13:44:07,933 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:44:09,285 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:44:15,798 | INFO | Received: same as the abive
+2026-07-02 13:44:15,799 | INFO | User: same as the abive
+2026-07-02 13:44:15,799 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:44:17,366 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:44:17,886 | INFO | AFC remote call 1 is done.
+2026-07-02 13:44:19,114 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:54:22,753 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 13:55:53,446 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 13:55:53,606 | INFO | Initializing Runtime...
+2026-07-02 13:55:53,606 | INFO | Initializing Conversation...
+2026-07-02 13:56:03,297 | INFO | Received: hey mikee
+2026-07-02 13:56:03,297 | INFO | User: hey mikee
+2026-07-02 13:56:03,298 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:56:04,559 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:56:11,246 | INFO | Received: Create a folder called MikeAI on my Desktop.
+2026-07-02 13:56:11,246 | INFO | User: Create a folder called MikeAI on my Desktop.
+2026-07-02 13:56:11,246 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:56:12,548 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:56:12,549 | INFO | AFC remote call 1 is done.
+2026-07-02 13:56:13,671 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:56:30,414 | INFO | Received: Create a file called notes.txt inside MikeAI.
+2026-07-02 13:56:30,414 | INFO | User: Create a file called notes.txt inside MikeAI.
+2026-07-02 13:56:30,414 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:56:31,340 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 503 Service Unavailable"
+2026-07-02 13:56:31,341 | ERROR | 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/core/conversation.py", line 34, in send
+    response = self.chat.send_message(message)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/chats.py", line 258, in send_message
+    response = self._modules.generate_content(
+        model=self._model,
+        contents=self._curated_history + [input_content],  # type: ignore[arg-type]
+        config=method_config,
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6526, in generate_content
+    response = self._generate_content(
+        model=model, contents=contents, config=parsed_config_to_call
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 186, in raise_error
+    raise ServerError(status_code, response_json, response)
+google.genai.errors.ServerError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-07-02 13:56:31,347 | ERROR | 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/core/runtime.py", line 20, in process
+    return self.conversation.send(message)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/core/conversation.py", line 34, in send
+    response = self.chat.send_message(message)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/chats.py", line 258, in send_message
+    response = self._modules.generate_content(
+        model=self._model,
+        contents=self._curated_history + [input_content],  # type: ignore[arg-type]
+        config=method_config,
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6526, in generate_content
+    response = self._generate_content(
+        model=model, contents=contents, config=parsed_config_to_call
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 186, in raise_error
+    raise ServerError(status_code, response_json, response)
+google.genai.errors.ServerError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+2026-07-02 13:57:30,546 | INFO | Received: Hi Mike
+2026-07-02 13:57:30,547 | INFO | User: Hi Mike
+2026-07-02 13:57:30,547 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:57:32,264 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+2026-07-02 13:57:36,446 | INFO | Received: Create a file called test.txt on my Desktop.
+2026-07-02 13:57:36,447 | INFO | User: Create a file called test.txt on my Desktop.
+2026-07-02 13:57:36,447 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 13:57:36,674 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 13:57:36,674 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 23.334847929s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '23s'}]}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/core/conversation.py", line 34, in send
+    response = self.chat.send_message(message)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/chats.py", line 258, in send_message
+    response = self._modules.generate_content(
+        model=self._model,
+        contents=self._curated_history + [input_content],  # type: ignore[arg-type]
+        config=method_config,
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6526, in generate_content
+    response = self._generate_content(
+        model=model, contents=contents, config=parsed_config_to_call
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 23.334847929s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '23s'}]}}
+2026-07-02 13:57:36,676 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 23.334847929s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '23s'}]}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/core/runtime.py", line 20, in process
+    return self.conversation.send(message)
+           ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/core/conversation.py", line 34, in send
+    response = self.chat.send_message(message)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/chats.py", line 258, in send_message
+    response = self._modules.generate_content(
+        model=self._model,
+        contents=self._curated_history + [input_content],  # type: ignore[arg-type]
+        config=method_config,
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6526, in generate_content
+    response = self._generate_content(
+        model=model, contents=contents, config=parsed_config_to_call
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. \n* Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-2.5-flash\nPlease retry in 23.334847929s.', 'status': 'RESOURCE_EXHAUSTED', 'details': [{'@type': 'type.googleapis.com/google.rpc.Help', 'links': [{'description': 'Learn more about Gemini API quotas', 'url': 'https://ai.google.dev/gemini-api/docs/rate-limits'}]}, {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [{'quotaMetric': 'generativelanguage.googleapis.com/generate_content_free_tier_requests', 'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier', 'quotaDimensions': {'location': 'global', 'model': 'gemini-2.5-flash'}, 'quotaValue': '20'}]}, {'@type': 'type.googleapis.com/google.rpc.RetryInfo', 'retryDelay': '23s'}]}}
+2026-07-02 15:21:07,382 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 15:21:07,589 | INFO | Initializing Provider Manager...
+2026-07-02 15:21:07,589 | INFO | Initializing Gemini Provider...
+2026-07-02 15:21:07,658 | INFO | Initializing Groq Provider...
+2026-07-02 15:21:07,667 | INFO | Initializing OpenRouter Provider...
+2026-07-02 15:34:08,922 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 15:34:09,119 | INFO | Initializing Provider Manager...
+2026-07-02 15:34:09,119 | INFO | Initializing Gemini Provider...
+2026-07-02 15:34:09,187 | INFO | Initializing Groq Provider...
+2026-07-02 15:34:09,197 | INFO | Initializing OpenRouter Provider...
+2026-07-02 15:34:09,207 | INFO | Searching for available providers...
+2026-07-02 15:34:09,207 | INFO | Checking Gemini...
+2026-07-02 15:34:09,207 | INFO | [Gemini] ping
+2026-07-02 15:34:09,207 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 15:34:10,488 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 15:34:10,489 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 15:34:10,489 | INFO | Checking Groq...
+2026-07-02 15:34:10,853 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 15:34:10,866 | INFO | Using Groq
+2026-07-02 15:34:11,080 | INFO | Initializing Runtime...
+2026-07-02 15:34:11,080 | INFO | Initializing Conversation...
+2026-07-02 15:34:33,380 | INFO | Received: hey mike
+2026-07-02 15:34:33,380 | INFO | User: hey mike
+2026-07-02 15:34:33,587 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 15:34:57,913 | INFO | Received: whos the goat of football??
+2026-07-02 15:34:57,913 | INFO | User: whos the goat of football??
+2026-07-02 15:34:59,156 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 15:35:05,164 | INFO | Received: one word
+2026-07-02 15:35:05,165 | INFO | User: one word
+2026-07-02 15:35:05,498 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 15:35:18,231 | INFO | Received: one word for goat of football
+2026-07-02 15:35:18,232 | INFO | User: one word for goat of football
+2026-07-02 15:35:18,512 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 15:35:30,981 | INFO | Received: you dont to rembeber past convos
+2026-07-02 15:35:30,981 | INFO | User: you dont to rembeber past convos
+2026-07-02 15:35:31,713 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 15:58:27,450 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 15:58:27,643 | INFO | Initializing Provider Manager...
+2026-07-02 15:58:27,643 | INFO | Initializing Gemini Provider...
+2026-07-02 16:00:38,845 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:00:39,042 | INFO | Initializing Provider Manager...
+2026-07-02 16:00:39,042 | INFO | Initializing Gemini Provider...
+2026-07-02 16:00:39,078 | INFO | Initializing Groq Provider...
+2026-07-02 16:00:39,088 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:00:39,098 | INFO | Searching for available providers...
+2026-07-02 16:00:39,098 | INFO | Checking Gemini...
+2026-07-02 16:00:39,098 | INFO | [Gemini Complete]
+2026-07-02 16:00:39,098 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:00:39,968 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:00:39,969 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:00:39,969 | INFO | Checking Groq...
+2026-07-02 16:00:40,280 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:00:40,289 | INFO | Using Groq
+2026-07-02 16:00:40,405 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:03:40,193 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:03:40,384 | INFO | Initializing Provider Manager...
+2026-07-02 16:03:40,384 | INFO | Initializing Gemini Provider...
+2026-07-02 16:03:40,429 | INFO | Initializing Groq Provider...
+2026-07-02 16:03:40,439 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:03:40,449 | INFO | Searching for available providers...
+2026-07-02 16:03:40,449 | INFO | Checking Gemini...
+2026-07-02 16:03:40,449 | INFO | [Gemini Complete]
+2026-07-02 16:03:40,449 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:03:41,208 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:03:41,208 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:03:41,208 | INFO | Checking Groq...
+2026-07-02 16:03:41,370 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:03:41,378 | INFO | Using Groq
+2026-07-02 16:03:41,615 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:03:51,098 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:05:04,258 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:05:04,449 | INFO | Initializing Provider Manager...
+2026-07-02 16:05:04,449 | INFO | Initializing Gemini Provider...
+2026-07-02 16:05:04,513 | INFO | Initializing Groq Provider...
+2026-07-02 16:05:04,523 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:05:04,533 | INFO | Searching for available providers...
+2026-07-02 16:05:04,533 | INFO | Checking Gemini...
+2026-07-02 16:05:04,533 | INFO | [Gemini Complete]
+2026-07-02 16:05:04,533 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:05:05,217 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:05:05,218 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:05:05,218 | INFO | Checking Groq...
+2026-07-02 16:05:05,505 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:05:05,517 | INFO | Using Groq
+2026-07-02 16:15:56,956 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:15:57,146 | INFO | Initializing Provider Manager...
+2026-07-02 16:15:57,147 | INFO | Initializing Gemini Provider...
+2026-07-02 16:15:57,211 | INFO | Initializing Groq Provider...
+2026-07-02 16:15:57,220 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:15:57,230 | INFO | Searching for available providers...
+2026-07-02 16:15:57,230 | INFO | Checking Gemini...
+2026-07-02 16:15:57,230 | INFO | [Gemini Complete]
+2026-07-02 16:15:57,230 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:15:58,068 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:15:58,069 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:15:58,069 | INFO | Checking Groq...
+2026-07-02 16:15:58,242 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:15:58,254 | INFO | Using Groq
+2026-07-02 16:15:58,449 | INFO | Initializing Runtime...
+2026-07-02 16:15:58,449 | INFO | Initializing Conversation...
+2026-07-02 16:18:18,317 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:18:18,513 | INFO | Initializing Provider Manager...
+2026-07-02 16:18:18,513 | INFO | Initializing Gemini Provider...
+2026-07-02 16:18:18,579 | INFO | Initializing Groq Provider...
+2026-07-02 16:18:18,589 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:18:18,598 | INFO | Searching for available providers...
+2026-07-02 16:18:18,598 | INFO | Checking Gemini...
+2026-07-02 16:18:18,598 | INFO | [Gemini Complete]
+2026-07-02 16:18:18,598 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:18:19,348 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:18:19,350 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:18:19,350 | INFO | Checking Groq...
+2026-07-02 16:18:19,534 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:18:19,546 | INFO | Using Groq
+2026-07-02 16:18:19,718 | INFO | Initializing Runtime...
+2026-07-02 16:18:19,718 | INFO | Initializing Conversation...
+2026-07-02 16:18:19,718 | INFO | Initializing Executor...
+2026-07-02 16:18:31,221 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:18:31,223 | INFO | Intent: CHAT
+2026-07-02 16:18:31,223 | INFO | User: hey mike
+2026-07-02 16:18:31,366 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:19:09,865 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:19:09,866 | INFO | Intent: TOOL
+2026-07-02 16:19:09,866 | INFO | User: Create a folder called MikeTest on my Desktop.
+2026-07-02 16:19:10,500 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:20:18,896 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:20:18,898 | INFO | Intent: CHAT
+2026-07-02 16:20:18,898 | INFO | User: whats the capital of karnataka
+2026-07-02 16:20:19,201 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:23:07,131 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:23:07,320 | INFO | Initializing Provider Manager...
+2026-07-02 16:23:07,320 | INFO | Initializing Gemini Provider...
+2026-07-02 16:23:07,385 | INFO | Initializing Groq Provider...
+2026-07-02 16:23:07,395 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:23:07,405 | INFO | Searching for available providers...
+2026-07-02 16:23:07,405 | INFO | Checking Gemini...
+2026-07-02 16:23:07,405 | INFO | [Gemini Complete]
+2026-07-02 16:23:07,405 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:23:08,052 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:23:08,054 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:23:08,054 | INFO | Checking Groq...
+2026-07-02 16:23:08,408 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:23:08,423 | INFO | Using Groq
+2026-07-02 16:23:08,609 | INFO | Initializing Runtime...
+2026-07-02 16:23:08,609 | INFO | Initializing Conversation...
+2026-07-02 16:23:08,609 | INFO | Initializing Executor...
+2026-07-02 16:23:25,551 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:23:25,552 | INFO | Intent: TOOL
+2026-07-02 16:23:25,552 | INFO | Skipping task: Create a folder called MikeTest on my Desktop
+2026-07-02 16:32:54,095 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:32:54,291 | INFO | Initializing Provider Manager...
+2026-07-02 16:32:54,291 | INFO | Initializing Gemini Provider...
+2026-07-02 16:32:54,369 | INFO | Initializing Groq Provider...
+2026-07-02 16:32:54,379 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:32:54,389 | INFO | Searching for available providers...
+2026-07-02 16:32:54,389 | INFO | Checking Gemini...
+2026-07-02 16:32:54,389 | INFO | [Gemini Complete]
+2026-07-02 16:32:54,389 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:32:55,283 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:32:55,284 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:32:55,284 | INFO | Checking Groq...
+2026-07-02 16:32:55,844 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:32:55,856 | INFO | Using Groq
+2026-07-02 16:32:56,024 | INFO | Initializing Runtime...
+2026-07-02 16:32:56,024 | INFO | Initializing Conversation...
+2026-07-02 16:32:56,025 | INFO | Initializing Executor...
+2026-07-02 16:33:13,393 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:33:13,395 | INFO | Intent: CHAT
+2026-07-02 16:33:13,395 | INFO | User: i usually surf in opera
+2026-07-02 16:33:13,770 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:33:26,769 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:33:26,770 | INFO | Intent: CHAT
+2026-07-02 16:33:26,770 | INFO | User: its good
+2026-07-02 16:33:27,178 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:33:41,563 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:33:41,564 | INFO | Intent: CHAT
+2026-07-02 16:33:41,564 | INFO | User: nah which is my fav web browser??
+2026-07-02 16:33:42,028 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:35:11,139 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:35:11,328 | INFO | Initializing Provider Manager...
+2026-07-02 16:35:11,328 | INFO | Initializing Gemini Provider...
+2026-07-02 16:35:11,392 | INFO | Initializing Groq Provider...
+2026-07-02 16:35:11,402 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:35:11,412 | INFO | Searching for available providers...
+2026-07-02 16:35:11,412 | INFO | Checking Gemini...
+2026-07-02 16:35:11,412 | INFO | [Gemini Complete]
+2026-07-02 16:35:11,412 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:35:12,043 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:35:12,044 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:35:12,044 | INFO | Checking Groq...
+2026-07-02 16:35:12,218 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:35:12,231 | INFO | Using Groq
+2026-07-02 16:35:12,398 | INFO | Initializing Runtime...
+2026-07-02 16:35:12,399 | INFO | Initializing Conversation...
+2026-07-02 16:35:12,399 | INFO | Initializing Executor...
+2026-07-02 16:35:27,779 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:35:27,781 | INFO | Intent: TOOL
+2026-07-02 16:35:27,782 | INFO | Skipping task: open facebook
+2026-07-02 16:54:17,634 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 16:54:17,829 | INFO | Initializing Provider Manager...
+2026-07-02 16:54:17,829 | INFO | Initializing Gemini Provider...
+2026-07-02 16:54:17,894 | INFO | Initializing Groq Provider...
+2026-07-02 16:54:17,904 | INFO | Initializing OpenRouter Provider...
+2026-07-02 16:54:17,914 | INFO | Searching for available providers...
+2026-07-02 16:54:17,914 | INFO | Checking Gemini...
+2026-07-02 16:54:17,914 | INFO | [Gemini Complete]
+2026-07-02 16:54:17,914 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 16:54:18,838 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 16:54:18,839 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 16:54:18,839 | INFO | Checking Groq...
+2026-07-02 16:54:19,116 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:54:19,127 | INFO | Using Groq
+2026-07-02 16:54:19,343 | INFO | Initializing Runtime...
+2026-07-02 16:54:19,343 | INFO | Initializing Conversation...
+2026-07-02 16:54:19,343 | INFO | Initializing Executor...
+2026-07-02 16:54:33,488 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:54:33,489 | INFO | Intent: TOOL
+2026-07-02 16:54:34,506 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:54:34,506 | INFO | Executing task: Open Facebook
+2026-07-02 16:54:34,506 | INFO | Executing tool: open_url
+2026-07-02 16:54:34,507 | INFO | Opening https://facebook.com
+2026-07-02 16:54:46,781 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:54:46,782 | INFO | Intent: TOOL
+2026-07-02 16:54:47,101 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:54:47,102 | INFO | Executing task: Open Facebook
+2026-07-02 16:54:47,102 | INFO | Executing tool: open_url
+2026-07-02 16:54:47,102 | INFO | Opening https://facebook.com
+2026-07-02 16:55:02,053 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:55:02,053 | INFO | Intent: TOOL
+2026-07-02 16:55:02,563 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:55:02,564 | INFO | Executing task: Set reminder for 10 minutes
+2026-07-02 16:55:02,564 | INFO | Executing tool: create_file
+2026-07-02 16:55:02,564 | ERROR | create_file() got an unexpected keyword argument 'name'
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/executor.py", line 41, in execute
+    result = self.tools.execute(
+    
+    ...<3 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/core/tool_executor.py", line 24, in execute
+    return FUNCTION_MAP[
+           ~~~~~~~~~~~~~
+        function_name
+        ~~~~~~~~~~~~~
+    ](**kwargs)
+    ~^^^^^^^^^^
+TypeError: create_file() got an unexpected keyword argument 'name'
+2026-07-02 16:58:41,370 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:58:41,372 | INFO | Intent: TOOL
+2026-07-02 16:58:41,808 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:58:41,809 | INFO | Executing task: Search for bhooswarganmit website
+2026-07-02 16:58:41,809 | INFO | Executing tool: search
+2026-07-02 16:58:41,809 | INFO | Opening https://www.google.com/search?q=bhooswarganmit
+2026-07-02 16:58:41,884 | INFO | Executing task: Open bhooswarganmit website
+2026-07-02 16:58:41,884 | INFO | Executing tool: open_url
+2026-07-02 16:58:41,884 | INFO | Opening https://bhooswarganmit.com
+2026-07-02 16:59:04,219 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:59:04,220 | INFO | Intent: CHAT
+2026-07-02 16:59:04,220 | INFO | User: it has a .shop
+2026-07-02 16:59:04,746 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:59:16,601 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:59:16,602 | INFO | Intent: CHAT
+2026-07-02 16:59:16,602 | INFO | User: bhooswarga
+2026-07-02 16:59:17,199 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:59:42,328 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 16:59:42,329 | INFO | Intent: MEMORY
+2026-07-02 16:59:42,329 | INFO | User: bruh you're not remembering my past convos
+2026-07-02 16:59:42,893 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:10,357 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:10,359 | INFO | Intent: CHAT
+2026-07-02 17:10:10,359 | INFO | User: whats my name
+2026-07-02 17:10:10,663 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:23,506 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:23,508 | INFO | Intent: CHAT
+2026-07-02 17:10:23,508 | INFO | User: my name not yours
+2026-07-02 17:10:24,012 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:31,482 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:31,483 | INFO | Intent: CHAT
+2026-07-02 17:10:31,483 | INFO | User: my name is navdeep
+2026-07-02 17:10:32,166 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:39,029 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:39,029 | INFO | Intent: CHAT
+2026-07-02 17:10:39,029 | INFO | User: whats my name
+2026-07-02 17:10:39,438 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:44,744 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:44,745 | INFO | Intent: CHAT
+2026-07-02 17:10:44,745 | INFO | User: whats your name
+2026-07-02 17:10:45,274 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:51,670 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:10:51,671 | INFO | Intent: CHAT
+2026-07-02 17:10:51,671 | INFO | User: you're mike
+2026-07-02 17:10:52,134 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:04,631 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:04,632 | INFO | Intent: MEMORY
+2026-07-02 17:11:04,632 | INFO | User: whats my name again
+2026-07-02 17:11:04,934 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:08,518 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:08,519 | INFO | Intent: CHAT
+2026-07-02 17:11:08,519 | INFO | User: yours??
+2026-07-02 17:11:08,825 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:19,681 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:19,682 | INFO | Intent: CHAT
+2026-07-02 17:11:19,682 | INFO | User: longest river in the world??
+2026-07-02 17:11:19,987 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:54,356 | INFO | Initializing Provider Manager...
+2026-07-02 17:11:54,356 | INFO | Initializing Gemini Provider...
+2026-07-02 17:11:54,397 | INFO | Initializing Groq Provider...
+2026-07-02 17:11:54,407 | INFO | Initializing OpenRouter Provider...
+2026-07-02 17:11:54,417 | INFO | Searching for available providers...
+2026-07-02 17:11:54,417 | INFO | Checking Gemini...
+2026-07-02 17:11:54,417 | INFO | [Gemini Complete]
+2026-07-02 17:11:54,417 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 17:11:55,693 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 17:11:55,694 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 17:11:55,695 | INFO | Checking Groq...
+2026-07-02 17:11:55,986 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:11:55,999 | INFO | Using Groq
+2026-07-02 17:11:56,098 | INFO | file_cache is only supported with oauth2client<4.0.0
+2026-07-02 17:11:56,247 | INFO | Initializing Runtime...
+2026-07-02 17:11:56,247 | INFO | Initializing Conversation...
+2026-07-02 17:11:56,247 | INFO | Initializing Executor...
+2026-07-02 17:13:03,391 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:13:03,394 | INFO | Intent: CHAT
+2026-07-02 17:13:03,394 | INFO | User: heyy
+2026-07-02 17:13:03,602 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:13:09,151 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:13:09,152 | INFO | Intent: CHAT
+2026-07-02 17:13:09,152 | INFO | User: whats your name
+2026-07-02 17:13:09,456 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:29:01,981 | INFO | Initializing Provider Manager...
+2026-07-02 17:29:01,982 | INFO | Initializing Gemini Provider...
+2026-07-02 17:29:02,018 | INFO | Initializing Groq Provider...
+2026-07-02 17:29:02,026 | INFO | Initializing OpenRouter Provider...
+2026-07-02 17:29:02,035 | INFO | Searching for available providers...
+2026-07-02 17:29:02,035 | INFO | Checking Gemini...
+2026-07-02 17:29:02,035 | INFO | [Gemini Complete]
+2026-07-02 17:29:02,035 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 17:29:02,863 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 17:29:02,864 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 17:29:02,864 | INFO | Checking Groq...
+2026-07-02 17:29:03,162 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 17:29:03,179 | INFO | Using Groq
+2026-07-02 17:29:03,352 | INFO | Analyzing image: /var/folders/9s/s9y7fsx93gv9hgmg4421c6l40000gn/T/tmpkc4w0gam.png
+2026-07-02 18:35:19,430 | INFO | Initializing Ollama Provider...
+2026-07-02 18:35:20,784 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-02 18:38:04,479 | INFO | Initializing Ollama Provider...
+2026-07-02 18:39:30,767 | INFO | Initializing Ollama Provider...
+2026-07-02 18:39:46,542 | INFO | HTTP Request: POST http://127.0.0.1:11434/api/generate "HTTP/1.1 200 OK"
+2026-07-02 18:41:21,746 | INFO | Initializing Ollama Provider...
+2026-07-02 18:45:05,345 | INFO | Initializing Ollama Provider...
+2026-07-02 18:45:44,683 | INFO | HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-07-02 23:19:53,433 | INFO | Initializing Provider Manager...
+2026-07-02 23:19:53,433 | INFO | Initializing Gemini Provider...
+2026-07-02 23:19:53,469 | INFO | Initializing Groq Provider...
+2026-07-02 23:19:53,477 | INFO | Initializing OpenRouter Provider...
+2026-07-02 23:19:53,485 | INFO | Searching for available providers...
+2026-07-02 23:19:53,485 | INFO | Checking Gemini...
+2026-07-02 23:19:53,485 | INFO | [Gemini Complete]
+2026-07-02 23:19:53,485 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 23:19:54,741 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 23:19:54,742 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 23:19:54,742 | INFO | Checking Groq...
+2026-07-02 23:19:55,063 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 23:19:55,074 | INFO | Using Groq
+2026-07-02 23:25:33,936 | INFO | Initializing Provider Manager...
+2026-07-02 23:25:33,936 | INFO | Initializing Gemini Provider...
+2026-07-02 23:25:33,971 | INFO | Initializing Groq Provider...
+2026-07-02 23:25:33,979 | INFO | Initializing OpenRouter Provider...
+2026-07-02 23:25:33,987 | INFO | Searching for available providers...
+2026-07-02 23:25:33,987 | INFO | Checking Gemini...
+2026-07-02 23:25:33,987 | INFO | [Gemini Complete]
+2026-07-02 23:25:33,987 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 23:25:34,712 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 23:25:34,713 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 23:25:34,713 | INFO | Checking Groq...
+2026-07-02 23:25:35,008 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 23:25:35,019 | INFO | Using Groq
+2026-07-02 23:28:28,733 | INFO | Initializing Provider Manager...
+2026-07-02 23:28:28,733 | INFO | Initializing Gemini Provider...
+2026-07-02 23:28:28,768 | INFO | Initializing Groq Provider...
+2026-07-02 23:28:28,776 | INFO | Initializing OpenRouter Provider...
+2026-07-02 23:28:28,785 | INFO | Searching for available providers...
+2026-07-02 23:28:28,785 | INFO | Checking Gemini...
+2026-07-02 23:28:28,785 | INFO | [Gemini Complete]
+2026-07-02 23:28:28,785 | INFO | AFC is enabled with max remote calls: 10.
+2026-07-02 23:28:29,409 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-02 23:28:29,411 | WARNING | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-02 23:28:29,411 | INFO | Checking Groq...
+2026-07-02 23:28:29,591 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-02 23:28:29,604 | INFO | Using Groq
+2026-07-02 23:28:29,856 | INFO | Initializing Runtime...
+2026-07-02 23:28:29,856 | INFO | Initializing Conversation...
+2026-07-02 23:28:29,857 | INFO | Initializing Executor...
+2026-07-02 23:28:29,857 | INFO | Discovering tools...
+2026-07-02 23:28:29,857 | INFO | Registering tool: browser
+2026-07-03 11:15:36,166 | INFO | Initializing Gemini Provider...
+2026-07-03 11:15:36,182 | INFO | Initializing Groq Provider...
+2026-07-03 11:15:36,190 | INFO | Initializing Ollama Provider...
+2026-07-03 11:15:36,198 | INFO | Initializing OpenRouter Provider...
+2026-07-03 11:16:12,286 | INFO | Initializing Provider Manager...
+2026-07-03 11:16:12,287 | INFO | Initializing Gemini Provider...
+2026-07-03 11:16:12,303 | INFO | Initializing Groq Provider...
+2026-07-03 11:16:12,312 | INFO | Initializing Ollama Provider...
+2026-07-03 11:16:12,320 | INFO | Initializing OpenRouter Provider...
+2026-07-03 11:16:12,328 | INFO | Checking Gemini...
+2026-07-03 11:16:12,328 | INFO | [Gemini] Complete
+2026-07-03 11:16:13,574 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 11:16:13,575 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:16:13,582 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:16:13,582 | WARNING | Gemini unavailable.
+2026-07-03 11:16:13,582 | INFO | Checking Groq...
+2026-07-03 11:16:13,582 | INFO | [Groq] Complete
+2026-07-03 11:16:13,882 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:16:13,892 | INFO | Groq available.
+2026-07-03 11:16:13,892 | INFO | Checking Ollama...
+2026-07-03 11:16:13,914 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 11:16:13,914 | INFO | Ollama available.
+2026-07-03 11:16:13,914 | INFO | Checking OpenRouter...
+2026-07-03 11:16:13,914 | INFO | [OpenRouter] Complete
+2026-07-03 11:16:15,021 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:16:16,499 | INFO | OpenRouter available.
+2026-07-03 11:16:16,501 | INFO | Provider ranking
+2026-07-03 11:16:16,501 | INFO | Groq         51
+2026-07-03 11:16:16,501 | INFO | OpenRouter   48
+2026-07-03 11:16:16,501 | INFO | Ollama       39
+2026-07-03 11:16:16,501 | INFO | Selected Provider: Groq
+2026-07-03 11:16:16,501 | INFO | Selected Provider -> Groq
+2026-07-03 11:16:16,501 | INFO | Provider ranking
+2026-07-03 11:16:16,501 | INFO | OpenRouter   44
+2026-07-03 11:16:16,501 | INFO | Ollama       35
+2026-07-03 11:16:16,501 | INFO | Selected Provider: OpenRouter
+2026-07-03 11:16:16,501 | INFO | Selected Provider -> OpenRouter
+2026-07-03 11:16:16,501 | INFO | Provider ranking
+2026-07-03 11:16:16,501 | INFO | OpenRouter   54
+2026-07-03 11:16:16,501 | INFO | Groq         45
+2026-07-03 11:16:16,501 | INFO | Ollama       43
+2026-07-03 11:16:16,501 | INFO | Selected Provider: OpenRouter
+2026-07-03 11:16:16,501 | INFO | Selected Provider -> OpenRouter
+2026-07-03 11:16:16,501 | INFO | Provider ranking
+2026-07-03 11:16:16,501 | INFO | OpenRouter   64
+2026-07-03 11:16:16,501 | INFO | Groq         58
+2026-07-03 11:16:16,501 | INFO | Ollama       51
+2026-07-03 11:16:16,501 | INFO | Selected Provider: OpenRouter
+2026-07-03 11:16:16,501 | INFO | Selected Provider -> OpenRouter
+2026-07-03 11:17:04,050 | INFO | Initializing Provider Manager...
+2026-07-03 11:17:04,051 | INFO | Initializing Gemini Provider...
+2026-07-03 11:17:04,067 | INFO | Initializing Groq Provider...
+2026-07-03 11:17:04,075 | INFO | Initializing Ollama Provider...
+2026-07-03 11:17:04,083 | INFO | Initializing OpenRouter Provider...
+2026-07-03 11:17:04,092 | INFO | Checking Gemini...
+2026-07-03 11:17:04,092 | INFO | [Gemini] Complete
+2026-07-03 11:17:04,520 | INFO | HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 429 Too Many Requests"
+2026-07-03 11:17:04,521 | ERROR | 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+Traceback (most recent call last):
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/base_llm_provider.py", line 79, in _execute
+    response = fn(
+        *args,
+        **kwargs
+    )
+  File "/Users/navdeepcn/Developer/NavAI/brain/providers/gemini_provider.py", line 100, in _generate
+    response = self.client.models.generate_content(
+    
+    ...<5 lines>...
+    
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 6503, in generate_content
+    return self._generate_content(
+           ~~~~~~~~~~~~~~~~~~~~~~^
+        model=model, contents=contents, config=parsed_config
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/models.py", line 4954, in _generate_content
+    response = self._api_client.request(
+        'post', path, request_dict, http_options
+    )
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1618, in request
+    response = self._request(http_request, http_options, stream=False)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1411, in _request
+    return self._retry(self._request_once, http_request, stream)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 470, in __call__
+    do = self.iter(retry_state=retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 371, in iter
+    result = action(retry_state)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 413, in exc_check
+    raise retry_exc.reraise()
+          ~~~~~~~~~~~~~~~~~^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 184, in reraise
+    raise self.last_attempt.result()
+          ~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 449, in result
+    return self.__get_result()
+           ~~~~~~~~~~~~~~~~~^^
+  File "/Library/Frameworks/Python.framework/Versions/3.13/lib/python3.13/concurrent/futures/_base.py", line 401, in __get_result
+    raise self._exception
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/tenacity/__init__.py", line 473, in __call__
+    result = fn(*args, **kwargs)
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/_api_client.py", line 1388, in _request_once
+    errors.APIError.raise_for_response(response)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 155, in raise_for_response
+    cls.raise_error(response.status_code, response_json, response)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/navdeepcn/Developer/NavAI/venv/lib/python3.13/site-packages/google/genai/errors.py", line 184, in raise_error
+    raise ClientError(status_code, response_json, response)
+google.genai.errors.ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:17:04,529 | WARNING | Gemini health check failed: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'Your prepayment credits are depleted. Please go to AI Studio at https://ai.studio/projects to manage your project and billing. Learn more at https://ai.google.dev/gemini-api/docs/billing#prepay. ', 'status': 'RESOURCE_EXHAUSTED'}}
+2026-07-03 11:17:04,529 | WARNING | Gemini unavailable.
+2026-07-03 11:17:04,529 | INFO | Checking Groq...
+2026-07-03 11:17:04,529 | INFO | [Groq] Complete
+2026-07-03 11:17:04,693 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:17:04,704 | INFO | Groq available.
+2026-07-03 11:17:04,704 | INFO | Checking Ollama...
+2026-07-03 11:17:04,708 | INFO | HTTP Request: GET http://127.0.0.1:11434/api/tags "HTTP/1.1 200 OK"
+2026-07-03 11:17:04,708 | INFO | Ollama available.
+2026-07-03 11:17:04,708 | INFO | Checking OpenRouter...
+2026-07-03 11:17:04,708 | INFO | [OpenRouter] Complete
+2026-07-03 11:17:05,199 | INFO | HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-03 11:17:06,933 | INFO | OpenRouter available.
+2026-07-03 11:17:06,934 | INFO | Provider ranking
+2026-07-03 11:17:06,934 | INFO | Groq         51
+2026-07-03 11:17:06,934 | INFO | OpenRouter   48
+2026-07-03 11:17:06,934 | INFO | Ollama       39
+2026-07-03 11:17:06,934 | INFO | Selected Provider: Groq
+2026-07-03 11:17:06,934 | INFO | Selected Provider -> Groq
+2026-07-03 11:17:06,934 | INFO | [Groq] Chat
+2026-07-03 11:17:07,148 | INFO | HTTP Request: POST https://api.groq.com/openai/v1/chat/completions "HTTP/1.1 200 OK"

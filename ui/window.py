@@ -5,7 +5,6 @@ from ui.themes import theme
 from ui.components.header import Header
 from ui.components.chat_box import ChatBox
 from ui.components.input_box import InputBox
-from ui.components.status_bar import StatusBar
 
 from core.runtime import Runtime
 
@@ -18,52 +17,90 @@ class MikeWindow(ctk.CTk):
 
         self.title("Mike")
 
-        self.geometry("900x650")
+        self.geometry("1180x760")
 
-        self.minsize(700, 500)
+        self.minsize(1000, 700)
+
+        self.configure(
+            fg_color="#090B10"
+        )
 
         self.runtime = Runtime()
 
+        # ---------------------------------
+        # Header
+        # ---------------------------------
+
         self.header = Header(self)
-        self.header.pack(fill="x")
+
+        self.header.pack(
+            fill="x"
+        )
+
+        # ---------------------------------
+        # Chat
+        # ---------------------------------
 
         self.chat = ChatBox(self)
-        self.chat.pack(fill="both", expand=True)
+
+        self.chat.pack(
+            fill="both",
+            expand=True
+        )
+
+        # ---------------------------------
+        # Input
+        # ---------------------------------
 
         self.input = InputBox(
             self,
             self.send_message
         )
 
-        self.input.pack(fill="x")
+        self.input.pack(
+            fill="x"
+        )
 
-        self.status = StatusBar(self)
-        self.status.pack(fill="x")
+    # -------------------------------------
 
-    def send_message(self, message):
+    def send_message(
+        self,
+        message
+    ):
 
-        self.chat.add_message("👤 You", message)
+        self.chat.add_message(
+            "You",
+            message
+        )
 
-        self.status.set_status("Mike is thinking...")
+        self.header.set_activity(
+            "Thinking..."
+        )
 
         self.update()
 
         try:
 
-            response = self.runtime.process(message)
+            response = self.runtime.process(
+                message
+            )
 
             self.chat.add_message(
-                "🤖 Mike",
+                "Mike",
                 response.text
             )
 
-            self.status.set_status("Ready")
+            self.header.set_activity(
+                "Ready"
+            )
 
         except Exception as e:
 
             self.chat.add_message(
-                "❌ Error",
+                "System",
                 str(e)
             )
 
-            self.status.set_status("Error")
+            self.header.set_activity(
+                "Error"
+            )

@@ -1,34 +1,68 @@
 import customtkinter as ctk
 
+from ui.components.message import Message
 
-class ChatBox(ctk.CTkTextbox):
+from ui.themes.colors import *
 
-    def __init__(self, master):
 
-        super().__init__(master)
+class ChatBox(ctk.CTkScrollableFrame):
 
-        self.insert(
-            "end",
-            "🤖 Mike\n\nHello Navdeep!\n\n"
+    def __init__(
+
+        self,
+
+        master
+
+    ):
+
+        super().__init__(
+
+            master,
+
+            fg_color=BACKGROUND,
+
+            corner_radius=0
+
         )
 
-        self.configure(
-            state="disabled"
+        self.messages=[]
+
+        self.add_message(
+
+            "Mike",
+
+            "Hello Navdeep."
+
         )
 
     def add_message(
+
         self,
+
         sender,
-        message
+
+        text
+
     ):
 
-        self.configure(state="normal")
+        msg=Message(
 
-        self.insert(
-            "end",
-            f"{sender}: {message}\n\n"
+            self,
+
+            sender,
+
+            text,
+
+            user=sender=="You"
+
         )
 
-        self.see("end")
+        self.messages.append(msg)
 
-        self.configure(state="disabled")
+    def clear(self):
+
+        for widget in self.winfo_children():
+
+            widget.destroy()
+
+        self.messages.clear()

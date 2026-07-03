@@ -1,31 +1,185 @@
 from logs.logger import logger
 
+from brain.intent import IntentEngine
+from brain.agent import Agent
+
 from core.conversation import Conversation
-from tools.registry import execute
+
+from brain.models import ProviderResponse
 
 
 class Runtime:
 
+    # ---------------------------------------------------------
+
     def __init__(self):
 
-        logger.info("Initializing Runtime...")
+        logger.info(
+            "Initializing Runtime..."
+        )
+
+        self.intent = IntentEngine()
 
         self.conversation = Conversation()
 
-    def process(self, message: str):
+        self.agent = Agent()
 
-        logger.info(f"Received: {message}")
+    # ---------------------------------------------------------
 
-        try:
+    def process(
+        self,
+        message: str
+    ) -> ProviderResponse:
 
-            response = self.conversation.send(message)
+        intent = self.intent.detect(
+            message
+        )
 
-            # Temporary debug output
+        logger.info(
+            f"Detected Intent: {intent}"
+        )
 
-            return response
+        handlers = {
 
-        except Exception as e:
+            "CHAT": self._chat,
 
-            logger.exception(e)
+            "TOOL": self._tool,
 
-            raise
+            "PLAN": self._plan,
+
+            "MEMORY": self._memory,
+
+            "VISION": self._vision,
+
+        }
+
+        handler = handlers.get(
+
+            intent,
+
+            self._chat
+
+        )
+
+        return handler(
+            message
+        )
+
+    # ---------------------------------------------------------
+    # Chat
+    # ---------------------------------------------------------
+
+    def _chat(
+        self,
+        message: str
+    ):
+
+        return self.conversation.send(
+            message
+        )
+
+    # ---------------------------------------------------------
+    # Memory
+    # ---------------------------------------------------------
+
+    def _memory(
+        self,
+        message: str
+    ):
+
+        return self.conversation.send(
+            message
+        )
+
+    # ---------------------------------------------------------
+    # Vision
+    # ---------------------------------------------------------
+
+    def _vision(
+        self,
+        message: str
+    ):
+
+        return self.conversation.send(
+            message
+        )
+
+    # ---------------------------------------------------------
+    # Planning
+    # ---------------------------------------------------------
+
+    def _plan(
+        self,
+        message: str
+    ):
+
+        tasks = self.agent.planner.plan(
+            message
+        )
+
+        text = "\n".join(
+
+            f"• {task.description}"
+
+            for task in tasks
+
+        )
+
+        return ProviderResponse(
+
+            text=text,
+
+            provider="Planner",
+
+            model="planner",
+
+            raw=tasks
+
+        )
+
+    # ---------------------------------------------------------
+    # Tool Execution
+    # ---------------------------------------------------------
+
+    def _tool(
+        self,
+        message: str
+    ):
+
+        results = self.agent.run(
+            message
+        )
+
+        lines = []
+
+        for item in results:
+
+            status = "SUCCESS" if item["success"] else "FAILED"
+
+            lines.append(
+
+                f"[{status}] {item['task']}"
+
+            )
+
+            if item["result"]:
+
+                lines.append(
+
+                    item["result"]
+
+                )
+
+            lines.append("")
+
+        return ProviderResponse(
+
+            text="\n".join(lines).strip(),
+
+            provider="Agent",
+
+            model="executor",
+
+            raw=results
+
+        )

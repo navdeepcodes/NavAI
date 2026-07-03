@@ -1,34 +1,49 @@
-from tools.browser import BrowserTool
+from logs.logger import logger
+
+from tools.tool_registry import ToolRegistry
 
 
 class ToolExecutor:
 
     def __init__(self):
 
-        self.browser = BrowserTool()
+        self.registry = ToolRegistry()
+
+    # -----------------------------------------
 
     def execute(
         self,
-        function_name,
-        arguments
+        tool_name: str,
+        **kwargs
     ):
 
-        if function_name == "open_browser":
+        logger.info(
 
-            return self.browser.open_browser()
+            f"Executing tool: {tool_name}"
 
-        elif function_name == "open_url":
+        )
 
-            return self.browser.open_url(
-                arguments["url"]
-            )
+        return self.registry.execute(
 
-        elif function_name == "search":
+            tool_name,
 
-            return self.browser.search(
-                arguments["query"]
-            )
+            **kwargs
 
-        raise ValueError(
-            f"Unknown function {function_name}"
+        )
+
+    # -----------------------------------------
+
+    def available_tools(self):
+
+        return self.registry.available()
+
+    # -----------------------------------------
+
+    def has_tool(
+        self,
+        tool_name: str
+    ):
+
+        return self.registry.has(
+            tool_name
         )

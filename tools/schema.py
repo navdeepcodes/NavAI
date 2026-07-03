@@ -1,38 +1,84 @@
 from google.genai import types
 
+
 BROWSER_TOOL = types.Tool(
+
     function_declarations=[
+
         types.FunctionDeclaration(
+
             name="open_browser",
-            description="Open the default browser."
+
+            description="Open the user's default web browser."
+
         ),
+
         types.FunctionDeclaration(
+
             name="open_url",
-            description="Open a URL in the browser.",
+
+            description="Open a website URL in the browser.",
+
             parameters_json_schema={
+
                 "type": "object",
+
                 "properties": {
+
                     "url": {
+
                         "type": "string"
+
                     }
+
                 },
-                "required": ["url"]
+
+                "required": [
+
+                    "url"
+
+                ]
+
             }
+
         ),
+
         types.FunctionDeclaration(
+
             name="search",
-            description="Search Google.",
+
+            description="Search the web using Google.",
+
             parameters_json_schema={
+
                 "type": "object",
+
                 "properties": {
+
                     "query": {
+
                         "type": "string"
+
                     }
+
                 },
-                "required": ["query"]
+
+                "required": [
+
+                    "query"
+
+                ]
+
             }
+
         )
+
     ]
+
 )
 
-TOOLS = [BROWSER_TOOL]
+TOOLS = [
+
+    BROWSER_TOOL
+
+]

@@ -1,56 +1,137 @@
-from google import genai
-from google.genai import types
-
-from config.settings import GEMINI_API_KEY
-from brain.prompts import SYSTEM_PROMPT
-from tools.registry import TOOLS
 from logs.logger import logger
+
+from brain.provider import get_provider
+from brain.prompts import SYSTEM_PROMPT
+
+from memory.memory_manager import MemoryManager
+
+from core.context_builder import ContextBuilder
+from core.state_manager import StateManager
+from core.context_updater import ContextUpdater
 
 
 class Conversation:
 
     def __init__(self):
 
-        logger.info("Initializing Conversation...")
-
-        self.client = genai.Client(
-            api_key=GEMINI_API_KEY
+        logger.info(
+            "Initializing Conversation..."
         )
 
-        self.chat = self.client.chats.create(
-            model="gemini-2.5-flash",
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                tools=TOOLS,
-            )
+        self.provider = get_provider()
+
+        self.memory = MemoryManager()
+
+        self.context = ContextBuilder()
+
+        self.state = StateManager()
+
+        self.updater = ContextUpdater()
+
+    # -----------------------------------------
+    # Main Conversation
+    # -----------------------------------------
+
+    def send(
+        self,
+        message: str
+    ):
+
+        logger.info(
+            f"User: {message}"
         )
 
-    def send(self, message: str):
+        # -----------------------------------------
+        # Save user message
+        # -----------------------------------------
 
-        logger.info(f"User: {message}")
+        self.memory.remember(
+            "user",
+            message
+        )
 
-        try:
+        # -----------------------------------------
+        # Update working memory
+        # -----------------------------------------
 
-            response = self.chat.send_message(message)
+        self.context.working.update_many(
 
-            return response
+            last_user_message=message
 
-        except Exception as e:
+        )
 
-            logger.exception(e)
-            raise
+        # -----------------------------------------
+        # Update conversation state
+        # -----------------------------------------
 
-    def continue_chat(self, message: str):
+        self.updater.update(
 
-        logger.info("Continuing conversation...")
+            self.state,
 
-        try:
+            message
 
-            response = self.chat.send_message(message)
+        )
 
-            return response
+        # -----------------------------------------
+        # Collect conversation history
+        # -----------------------------------------
 
-        except Exception as e:
+        history = self.memory.conversation()
 
-            logger.exception(e)
-            raise
+        # -----------------------------------------
+        # Retrieve relevant long-term memory
+        # -----------------------------------------
+
+        long_term = self.memory.relevant_memory(
+            message
+        )
+
+        # -----------------------------------------
+        # Build AI context
+        # -----------------------------------------
+
+        messages = self.context.build(
+
+            SYSTEM_PROMPT,
+
+            long_term,
+
+            history
+
+        )
+
+        # -----------------------------------------
+        # Ask provider
+        # -----------------------------------------
+
+        response = self.provider.chat(
+            messages
+        )
+
+        # -----------------------------------------
+        # Save assistant response
+        # -----------------------------------------
+
+        self.memory.remember(
+
+            "assistant",
+
+            response.text
+
+        )
+
+        self.context.working.update_many(
+
+            last_assistant_message=response.text,
+
+            current_provider=self.provider.name
+
+        )
+
+        logger.info(
+
+            f"{self.provider.name}: {response.text}"
+
+        )
+
+        return response

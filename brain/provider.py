@@ -1,12 +1,11 @@
-from brain.conversation import Conversation
+from brain.providers.provider_manager import (
+    ProviderManager
+)
 
 
-class Brain:
+_manager = ProviderManager()
 
-    def __init__(self):
 
-        self.conversation = Conversation()
+def get_provider():
 
-    def ask(self, message):
-
-        return self.conversation.send(message)
+    return _manager.get()

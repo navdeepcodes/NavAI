@@ -1,82 +1,200 @@
-import json
+from pathlib import Path
+
+from PIL import Image
 
 from google import genai
+from google.genai import types
 
-from config.settings import GEMINI_API_KEY
-from brain.prompts import SYSTEM_PROMPT
+from brain.providers.base_llm_provider import BaseLLMProvider
+from brain.providers.capabilities import ProviderCapability
+from brain.models import ProviderResponse
+
+from config.settings import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+)
+
+from tools.schema import TOOLS
+
 from logs.logger import logger
 
 
-class GeminiProvider:
+class GeminiProvider(BaseLLMProvider):
+
+    @property
+    def name(self):
+
+        return "Gemini"
+
+    # ---------------------------------------------------------
+
+    @property
+    def capability(self):
+
+        return ProviderCapability(
+
+            name="Gemini",
+
+            chat=True,
+
+            vision=True,
+
+            tools=True,
+
+            streaming=True,
+
+            reasoning_score=8,
+
+            coding_score=8,
+
+            speed_score=7,
+
+            privacy_score=3,
+
+            local=False,
+
+            context_window=1_048_576,
+
+            cost_score=4
+
+        )
+
+    # ---------------------------------------------------------
 
     def __init__(self):
 
-        logger.info("Initializing Gemini Provider...")
+        logger.info(
+            "Initializing Gemini Provider..."
+        )
 
         self.client = genai.Client(
             api_key=GEMINI_API_KEY
         )
 
-        self.model = "gemini-2.5-flash"
+    # ---------------------------------------------------------
 
-    def chat(self, user_message):
+    def _config(self, **kwargs):
 
-        logger.info("Sending request to Gemini...")
+        return types.GenerateContentConfig(
 
-        response = self.client.models.generate_content(
+            tools=TOOLS,
 
-            model=self.model,
+            temperature=kwargs.get("temperature"),
 
-            contents=user_message,
-
-            config={
-                "system_instruction": SYSTEM_PROMPT,
-                "temperature": 0.2,
-                "max_output_tokens": 500,
-                "response_mime_type": "application/json"
-            }
+            max_output_tokens=kwargs.get("max_tokens")
 
         )
 
-        text = response.text.strip()
+    # ---------------------------------------------------------
 
-        logger.info("Gemini Response:")
-        logger.info(text)
+    def _generate(
 
-        return self.parse_json(text)
+        self,
 
-    def parse_json(self, text):
+        prompt: str,
 
-        """
-        Safely parse Gemini's JSON response.
-        """
+        **kwargs
 
-        try:
+    ) -> ProviderResponse:
 
-            return json.loads(text)
+        response = self.client.models.generate_content(
 
-        except json.JSONDecodeError:
+            model=GEMINI_MODEL,
 
-            logger.warning("Gemini returned invalid JSON.")
+            contents=prompt,
 
-            start = text.find("{")
-            end = text.rfind("}")
+            config=self._config(**kwargs)
 
-            if start != -1 and end != -1:
+        )
 
-                try:
+        return ProviderResponse(
 
-                    return json.loads(
-                        text[start:end + 1]
-                    )
+            text=response.text,
 
-                except Exception:
+            provider=self.name,
 
-                    pass
+            raw=response
 
-            logger.exception("Failed to recover JSON.")
+        )
 
-            return {
-                "type": "chat",
-                "response": "Sorry, I couldn't understand my own response."
-            }
+    # ---------------------------------------------------------
+
+    def _generate_vision(
+
+        self,
+
+        prompt: str,
+
+        image,
+
+        **kwargs
+
+    ) -> ProviderResponse:
+
+        image = Path(image)
+
+        if not image.exists():
+
+            raise FileNotFoundError(image)
+
+        img = Image.open(image)
+
+        response = self.client.models.generate_content(
+
+            model=GEMINI_MODEL,
+
+            contents=[
+
+                prompt,
+
+                img
+
+            ],
+
+            config=self._config(**kwargs)
+
+        )
+
+        return ProviderResponse(
+
+            text=response.text,
+
+            provider=self.name,
+
+            raw=response
+
+        )
+
+    # ---------------------------------------------------------
+
+    def _generate_stream(
+
+        self,
+
+        prompt: str,
+
+        **kwargs
+
+    ):
+
+        stream = self.client.models.generate_content_stream(
+
+            model=GEMINI_MODEL,
+
+            contents=prompt,
+
+            config=self._config(**kwargs)
+
+        )
+
+        for chunk in stream:
+
+            if chunk.text:
+
+                yield chunk.text
+
+    # ---------------------------------------------------------
+
+    def supports_tools(self):
+
+        return True

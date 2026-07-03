@@ -1,53 +1,130 @@
 import subprocess
 import urllib.parse
 
+from tools.base_tool import BaseTool
+
 from config.settings import DEFAULT_BROWSER
+
 from logs.logger import logger
 
 
-def open_browser() -> str:
-    """
-    Opens the user's default web browser.
-    """
+class BrowserTool(BaseTool):
 
-    logger.info(f"Opening {DEFAULT_BROWSER}")
+    @property
+    def name(self):
 
-    subprocess.run(
-        ["open", "-a", DEFAULT_BROWSER],
-        check=True
-    )
+        return "browser"
 
-    return "Browser opened successfully."
+    # -----------------------------------------
 
+    def execute(
+        self,
+        action: str,
+        **kwargs
+    ):
 
-def open_url(url: str) -> str:
-    """
-    Opens the given URL in the user's browser.
+        if action == "open_browser":
 
-    Args:
-        url: Website URL.
-    """
+            return self.open_browser()
 
-    logger.info(f"Opening {url}")
+        elif action == "open_url":
 
-    subprocess.run(
-        ["open", "-a", DEFAULT_BROWSER, url],
-        check=True
-    )
+            return self.open_url(
 
-    return f"Opened {url}"
+                kwargs["url"]
 
+            )
 
-def search(query: str) -> str:
-    """
-    Search Google.
+        elif action == "search":
 
-    Args:
-        query: Search query.
-    """
+            return self.search(
 
-    encoded = urllib.parse.quote(query)
+                kwargs["query"]
 
-    return open_url(
-        f"https://www.google.com/search?q={encoded}"
-    )
+            )
+
+        raise ValueError(
+
+            f"Unknown browser action: {action}"
+
+        )
+
+    # -----------------------------------------
+
+    def open_browser(self):
+
+        logger.info(
+
+            f"Opening {DEFAULT_BROWSER}"
+
+        )
+
+        subprocess.run(
+
+            [
+
+                "open",
+
+                "-a",
+
+                DEFAULT_BROWSER
+
+            ],
+
+            check=True
+
+        )
+
+        return "Browser opened successfully."
+
+    # -----------------------------------------
+
+    def open_url(
+        self,
+        url: str
+    ):
+
+        logger.info(
+
+            f"Opening {url}"
+
+        )
+
+        subprocess.run(
+
+            [
+
+                "open",
+
+                "-a",
+
+                DEFAULT_BROWSER,
+
+                url
+
+            ],
+
+            check=True
+
+        )
+
+        return f"Opened {url}"
+
+    # -----------------------------------------
+
+    def search(
+        self,
+        query: str
+    ):
+
+        encoded = urllib.parse.quote(
+
+            query
+
+        )
+
+        return self.open_url(
+
+            f"https://www.google.com/search?q={encoded}"
+
+        )
