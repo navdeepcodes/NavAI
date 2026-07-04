@@ -5,212 +5,133 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
-    QSizePolicy,
 )
 
-from ui.theme import colors, fonts
-from ui.widgets.thinking_indicator import (
-    ThinkingIndicator,
-    ThinkingState,
-)
+from ui.theme import colors
+from ui.theme import spacing
+from ui.theme import typography
 
 
 class Header(QFrame):
     """
     Mike application header.
 
-    Layout
+    Displays only:
+    • Application name
+    • Runtime state
 
-    MIKE                    ◉ Ready                    ☰
+    Presentation only.
     """
 
-    # ---------------------------------------------------------
+    HEADER_HEIGHT = 56
 
-    def __init__(self):
+    # =====================================================
+
+    def __init__(self) -> None:
 
         super().__init__()
 
         self._build_ui()
 
-    # ---------------------------------------------------------
+        self._apply_theme()
 
-    def _build_ui(self):
+    # =====================================================
 
-        self.setFixedHeight(64)
+    def _build_ui(self) -> None:
 
-        self.setStyleSheet(
-            f"""
-            QFrame {{
-                background: {colors.BACKGROUND};
-                border: none;
-                border-bottom: 1px solid {colors.BORDER};
-            }}
-            """
-        )
+        self.setFixedHeight(self.HEADER_HEIGHT)
 
         layout = QHBoxLayout(self)
 
-        layout.setContentsMargins(28, 0, 28, 0)
+        layout.setContentsMargins(
+            28,
+            0,
+            28,
+            0,
+        )
 
-        layout.setSpacing(16)
+        layout.setSpacing(12)
 
         # -------------------------------------------------
-        # Title
+
+        self.title = QLabel("Mike")
+
+        self.title.setObjectName(
+            "title"
+        )
+
+        layout.addWidget(
+            self.title
+        )
+
+        layout.addStretch()
+
         # -------------------------------------------------
 
-        self.title = QLabel("MIKE")
+        self.state = QLabel("Ready")
 
-        self.title.setFont(fonts.TITLE)
+        self.state.setObjectName(
+            "state"
+        )
 
-        self.title.setStyleSheet(
+        self.state.setAlignment(
+            Qt.AlignRight | Qt.AlignVCenter
+        )
+
+        layout.addWidget(
+            self.state
+        )
+
+    # =====================================================
+
+    def _apply_theme(self) -> None:
+
+        self.setStyleSheet(
             f"""
-            color: {colors.TEXT};
-            letter-spacing: 2px;
-            """
-        )
-
-        layout.addWidget(self.title)
-
-        # -------------------------------------------------
-        # Spacer
-        # -------------------------------------------------
-
-        spacer = QLabel()
-
-        spacer.setSizePolicy(
-
-            QSizePolicy.Expanding,
-
-            QSizePolicy.Preferred,
-
-        )
-
-        layout.addWidget(spacer)
-
-        # -------------------------------------------------
-        # Status
-        # -------------------------------------------------
-
-        status_layout = QHBoxLayout()
-
-        status_layout.setSpacing(8)
-
-        self.indicator = ThinkingIndicator()
-
-        status_layout.addWidget(
-
-            self.indicator,
-
-            alignment=Qt.AlignVCenter,
-
-        )
-
-        self.status = QLabel("Ready")
-
-        self.status.setFont(fonts.STATUS)
-
-        self.status.setStyleSheet(
-            f"""
-            color: {colors.TEXT_SECONDARY};
-            """
-        )
-
-        status_layout.addWidget(
-
-            self.status,
-
-            alignment=Qt.AlignVCenter,
-
-        )
-
-        layout.addLayout(status_layout)
-
-        # -------------------------------------------------
-        # Menu
-        # -------------------------------------------------
-
-        self.menu = QPushButton("☰")
-
-        self.menu.setCursor(Qt.PointingHandCursor)
-
-        self.menu.setFixedSize(32, 32)
-
-        self.menu.setStyleSheet(
-            f"""
-            QPushButton {{
-                background: transparent;
-                border: none;
-                color: {colors.TEXT_SECONDARY};
-                font-size: 18px;
+            Header {{
+                background: {colors.WINDOW};
+                border-bottom: 1px solid {colors.BORDER};
             }}
 
-            QPushButton:hover {{
+            QLabel#title {{
                 color: {colors.TEXT};
+                font-size: {typography.TITLE}px;
+                font-weight: 700;
             }}
 
-            QPushButton:pressed {{
-                color: {colors.ACCENT};
+            QLabel#state {{
+                color: {colors.TEXT_MUTED};
+                font-size: {typography.SMALL}px;
+                font-weight: 500;
             }}
             """
         )
 
-        layout.addWidget(self.menu)
+    # =====================================================
+    # Public API
+    # =====================================================
 
-        self.set_state(
+    def ready(self) -> None:
 
-            ThinkingState.IDLE
+        self.state.setText("Ready")
 
-        )
+    # -----------------------------------------------------
 
-    # ---------------------------------------------------------
+    def thinking(self) -> None:
+
+        self.state.setText("Thinking...")
+
+    # -----------------------------------------------------
+
+    def error(self) -> None:
+
+        self.state.setText("Error")
+
+    # -----------------------------------------------------
 
     def set_state(
-
         self,
+        text: str,
+    ) -> None:
 
-        state: ThinkingState,
-
-    ):
-
-        labels = {
-
-            ThinkingState.IDLE: "Ready",
-
-            ThinkingState.THINKING: "Thinking",
-
-            ThinkingState.EXECUTING: "Executing",
-
-            ThinkingState.LOCAL: "Local",
-
-            ThinkingState.LISTENING: "Listening",
-
-        }
-
-        self.status.setText(
-
-            labels[state]
-
-        )
-
-        self.indicator.set_state(
-
-            state
-
-        )
-
-    # ---------------------------------------------------------
-
-    def set_title(
-
-        self,
-
-        title: str,
-
-    ):
-
-        self.title.setText(
-
-            title.upper()
-
-        )
+        self.state.setText(text)

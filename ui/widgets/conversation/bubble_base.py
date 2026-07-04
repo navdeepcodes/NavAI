@@ -1,293 +1,167 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QVBoxLayout,
 )
 
-from ui.widgets.conversation.chat_message import ChatMessage
+from ui.theme import colors
+from ui.theme import typography
 
 
 class BubbleBase(QFrame):
     """
-    Base class for every conversation bubble.
+    Base conversation bubble.
 
-    All message widgets inherit from this class.
+    Shared by every message type.
 
     Responsibilities
     ----------------
-    • Consistent layout
-    • Title
-    • Message text
-    • Timestamp
-    • OLED styling
-    • Left / Right alignment
+    • Bubble layout
+    • Typography
+    • Padding
+    • Maximum width
 
-    Future
-    ------
-    • Markdown
-    • Code blocks
-    • Copy button
-    • Streaming cursor
-    • Hover animations
+    Colour is supplied by subclasses.
     """
 
-    MAX_WIDTH = 720
+    MAX_WIDTH = 620
 
-    # -----------------------------------------------------
+    # =====================================================
 
     def __init__(
         self,
-        message: ChatMessage,
+        *,
+        title: str,
+        text: str,
     ) -> None:
 
         super().__init__()
 
-        self.message = message
+        self.setObjectName("bubble")
 
-        self._build_ui()
+        self.setMaximumWidth(self.MAX_WIDTH)
 
-    # -----------------------------------------------------
-
-    def _build_ui(self) -> None:
-
-        outer = QHBoxLayout(self)
-
-        outer.setContentsMargins(18, 8, 18, 8)
-
-        outer.setSpacing(0)
-
-        self.card = QFrame()
-
-        self.card.setMaximumWidth(
-            self.MAX_WIDTH
+        self.setSizePolicy(
+            QSizePolicy.Maximum,
+            QSizePolicy.Fixed,
         )
 
-        self.card.setObjectName(
-            "bubble"
+        self._build_ui(
+            title,
+            text,
         )
 
-        body = QVBoxLayout(
-            self.card
-        )
+        self._apply_theme()
 
-        body.setContentsMargins(
+    # =====================================================
+
+    def _build_ui(
+        self,
+        title: str,
+        text: str,
+    ) -> None:
+
+        layout = QVBoxLayout(self)
+
+        layout.setContentsMargins(
             18,
             14,
             18,
             14,
         )
 
-        body.setSpacing(8)
+        layout.setSpacing(8)
 
-        # ------------------------------------------
+        self.header = QLabel(title.upper())
 
-        self.title = QLabel()
-
-        title_font = QFont()
-
-        title_font.setBold(True)
-
-        title_font.setPointSize(10)
-
-        self.title.setFont(
-            title_font
+        self.header.setObjectName(
+            "header"
         )
 
-        body.addWidget(
-            self.title
+        self.content = QLabel(text)
+
+        self.content.setObjectName(
+            "content"
         )
 
-        # ------------------------------------------
-
-        self.content = QLabel(
-            self.message.text
-        )
-
-        self.content.setWordWrap(
-            True
-        )
+        self.content.setWordWrap(True)
 
         self.content.setTextInteractionFlags(
             Qt.TextSelectableByMouse
         )
 
-        font = QFont()
+        layout.addWidget(self.header)
 
-        font.setPointSize(11)
+        layout.addWidget(self.content)
 
-        self.content.setFont(
-            font
-        )
-
-        body.addWidget(
-            self.content
-        )
-
-        # ------------------------------------------
-
-        self.timestamp = QLabel(
-            self.message.timestamp.strftime(
-                "%H:%M"
-            )
-        )
-
-        self.timestamp.setAlignment(
-            Qt.AlignRight
-        )
-
-        self.timestamp.setObjectName(
-            "timestamp"
-        )
-
-        body.addWidget(
-            self.timestamp
-        )
-
-        self._apply_theme()
-
-        if self.message.is_user:
-
-            outer.addStretch()
-
-            outer.addWidget(
-                self.card
-            )
-
-        else:
-
-            outer.addWidget(
-                self.card
-            )
-
-            outer.addStretch()
-
-    # -----------------------------------------------------
+    # =====================================================
 
     def _apply_theme(self) -> None:
 
-        if self.message.is_user:
-
-            border = "#2563eb"
-
-            background = "#08131f"
-
-            title = "#60a5fa"
-
-        elif self.message.is_assistant:
-
-            border = "#262626"
-
-            background = "#101010"
-
-            title = "#10b981"
-
-        elif self.message.is_system:
-
-            border = "#404040"
-
-            background = "#0b0b0b"
-
-            title = "#9ca3af"
-
-        elif self.message.is_tool:
-
-            border = "#0ea5e9"
-
-            background = "#07131a"
-
-            title = "#38bdf8"
-
-        elif self.message.is_planner:
-
-            border = "#f59e0b"
-
-            background = "#161109"
-
-            title = "#fbbf24"
-
-        elif self.message.is_thinking:
-
-            border = "#525252"
-
-            background = "#0d0d0d"
-
-            title = "#a3a3a3"
-
-        else:
-
-            border = "#dc2626"
-
-            background = "#1a0d0d"
-
-            title = "#ef4444"
-
-        self.card.setStyleSheet(
+        self.setStyleSheet(
             f"""
-            QFrame#bubble{{
-                background:{background};
-                border:1px solid {border};
-                border-radius:16px;
+            QFrame#bubble {{
+
+                background: {colors.SURFACE};
+                border: none;
+                border-radius: 18px;
+
             }}
 
-            QLabel{{
-                background:transparent;
-                color:#f5f5f5;
+            QLabel {{
+
+                background: transparent;
+                border: none;
+
             }}
 
-            QLabel#timestamp{{
-                color:#666666;
-                font-size:10px;
+            QLabel#header {{
+
+                color: {colors.TEXT_MUTED};
+                font-size: {typography.TINY}px;
+                font-weight: 700;
+                letter-spacing: 1px;
+
+            }}
+
+            QLabel#content {{
+
+                color: {colors.TEXT};
+                font-size: {typography.BODY}px;
+                font-weight: 400;
+
             }}
             """
         )
 
-        self.title.setStyleSheet(
-            f"""
-            color:{title};
-            letter-spacing:0.4px;
-            """
-        )
-
-    # -----------------------------------------------------
-
-    def set_title(
-        self,
-        text: str,
-    ) -> None:
-
-        self.title.setText(
-            text
-        )
-
-    # -----------------------------------------------------
+    # =====================================================
+    # Public API
+    # =====================================================
 
     def set_text(
         self,
         text: str,
     ) -> None:
 
-        self.message.text = text
+        self.content.setText(text)
+
+    # -----------------------------------------------------
+
+    def append_text(
+        self,
+        text: str,
+    ) -> None:
 
         self.content.setText(
-            text
+            self.content.text() + text
         )
 
     # -----------------------------------------------------
 
-    def append(
-        self,
-        token: str,
-    ) -> None:
+    def text(self) -> str:
 
-        self.message.append(
-            token
-        )
-
-        self.content.setText(
-            self.message.text
-        )
+        return self.content.text()

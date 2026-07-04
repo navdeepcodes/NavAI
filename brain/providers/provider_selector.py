@@ -14,19 +14,20 @@ from brain.providers.provider_state import (
 
 class ProviderSelector:
     """
-    Selects which provider should execute the next request.
+    Intelligent provider selector.
 
     Responsibilities
     ----------------
-    • Sticky provider selection
-    • Automatic failover
+    • Sticky provider reuse
+    • Automatic provider scoring
     • Cooldown recovery
+    • Automatic failover
 
-    Never
-    -----
-    • Execute LLM requests
-    • Perform health checks
-    • Decide provider priorities
+    This class does NOT know which provider should be used
+    for a task. ProviderPolicy decides that.
+
+    This class simply chooses the healthiest provider from
+    the candidate list.
     """
 
     # =====================================================
@@ -37,9 +38,10 @@ class ProviderSelector:
     ) -> None:
 
         self._registry = registry
-
         self._current: str | None = None
 
+    # =====================================================
+    # Public API
     # =====================================================
 
     def select(
@@ -49,9 +51,10 @@ class ProviderSelector:
 
         self._recover_expired()
 
-        # -----------------------------------------
-        # Reuse current provider if possible
-        # -----------------------------------------
+        # -------------------------------------------------
+        # Prefer current provider if still healthy.
+        # Avoid unnecessary switching.
+        # -------------------------------------------------
 
         if self._current is not None:
 
@@ -61,7 +64,10 @@ class ProviderSelector:
                     self._current
                 )
 
-                if self._usable(state):
+                if (
+                    state.provider.name in candidates
+                    and self._usable(state)
+                ):
 
                     logger.debug(
                         "Reusing provider '%s'.",
@@ -74,17 +80,18 @@ class ProviderSelector:
 
                 self._current = None
 
-        # -----------------------------------------
-        # Select first usable provider
-        # -----------------------------------------
+        # -------------------------------------------------
+        # Score all available providers.
+        # -------------------------------------------------
+
+        best_state: ProviderState | None = None
+        best_score = float("-inf")
 
         for name in candidates:
 
             try:
 
-                state = self._registry.get(
-                    name
-                )
+                state = self._registry.get(name)
 
             except ValueError:
 
@@ -94,18 +101,33 @@ class ProviderSelector:
 
                 continue
 
-            self._current = state.provider.name
+            score = self._score(state)
 
-            logger.info(
-                "Switched provider -> %s",
+            logger.debug(
+                "%s score %.2f",
                 state.provider.name,
+                score,
             )
 
-            return state.provider
+            if score > best_score:
 
-        raise RuntimeError(
-            "No available providers."
+                best_score = score
+                best_state = state
+
+        if best_state is None:
+
+            raise RuntimeError(
+                "No available providers."
+            )
+
+        self._current = best_state.provider.name
+
+        logger.info(
+            "Selected provider -> %s",
+            best_state.provider.name,
         )
+
+        return best_state.provider
 
     # =====================================================
 
@@ -134,7 +156,6 @@ class ProviderSelector:
     def report_failure(
         self,
         provider_name: str,
-        cooldown_seconds: int = 300,
     ) -> None:
 
         try:
@@ -149,13 +170,19 @@ class ProviderSelector:
 
         state.mark_failure()
 
+        cooldown = min(
+            300 * (2 ** max(0, state.consecutive_failures - 1)),
+            3600,
+        )
+
         state.start_cooldown(
-            cooldown_seconds
+            cooldown
         )
 
         logger.warning(
-            "%s entered cooldown.",
+            "%s entered cooldown for %ss.",
             provider_name,
+            cooldown,
         )
 
         if self._current == provider_name:
@@ -203,9 +230,7 @@ class ProviderSelector:
         provider_name: str,
     ) -> None:
 
-        self._registry.get(
-            provider_name
-        )
+        self._registry.get(provider_name)
 
         self._current = provider_name
 
@@ -214,6 +239,8 @@ class ProviderSelector:
             provider_name,
         )
 
+    # =====================================================
+    # Internal
     # =====================================================
 
     def _recover_expired(
@@ -224,18 +251,10 @@ class ProviderSelector:
 
         for state in self._registry.states():
 
-            if (
-                state.status
-                != ProviderStatus.COOLDOWN
-            ):
-
+            if state.status != ProviderStatus.COOLDOWN:
                 continue
 
-            if (
-                state.cooldown_until
-                is None
-            ):
-
+            if state.cooldown_until is None:
                 continue
 
             if now >= state.cooldown_until:
@@ -255,16 +274,88 @@ class ProviderSelector:
     ) -> bool:
 
         if (
-            state.status
-            == ProviderStatus.COOLDOWN
+            state.status == ProviderStatus.COOLDOWN
+            and state.cooldown_until
+            and datetime.utcnow() >= state.cooldown_until
         ):
 
-            if (
-                state.cooldown_until
-                and datetime.utcnow()
-                >= state.cooldown_until
-            ):
-
-                state.recover()
+            state.recover()
 
         return state.available
+
+    # =====================================================
+
+    @staticmethod
+    def _score(
+        state: ProviderState,
+    ) -> float:
+        """
+        Calculate provider quality.
+
+        Higher score is better.
+
+        Factors
+        -------
+        • Reliability
+        • Historical latency
+        • Success rate
+        • Consecutive failures
+
+        Capability routing belongs in ProviderPolicy,
+        not here.
+        """
+
+        score = 100.0
+
+        # ---------------------------------------------
+        # Latency
+        # Lower latency is better.
+        # Maximum penalty: 30.
+        # ---------------------------------------------
+
+        if state.average_latency_ms > 0:
+
+            score -= min(
+                state.average_latency_ms / 100.0,
+                30.0,
+            )
+
+        # ---------------------------------------------
+        # Historical reliability.
+        # Reward providers with successful history.
+        # ---------------------------------------------
+
+        score += min(
+            state.success_count * 0.10,
+            10.0,
+        )
+
+        # ---------------------------------------------
+        # Success rate.
+        # Maximum reward: 25.
+        # ---------------------------------------------
+
+        score += (
+            state.success_rate * 25.0
+        )
+
+        # ---------------------------------------------
+        # Consecutive failures.
+        # Heavy penalty.
+        # ---------------------------------------------
+
+        score -= (
+            state.consecutive_failures * 20.0
+        )
+
+        # ---------------------------------------------
+        # Overall failures.
+        # Small penalty.
+        # ---------------------------------------------
+
+        score -= min(
+            state.failure_count * 0.50,
+            10.0,
+        )
+
+        return score

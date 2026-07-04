@@ -3,50 +3,40 @@ from __future__ import annotations
 import logging
 
 from brain.cognition.cognitive_loop import CognitiveLoop
-from brain.executor import Executor
-from brain.intelligence.enums import DecisionAction
+from brain.execution.executor import Executor
 from brain.intelligence.greeting_engine import GreetingEngine
-from brain.intelligence.response_engine import ResponseEngine
-from brain.planner import Planner
+from brain.planning.planner import Planner
 
 logger = logging.getLogger(__name__)
 
 
 class MikeRuntime:
     """
-    Mike Runtime
+    Mike Runtime.
 
-    The single entry point into Mike.
+    High-level orchestrator.
 
-    Responsibilities
-    ----------------
-    • Run the cognitive pipeline.
-    • Route cognitive decisions.
-    • Coordinate planners and tools.
-    • Never perform reasoning.
-    • Never contain business logic.
-    • Never decide what Mike should do.
-
-    The Runtime simply orchestrates Mike's subsystems.
+        User
+          ↓
+     ThinkingEngine
+          ↓
+      ExecutionPlan
+          ↓
+       Executor
+          ↓
+      Final Response
     """
 
-    # ---------------------------------------------------------
+    # =====================================================
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         self.cognitive = CognitiveLoop()
-
         self.greeter = GreetingEngine()
-
         self.planner = Planner()
-
         self.executor = Executor()
 
-        self.responder = ResponseEngine()
-
-    # ---------------------------------------------------------
-    # Startup
-    # ---------------------------------------------------------
+    # =====================================================
 
     def startup(self) -> str:
 
@@ -54,112 +44,177 @@ class MikeRuntime:
 
         return self.greeter.generate()
 
-    # ---------------------------------------------------------
-    # Conversation
-    # ---------------------------------------------------------
+    # =====================================================
 
     def process(
         self,
         message: str,
     ) -> str:
 
-        logger.info("Processing message: %s", message)
+        logger.info(
+            "Processing message: %s",
+            message,
+        )
 
         mind = self.cognitive.process(message)
 
-        self._route(mind)
+        response = self._route(mind)
 
-        response = self.responder.generate(mind)
+        if response is None:
+            response = ""
+
+        logger.info(
+            "FINAL RESPONSE = %r",
+            response,
+        )
 
         logger.info("Runtime finished.")
 
-        return response.text
+        return response
 
-    # ---------------------------------------------------------
-    # Decision Router
-    # ---------------------------------------------------------
+    # =====================================================
 
     def _route(
         self,
         mind,
-    ) -> None:
+    ) -> str:
 
-        action = mind.decision.action
+        logger.info(
+            "Routing action: %s",
+            mind.action,
+        )
 
-        logger.info("Routing action: %s", action.name)
-
-        # -------------------------------------------------
-
-        if action == DecisionAction.RESPOND:
-
-            logger.info(
-                "Responding directly using reasoning."
-            )
-
-            return
+        thinking = mind.thinking
 
         # -------------------------------------------------
-
-        if action == DecisionAction.MEMORY:
-
-            logger.info(
-                "Memory requested."
-            )
-
-            # Memory engine will be plugged in later.
-            return
-
+        # RESPOND
         # -------------------------------------------------
 
-        if action == DecisionAction.CLARIFY:
+        if mind.should_respond:
 
-            logger.info(
-                "Clarification requested."
+            return (
+                thinking.response
+                or "I'm here."
             )
 
-            if not mind.decision.clarification_question:
+        # -------------------------------------------------
+        # CLARIFY
+        # -------------------------------------------------
 
-                mind.decision.clarification_question = (
-                    "Could you provide a little more detail?"
+        if mind.should_clarify:
+
+            return (
+                thinking.clarification
+                or "Could you clarify your request?"
+            )
+
+        # -------------------------------------------------
+        # MEMORY
+        # -------------------------------------------------
+
+        if mind.should_use_memory:
+
+            logger.info("Memory requested.")
+
+            return "Memory is not available yet."
+
+        # -------------------------------------------------
+        # PLAN
+        # -------------------------------------------------
+
+        if mind.should_plan:
+
+            if (
+                not thinking.requires_tools
+                or thinking.tool is None
+                or thinking.tool_action is None
+            ):
+
+                logger.warning(
+                    "Invalid planning request detected. "
+                    "requires_tools=%s tool=%s action=%s",
+                    thinking.requires_tools,
+                    thinking.tool,
+                    thinking.tool_action,
                 )
 
-            return
-
-        # -------------------------------------------------
-
-        if action == DecisionAction.PLAN:
+                return (
+                    thinking.response
+                    or "I'm not sure what action needs to be performed."
+                )
 
             logger.info(
-                "Planning requested."
+                "Building execution plan..."
             )
 
-            tasks = self.planner.plan(
-                mind.user_message
+            plan = self.planner.plan(
+                thinking
             )
 
-            mind.planner_tasks.extend(tasks)
+            if plan.empty:
 
-            for task in tasks:
+                logger.warning(
+                    "Planner returned an empty plan."
+                )
 
-                try:
+                return (
+                    "I couldn't determine how to perform that task."
+                )
 
-                    result = self.executor.execute(task)
+            logger.info(
+                "Executing execution plan..."
+            )
 
-                    if result is not None:
+            report = self.executor.execute(
+                plan
+            )
 
-                        mind.tool_results.append(result)
+            mind.metadata[
+                "execution_report"
+            ] = report
 
-                except Exception:
+            if report.success:
 
-                    logger.exception(
-                        "Task execution failed."
-                    )
+                summary = getattr(
+                    report,
+                    "summary",
+                    "",
+                )
 
-            return
+                if summary:
+                    return summary
 
+                return (
+                    thinking.response
+                    or "Done."
+                )
+
+            errors = getattr(
+                report,
+                "errors",
+                [],
+            )
+
+            if errors:
+
+                logger.warning(
+                    "Execution failed: %s",
+                    errors,
+                )
+
+            return (
+                "I couldn't complete that task."
+            )
+
+        # -------------------------------------------------
+        # Unknown action
         # -------------------------------------------------
 
         logger.warning(
-            "Unknown decision '%s'.",
-            action,
+            "Unhandled action '%s'.",
+            mind.action,
+        )
+
+        return (
+            "I'm not sure how to handle that request."
         )

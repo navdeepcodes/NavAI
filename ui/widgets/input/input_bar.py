@@ -1,197 +1,386 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
-    QWidget,
+    QApplication,
+    QFrame,
     QHBoxLayout,
-    QLineEdit,
     QPushButton,
+    QTextEdit,
+    QSizePolicy,
+    QStyle,
+    QVBoxLayout,
 )
 
+from ui.theme import colors
 
-class InputBar(QWidget):
-    """
-    Raycast-inspired command bar.
 
-    Features
-    --------
-    • Rounded input
-    • Enter to send
-    • Send button
-    • Mic placeholder
-    • Image placeholder
-    """
+# ==========================================================
+# Command Input
+# ==========================================================
+
+
+class CommandInput(QTextEdit):
 
     submitted = Signal(str)
 
-    # =====================================================
+    MIN_HEIGHT = 44
+    MAX_HEIGHT = 120
 
     def __init__(self) -> None:
 
         super().__init__()
 
-        self.setFixedHeight(74)
+        self._build()
 
-        layout = QHBoxLayout(self)
+    # -----------------------------------------------------
 
-        layout.setContentsMargins(18, 14, 18, 14)
+    def _build(self) -> None:
 
-        layout.setSpacing(10)
+        self.setPlaceholderText(
+            "Message Mike..."
+        )
+
+        self.setAcceptRichText(False)
+
+        self.setWordWrapMode(
+            QTextOption.WrapAtWordBoundaryOrAnywhere
+        )
+
+        self.setVerticalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+
+        self.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
+        )
+
+        self.setFrameShape(
+            QFrame.NoFrame
+        )
+
+        self.setSizePolicy(
+            QSizePolicy.Expanding,
+            QSizePolicy.Fixed,
+        )
+
+        self.setFixedHeight(
+            self.MIN_HEIGHT
+        )
+
+        self.textChanged.connect(
+            self._resize
+        )
+
+        # Fix oversized first render
+        QTimer.singleShot(
+            0,
+            self._resize,
+        )
+
+    # -----------------------------------------------------
+
+    def keyPressEvent(
+        self,
+        event,
+    ) -> None:
+
+        if (
+            event.key()
+            in (
+                Qt.Key_Return,
+                Qt.Key_Enter,
+            )
+            and not (
+                event.modifiers()
+                & Qt.ShiftModifier
+            )
+        ):
+
+            text = self.toPlainText().strip()
+
+            if text:
+
+                self.submitted.emit(
+                    text
+                )
+
+                self.clear()
+
+            return
+
+        super().keyPressEvent(event)
+
+    # -----------------------------------------------------
+
+    def _resize(self) -> None:
+
+        document_height = (
+            self.document()
+            .documentLayout()
+            .documentSize()
+            .height()
+        )
+
+        height = int(document_height) + 12
+
+        height = max(
+            self.MIN_HEIGHT,
+            min(
+                self.MAX_HEIGHT,
+                height,
+            ),
+        )
+
+        self.setFixedHeight(
+            height
+        )
+
+
+# ==========================================================
+# Input Bar
+# ==========================================================
+
+
+class InputBar(QFrame):
+
+    submitted = Signal(str)
+
+    BUTTON_SIZE = 36
+
+    def __init__(self) -> None:
+
+        super().__init__()
+
+        self._build()
+
+        self._theme()
+
+    # -----------------------------------------------------
+
+    def _build(self) -> None:
+
+        outer = QVBoxLayout(self)
+
+        outer.setContentsMargins(
+            32,
+            12,
+            32,
+            18,
+        )
+
+        outer.setSpacing(0)
+
+        self.composer = QFrame()
+
+        self.composer.setObjectName(
+            "composer"
+        )
+
+        layout = QHBoxLayout(
+            self.composer
+        )
+
+        layout.setContentsMargins(
+            14,
+            8,
+            14,
+            8,
+        )
+
+        layout.setSpacing(8)
+
+        style = QApplication.style()
+
+        # -------------------------------------------------
+        # Attachment
+        # -------------------------------------------------
+
+        self.attach = QPushButton()
+
+        self.attach.setIcon(
+            style.standardIcon(
+                QStyle.SP_FileIcon
+            )
+        )
+
+        self.attach.setFixedSize(
+            self.BUTTON_SIZE,
+            self.BUTTON_SIZE,
+        )
 
         # -------------------------------------------------
         # Input
         # -------------------------------------------------
 
-        self.input = QLineEdit()
+        self.input = CommandInput()
 
-        self.input.setPlaceholderText(
-            "Instruct Mike to take control..."
-        )
-
-        self.input.returnPressed.connect(
-            self._submit
-        )
-
-        self.input.setStyleSheet(
-            """
-            QLineEdit{
-
-                background:#09090b;
-
-                border:1px solid #202020;
-
-                border-radius:16px;
-
-                padding:14px;
-
-                color:white;
-
-                font-size:14px;
-
-                selection-background-color:#0ea5e9;
-            }
-
-            QLineEdit:focus{
-
-                border:1px solid #0ea5e9;
-            }
-            """
+        self.input.submitted.connect(
+            self.submitted.emit
         )
 
         # -------------------------------------------------
-        # Upload Button
+        # Voice
         # -------------------------------------------------
 
-        self.upload = QPushButton("📎")
+        self.voice = QPushButton("●")
 
-        self.upload.setFixedSize(42, 42)
-
-        self.upload.setToolTip(
-            "Upload image (Coming Soon)"
+        self.voice.setFixedSize(
+            self.BUTTON_SIZE,
+            self.BUTTON_SIZE,
         )
 
         # -------------------------------------------------
-        # Mic Button
+        # Send
         # -------------------------------------------------
 
-        self.mic = QPushButton("🎤")
+        self.send = QPushButton()
 
-        self.mic.setFixedSize(42, 42)
-
-        self.mic.setToolTip(
-            "Voice Mode"
+        self.send.setIcon(
+            style.standardIcon(
+                QStyle.SP_ArrowForward
+            )
         )
 
-        # -------------------------------------------------
-        # Send Button
-        # -------------------------------------------------
-
-        self.send = QPushButton("➜")
-
-        self.send.setFixedSize(42, 42)
+        self.send.setFixedSize(
+            self.BUTTON_SIZE,
+            self.BUTTON_SIZE,
+        )
 
         self.send.clicked.connect(
             self._submit
         )
 
-        # -------------------------------------------------
-        # Button Styling
-        # -------------------------------------------------
+        layout.addWidget(
+            self.attach
+        )
 
-        button_style = """
-        QPushButton{
+        layout.addWidget(
+            self.input,
+            1,
+        )
 
-            background:#09090b;
+        layout.addWidget(
+            self.voice
+        )
 
-            border:1px solid #202020;
+        layout.addWidget(
+            self.send
+        )
 
-            border-radius:12px;
+        outer.addWidget(
+            self.composer
+        )
 
-            color:white;
+    # -----------------------------------------------------
 
-            font-size:16px;
-        }
+    def _theme(self) -> None:
 
-        QPushButton:hover{
+        self.setStyleSheet(
+            f"""
+            InputBar {{
+                background: transparent;
+                border: none;
+            }}
 
-            border:1px solid #0ea5e9;
+            QFrame#composer {{
+                background: {colors.SURFACE};
+                border: 1px solid {colors.BORDER};
+                border-radius: 22px;
+            }}
 
-            background:#101014;
-        }
+            QTextEdit {{
+                background: transparent;
+                border: none;
+                color: {colors.TEXT};
+                font-size: 15px;
+                padding: 2px 4px;
+            }}
 
-        QPushButton:pressed{
+            QTextEdit:focus {{
+                border: none;
+            }}
 
-            background:#16161b;
-        }
-        """
+            QPushButton {{
+                background: transparent;
+                border: none;
+                border-radius: 18px;
+                color: {colors.TEXT};
+                font-size: 15px;
+            }}
 
-        self.upload.setStyleSheet(button_style)
+            QPushButton:hover {{
+                background: {colors.HOVER};
+            }}
 
-        self.mic.setStyleSheet(button_style)
+            QPushButton:pressed {{
+                background: {colors.HOVER};
+            }}
+            """
+        )
 
-        self.send.setStyleSheet(button_style)
-
-        # -------------------------------------------------
-
-        layout.addWidget(self.input)
-
-        layout.addWidget(self.upload)
-
-        layout.addWidget(self.mic)
-
-        layout.addWidget(self.send)
-
-    # =====================================================
+    # -----------------------------------------------------
 
     def _submit(self) -> None:
 
-        text = self.input.text().strip()
+        text = self.text().strip()
 
         if not text:
 
             return
 
-        self.submitted.emit(text)
+        self.submitted.emit(
+            text
+        )
+
+        self.clear()
+
+    # =====================================================
+    # Public API
+    # =====================================================
+
+    def text(self) -> str:
+
+        return self.input.toPlainText()
+
+    # -----------------------------------------------------
+
+    def clear(self) -> None:
 
         self.input.clear()
 
-    # =====================================================
+        self.input.setFixedHeight(
+            self.input.MIN_HEIGHT
+        )
+
+    # -----------------------------------------------------
 
     def focus(self) -> None:
 
-        self.input.setFocus()
+        self.input.setFocus(
+            Qt.OtherFocusReason
+        )
 
-    # =====================================================
+    # -----------------------------------------------------
 
     def set_enabled(
         self,
         enabled: bool,
     ) -> None:
 
-        self.input.setEnabled(enabled)
+        self.input.setEnabled(
+            enabled
+        )
 
-        self.send.setEnabled(enabled)
+        self.attach.setEnabled(
+            enabled
+        )
 
-        self.upload.setEnabled(enabled)
+        self.voice.setEnabled(
+            enabled
+        )
 
-        self.mic.setEnabled(enabled)
+        self.send.setEnabled(
+            enabled
+        )

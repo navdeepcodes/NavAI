@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from time import perf_counter
 
 from logs.logger import logger
@@ -11,90 +13,69 @@ class ToolExecutor:
 
     # ---------------------------------------------------------
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         self.registry = ToolRegistry()
 
     # ---------------------------------------------------------
 
     def execute(
-
         self,
-
         tool_name: str,
-
         context: ToolContext | None = None,
-
-        **kwargs
-
+        **kwargs,
     ) -> ToolResult:
 
         logger.info(
-
-            f"Executing Tool: {tool_name}"
-
+            "Executing Tool: %s",
+            tool_name,
         )
 
-        tool = self.registry.get(
-
-            tool_name
-
-        )
+        tool = self.registry.get(tool_name)
 
         if tool is None:
-
             raise ValueError(
-
                 f"Unknown tool: {tool_name}"
-
             )
 
         if context is None:
-
             context = ToolContext()
 
-        if not tool.validate(
+        action = str(
+            kwargs.get("action", "")
+        )
 
-            **kwargs
+        # -------------------------------------------------
 
-        ):
+        if not tool.validate(**kwargs):
 
             return ToolResult(
-
                 success=False,
-
                 tool=tool.metadata.name,
-
-                error="Validation failed."
-
+                action=action,
+                message="",
+                error="Validation failed.",
             )
+
+        # -------------------------------------------------
 
         start = perf_counter()
 
         try:
 
             result = tool.execute(
-
                 context=context,
-
-                **kwargs
-
+                **kwargs,
             )
 
             result.execution_time_ms = (
-
                 perf_counter() - start
-
             ) * 1000
 
             logger.info(
-
-                f"{tool.metadata.name} "
-
-                f"completed in "
-
-                f"{result.execution_time_ms:.2f} ms"
-
+                "%s completed in %.2f ms",
+                tool.metadata.name,
+                result.execution_time_ms,
             )
 
             return result
@@ -104,13 +85,11 @@ class ToolExecutor:
             logger.exception(e)
 
             return ToolResult(
-
                 success=False,
-
                 tool=tool.metadata.name,
-
-                error=str(e)
-
+                action=action,
+                message="",
+                error=str(e),
             )
 
         finally:
@@ -126,18 +105,11 @@ class ToolExecutor:
     # ---------------------------------------------------------
 
     def has_tool(
-
         self,
-
-        tool_name: str
-
+        tool_name: str,
     ):
 
-        return self.registry.has(
-
-            tool_name
-
-        )
+        return self.registry.has(tool_name)
 
     # ---------------------------------------------------------
 

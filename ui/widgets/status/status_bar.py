@@ -7,100 +7,147 @@ from PySide6.QtWidgets import (
     QLabel,
 )
 
-from ui.theme import colors, fonts
+from ui.theme import colors
 
 
 class StatusBar(QFrame):
     """
-    Bottom status bar.
+    Bottom runtime status bar.
 
-    Displays runtime information.
+    Responsibilities
+    ----------------
+    • Display runtime status
+    • Display active provider
+    • Display lightweight activity
     """
 
-    # ---------------------------------------------------------
+    BAR_HEIGHT = 32
 
-    def __init__(self):
+    # =====================================================
+
+    def __init__(self) -> None:
 
         super().__init__()
 
-        self._build()
+        self._build_ui()
 
-    # ---------------------------------------------------------
+        self._apply_theme()
 
-    def _build(self):
+    # =====================================================
 
-        self.setFixedHeight(32)
-
-        self.setStyleSheet(
-            f"""
-            QFrame {{
-                background:{colors.BACKGROUND};
-                border:none;
-                border-top:1px solid {colors.BORDER};
-            }}
-            """
-        )
+    def _build_ui(self) -> None:
 
         layout = QHBoxLayout(self)
 
         layout.setContentsMargins(
-
-            24,
-
-            0,
-
-            24,
-
-            0,
-
+            16,
+            8,
+            16,
+            8,
         )
 
-        self.label = QLabel(
+        layout.setSpacing(12)
 
-            "Groq • Online • Fast • Memory Ready"
+        self.status = QLabel("Ready")
 
-        )
+        self.provider = QLabel("")
 
-        self.label.setFont(
+        self.status.setAlignment(Qt.AlignLeft)
 
-            fonts.SMALL
+        self.provider.setAlignment(Qt.AlignRight)
 
-        )
+        layout.addWidget(self.status)
 
-        self.label.setAlignment(
+        layout.addStretch()
 
-            Qt.AlignLeft | Qt.AlignVCenter
+        layout.addWidget(self.provider)
 
-        )
+    # =====================================================
 
-        self.label.setStyleSheet(
+    def _apply_theme(self) -> None:
 
+        self.setFixedHeight(self.BAR_HEIGHT)
+
+        self.setStyleSheet(
             f"""
+            StatusBar {{
+                background:{colors.SURFACE};
+                border-top:1px solid {colors.BORDER};
+            }}
 
-            color:{colors.TEXT_MUTED};
-
+            QLabel {{
+                color:{colors.TEXT_MUTED};
+                background:transparent;
+                font-size:11px;
+            }}
             """
-
         )
 
-        layout.addWidget(
-
-            self.label
-
-        )
-
-    # ---------------------------------------------------------
+    # =====================================================
+    # Public API
+    # =====================================================
 
     def set_text(
-
         self,
-
         text: str,
+    ) -> None:
 
-    ):
+        self.status.setText(text)
 
-        self.label.setText(
+    # -----------------------------------------------------
 
-            text
+    def set_provider(
+        self,
+        provider: str,
+    ) -> None:
 
-        )
+        self.provider.setText(provider)
+
+    # -----------------------------------------------------
+
+    def clear_provider(self) -> None:
+
+        self.provider.clear()
+
+    # -----------------------------------------------------
+
+    def set_runtime(
+        self,
+        *,
+        status: str | None = None,
+        provider: str | None = None,
+    ) -> None:
+
+        if status is not None:
+
+            self.set_text(status)
+
+        if provider is not None:
+
+            self.set_provider(provider)
+
+    # -----------------------------------------------------
+
+    def ready(self) -> None:
+
+        self.set_text("Ready")
+
+    # -----------------------------------------------------
+
+    def busy(self) -> None:
+
+        self.set_text("Thinking...")
+
+    # -----------------------------------------------------
+
+    def error(self) -> None:
+
+        self.set_text("Runtime Error")
+
+    # -----------------------------------------------------
+
+    def clear(self) -> None:
+
+        self.ready()
+
+        self.clear_provider()

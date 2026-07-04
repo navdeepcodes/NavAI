@@ -4,7 +4,7 @@ import time
 
 from logs.logger import logger
 
-from brain.provider import manager
+from brain.providers import manager
 from brain.llm.llm_request import LLMRequest
 from brain.llm.llm_response import LLMResponse
 from brain.llm.metrics import MetricsCollector
@@ -13,20 +13,20 @@ from brain.llm.router import ProviderRouter
 
 class LLMService:
     """
-    Central entry point for all LLM requests.
+    Central execution layer for every LLM request.
 
     Responsibilities
     ----------------
-    • Execute LLM requests
-    • Parse structured responses
+    • Execute requests
+    • Iterate through routed providers
     • Record metrics
-    • Notify ProviderManager of success/failure
+    • Update provider health
 
     Never
     -----
     • Build prompts
-    • Perform routing logic
-    • Manage provider state
+    • Select providers
+    • Decide routing strategy
     """
 
     # =====================================================
@@ -49,34 +49,31 @@ class LLMService:
             "general",
         )
 
+        providers = self.router.providers(
+            task=task,
+            model=request.model,
+        )
+
         last_error: Exception | None = None
 
-        # ---------------------------------------------
-        # Maximum two attempts:
-        #
-        # Current provider
-        # One retry after failover
-        # ---------------------------------------------
-
-        for attempt in range(2):
-
-            provider = self.router.provider(
-
-                task=task,
-
-                model=request.model,
-
-            )
+        for index, provider in enumerate(
+            providers,
+            start=1,
+        ):
 
             logger.info(
 
-                "Using provider: %s",
+                "Provider %s (%d/%d)",
 
                 provider.name,
 
+                index,
+
+                len(providers),
+
             )
 
-            start = time.perf_counter()
+            start_time = time.perf_counter()
 
             try:
 
@@ -88,7 +85,7 @@ class LLMService:
 
                     time.perf_counter()
 
-                    - start
+                    - start_time
 
                 ) * 1000
 
@@ -103,17 +100,12 @@ class LLMService:
                 parsed = None
 
                 if (
-
                     request.parser is not None
-
                     and response.text
-
                 ):
 
                     parsed = request.parser.parse(
-
                         response.text
-
                     )
 
                 self.metrics.record(
@@ -148,7 +140,8 @@ class LLMService:
 
                     parsed=parsed,
 
-                    model=response.model or provider.name,
+                    model=response.model
+                    or provider.name,
 
                     latency_ms=latency,
 
@@ -164,22 +157,20 @@ class LLMService:
 
                 )
 
-            except Exception as e:
+            except Exception as exc:
 
                 latency = (
 
                     time.perf_counter()
 
-                    - start
+                    - start_time
 
                 ) * 1000
 
-                last_error = e
+                last_error = exc
 
                 manager.mark_failure(
-
                     provider.name,
-
                 )
 
                 self.metrics.record(
@@ -202,16 +193,14 @@ class LLMService:
 
                 )
 
-                logger.exception(e)
+                logger.exception(exc)
 
-                # Retry once with newly selected provider
+                if not self._retryable(exc):
 
-                continue
+                    break
 
         logger.error(
-
-            "LLM request failed on all attempts."
-
+            "All providers failed."
         )
 
         return LLMResponse(
@@ -231,12 +220,26 @@ class LLMService:
                 "error": str(last_error)
 
                 if last_error
-
                 else "Unknown provider failure.",
 
             },
 
         )
+
+    # =====================================================
+
+    @staticmethod
+    def _retryable(
+        error: Exception,
+    ) -> bool:
+        """
+        Decide whether Mike should attempt another provider.
+
+        This will evolve to classify provider-specific
+        exceptions (timeouts, rate limits, auth errors, etc.).
+        """
+
+        return True
 
     # =====================================================
 

@@ -1,77 +1,87 @@
 from __future__ import annotations
 
 from ui.theme import colors
+from ui.theme import typography
 
 
 GLOBAL_STYLESHEET = f"""
 
+/* =========================================================
+   Application
+   ========================================================= */
+
 QMainWindow {{
-    background:{colors.BACKGROUND};
+    background: {colors.WINDOW};
 }}
 
 QWidget {{
-    background:{colors.BACKGROUND};
-    color:{colors.TEXT};
+    background: transparent;
+    color: {colors.TEXT};
+    font-family: "{typography.FONT}";
+    font-size: {typography.BODY}px;
+    selection-background-color: {colors.SELECTION};
 }}
+
+/* =========================================================
+   Generic Frames
+   ========================================================= */
 
 QFrame {{
-    background:{colors.SURFACE};
-    border:1px solid {colors.BORDER};
+    border: none;
+    background: transparent;
 }}
 
-QLineEdit,
-QPlainTextEdit {{
+/* =========================================================
+   Labels
+   ========================================================= */
 
-    background:{colors.SURFACE};
-
-    color:{colors.TEXT};
-
-    border:1px solid {colors.BORDER};
-
-    padding:14px;
-
-    selection-background-color:{colors.ACCENT};
-
-    font-size:14px;
-
+QLabel {{
+    background: transparent;
+    color: {colors.TEXT};
 }}
+
+/* =========================================================
+   Scroll Areas
+   ========================================================= */
 
 QScrollArea {{
-
-    border:none;
-
+    border: none;
+    background: transparent;
 }}
 
+QScrollArea > QWidget > QWidget {{
+    background: transparent;
+}}
+
+/* =========================================================
+   Scroll Bars
+   ========================================================= */
+
 QScrollBar:vertical {{
-
-    width:8px;
-
-    background:transparent;
-
+    width: 8px;
+    background: transparent;
 }}
 
 QScrollBar::handle:vertical {{
-
-    background:{colors.BORDER};
-
-    border-radius:4px;
-
+    background: {colors.BORDER};
+    border-radius: 4px;
+    min-height: 40px;
 }}
 
-QPushButton {{
-
-    background:transparent;
-
-    color:{colors.TEXT};
-
-    border:none;
-
+QScrollBar::handle:vertical:hover {{
+    background: {colors.TEXT_MUTED};
 }}
 
-QPushButton:hover {{
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical,
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {{
+    height: 0px;
+    background: transparent;
+}}
 
-    color:{colors.ACCENT};
-
+QScrollBar:horizontal {{
+    height: 0px;
 }}
 
 """

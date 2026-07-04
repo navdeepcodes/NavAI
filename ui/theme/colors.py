@@ -1,28 +1,72 @@
 from __future__ import annotations
 
-# Backgrounds
+# ==========================================================
+# Core Surfaces
+# ==========================================================
+
 WINDOW = "#030303"
-SURFACE = "#09090B"
-SURFACE_ALT = "#111111"
 
+SURFACE = "#0A0A0C"
+
+SURFACE_ELEVATED = "#111114"
+
+SURFACE_HOVER = "#16161A"
+
+SURFACE_ACTIVE = "#1B1B20"
+
+# ==========================================================
 # Borders
-BORDER = "#1F1F23"
-BORDER_LIGHT = "#2A2A2F"
+# ==========================================================
 
-# Text
-TEXT = "#F5F5F5"
-TEXT_SECONDARY = "#A1A1AA"
-TEXT_MUTED = "#71717A"
+BORDER = "#1B1B20"
 
-# Provider Colors
+BORDER_SUBTLE = "#131316"
+
+BORDER_STRONG = "#2A2A31"
+
+# ==========================================================
+# Typography
+# ==========================================================
+
+TEXT = "#F5F5F7"
+
+TEXT_SECONDARY = "#C5C5CC"
+
+TEXT_MUTED = "#7C7C85"
+
+TEXT_DISABLED = "#55555D"
+
+# ==========================================================
+# Providers
+# ==========================================================
+
 OLLAMA = "#10B981"
+
 GROQ = "#0EA5E9"
+
 PLANNER = "#F59E0B"
+
 ERROR = "#EF4444"
 
-# Bubble Colors
-USER_BUBBLE = "#0D1728"
-MIKE_BUBBLE = "#111111"
+SUCCESS = "#10B981"
 
-# Misc
-HOVER = "#16161A"
+# ==========================================================
+# Conversation
+# ==========================================================
+
+USER_BUBBLE = "#1A2436"     # Deep blue-gray
+MIKE_BUBBLE = "#111318"     # Soft charcoal
+
+SYSTEM_BUBBLE = "#0F0F12"
+
+# ==========================================================
+# States
+# ==========================================================
+
+HOVER = "#17171B"
+
+PRESSED = "#1E1E24"
+
+FOCUS = "#2A2A32"
+
+SELECTION = "#234C76"

@@ -9,33 +9,31 @@ from brain.providers.base_llm_provider import BaseLLMProvider
 
 class ProviderStatus(Enum):
     """
-    Runtime state of a provider.
+    Runtime lifecycle of a provider.
     """
 
-    ACTIVE = auto()
-
     AVAILABLE = auto()
-
+    ACTIVE = auto()
     COOLDOWN = auto()
-
     OFFLINE = auto()
 
 
 @dataclass(slots=True)
 class ProviderState:
     """
-    Runtime information for a provider.
+    Runtime state for a single provider.
 
-    One instance exists for every registered provider.
+    Stores health, latency and runtime statistics used
+    by ProviderSelector to intelligently route requests.
     """
 
     provider: BaseLLMProvider
 
     status: ProviderStatus = ProviderStatus.AVAILABLE
 
-    # =========================================================
+    # =====================================================
     # Runtime timestamps
-    # =========================================================
+    # =====================================================
 
     cooldown_until: datetime | None = None
 
@@ -45,17 +43,17 @@ class ProviderState:
 
     last_failure: datetime | None = None
 
-    # =========================================================
+    # =====================================================
     # Performance
-    # =========================================================
+    # =====================================================
 
     latency_ms: float = 0.0
 
     average_latency_ms: float = 0.0
 
-    # =========================================================
+    # =====================================================
     # Statistics
-    # =========================================================
+    # =====================================================
 
     total_requests: int = 0
 
@@ -65,63 +63,82 @@ class ProviderState:
 
     consecutive_failures: int = 0
 
-    # =========================================================
+    # =====================================================
 
     metadata: dict[str, object] = field(
         default_factory=dict
     )
 
-    # =========================================================
+    # =====================================================
     # Properties
-    # =========================================================
+    # =====================================================
 
     @property
     def available(self) -> bool:
 
         return self.status in (
-
-            ProviderStatus.ACTIVE,
-
             ProviderStatus.AVAILABLE,
-
+            ProviderStatus.ACTIVE,
         )
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     @property
-    def cooling_down(self) -> bool:
+    def healthy(self) -> bool:
 
-        return self.status == ProviderStatus.COOLDOWN
+        return (
+            self.available
+            and self.consecutive_failures < 3
+        )
 
-    # ---------------------------------------------------------
-
-    @property
-    def offline(self) -> bool:
-
-        return self.status == ProviderStatus.OFFLINE
-
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     @property
     def success_rate(self) -> float:
 
         if self.total_requests == 0:
 
-            return 0.0
+            return 1.0
 
         return self.success_count / self.total_requests
 
-    # =========================================================
+    # -----------------------------------------------------
+
+    @property
+    def health_score(self) -> float:
+        """
+        0-100 provider health score.
+
+        Used by ProviderSelector.
+        """
+
+        score = 100.0
+
+        # Penalize latency
+        if self.average_latency_ms > 0:
+            score -= self.average_latency_ms / 100.0
+
+        # Penalize failures
+        score -= self.consecutive_failures * 15
+
+        # Reward reliability
+        score += self.success_rate * 10
+
+        return max(0.0, score)
+
+    # =====================================================
     # Runtime Updates
-    # =========================================================
+    # =====================================================
 
     def mark_used(self) -> None:
 
-        self.last_used = datetime.now()
+        self.last_used = datetime.utcnow()
 
         self.total_requests += 1
 
-    # ---------------------------------------------------------
+        self.status = ProviderStatus.ACTIVE
+
+    # -----------------------------------------------------
 
     def mark_success(
         self,
@@ -130,11 +147,9 @@ class ProviderState:
 
         self.mark_used()
 
-        self.status = ProviderStatus.ACTIVE
+        self.last_success = datetime.utcnow()
 
         self.cooldown_until = None
-
-        self.last_success = datetime.now()
 
         self.success_count += 1
 
@@ -142,34 +157,32 @@ class ProviderState:
 
         self.latency_ms = latency_ms
 
-        if self.success_count == 1:
+        # Exponential moving average
+        if self.average_latency_ms == 0:
 
             self.average_latency_ms = latency_ms
 
         else:
 
+            alpha = 0.20
+
             self.average_latency_ms = (
+                alpha * latency_ms
+                + (1.0 - alpha)
+                * self.average_latency_ms
+            )
 
-                (
-                    self.average_latency_ms
-                    * (self.success_count - 1)
-                )
-                + latency_ms
+        self.status = ProviderStatus.AVAILABLE
 
-            ) / self.success_count
-
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     def mark_failure(
         self,
-        *,
-        cooldown_seconds: int = 7200,
-        failure_threshold: int = 2,
     ) -> None:
 
         self.mark_used()
 
-        self.last_failure = datetime.now()
+        self.last_failure = datetime.utcnow()
 
         self.failure_count += 1
 
@@ -177,13 +190,9 @@ class ProviderState:
 
         self.latency_ms = 0.0
 
-        if self.consecutive_failures >= failure_threshold:
+        self.status = ProviderStatus.AVAILABLE
 
-            self.start_cooldown(
-                cooldown_seconds
-            )
-
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     def start_cooldown(
         self,
@@ -193,28 +202,13 @@ class ProviderState:
         self.status = ProviderStatus.COOLDOWN
 
         self.cooldown_until = (
-
-            datetime.now()
-
-            + timedelta(
-                seconds=seconds
-            )
-
+            datetime.utcnow()
+            + timedelta(seconds=seconds)
         )
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
     def recover(self) -> None:
-
-        self.status = ProviderStatus.ACTIVE
-
-        self.cooldown_until = None
-
-        self.consecutive_failures = 0
-
-    # ---------------------------------------------------------
-
-    def reset(self) -> None:
 
         self.status = ProviderStatus.AVAILABLE
 
@@ -222,4 +216,36 @@ class ProviderState:
 
         self.consecutive_failures = 0
 
+    # -----------------------------------------------------
+
+    def mark_offline(self) -> None:
+
+        self.status = ProviderStatus.OFFLINE
+
+    # -----------------------------------------------------
+
+    def reset(self) -> None:
+
+        self.status = ProviderStatus.AVAILABLE
+
+        self.cooldown_until = None
+
+        self.last_used = None
+
+        self.last_success = None
+
+        self.last_failure = None
+
         self.latency_ms = 0.0
+
+        self.average_latency_ms = 0.0
+
+        self.total_requests = 0
+
+        self.success_count = 0
+
+        self.failure_count = 0
+
+        self.consecutive_failures = 0
+
+        self.metadata.clear()

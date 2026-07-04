@@ -1,30 +1,32 @@
 from __future__ import annotations
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QVBoxLayout,
     QWidget,
+    QVBoxLayout,
 )
 
-from ui.widgets.conversation import ConversationPanel
 from ui.widgets.header import Header
-from ui.widgets.input_bar import InputBar
-from ui.widgets.status_bar import StatusBar
+from ui.widgets.conversation import ConversationPanel
+from ui.widgets.input import InputBar
 
 
 class ChatPage(QWidget):
     """
-    Main chat workspace.
+    Mike Main Workspace.
+
+    Layout
+    ------
+    Header
+        ↓
+    Conversation
+        ↓
+    Composer
 
     Presentation layer only.
-
-    Owns:
-        • Header
-        • Conversation
-        • Input
-        • Status Bar
-
-    Contains no runtime or business logic.
     """
+
+    COMPOSER_WIDTH = 1180
 
     # =====================================================
 
@@ -38,16 +40,16 @@ class ChatPage(QWidget):
 
     def _build_ui(self) -> None:
 
-        layout = QVBoxLayout(self)
+        root = QVBoxLayout(self)
 
-        layout.setContentsMargins(
+        root.setContentsMargins(
             0,
             0,
             0,
-            0,
+            20,
         )
 
-        layout.setSpacing(0)
+        root.setSpacing(12)
 
         # -------------------------------------------------
         # Header
@@ -55,7 +57,7 @@ class ChatPage(QWidget):
 
         self.header = Header()
 
-        layout.addWidget(
+        root.addWidget(
             self.header
         )
 
@@ -65,33 +67,29 @@ class ChatPage(QWidget):
 
         self.conversation = ConversationPanel()
 
-        layout.addWidget(
+        root.addWidget(
             self.conversation,
-            stretch=1,
+            1,
         )
 
         # -------------------------------------------------
-        # Input
+        # Composer
         # -------------------------------------------------
 
         self.input = InputBar()
 
-        layout.addWidget(
-            self.input
+        self.input.setMaximumWidth(
+            self.COMPOSER_WIDTH
         )
 
-        # -------------------------------------------------
-        # Status
-        # -------------------------------------------------
-
-        self.status = StatusBar()
-
-        layout.addWidget(
-            self.status
+        root.addWidget(
+            self.input,
+            0,
+            Qt.AlignHCenter,
         )
 
     # =====================================================
-    # Public API
+    # Conversation API
     # =====================================================
 
     def add_user_message(
@@ -132,6 +130,8 @@ class ChatPage(QWidget):
 
     # -----------------------------------------------------
 
-    def clear(self) -> None:
+    def clear(
+        self,
+    ) -> None:
 
         self.conversation.clear()

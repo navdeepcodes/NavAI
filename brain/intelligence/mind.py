@@ -4,44 +4,18 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from brain.conversation.conversation_models import ConversationState
-
-from brain.intelligence.enums import DecisionAction
-
-from brain.intelligence.models import (
-    Confidence,
-    Context,
-    Decision,
-    Emotion,
-    Reasoning,
-    Reflection,
-    Understanding,
-)
+from brain.intelligence.thinking_result import ThinkingResult
 
 
 @dataclass(slots=True)
 class Mind:
     """
-    Mike's complete cognitive state for a single interaction.
+    Mike's cognitive state for a single interaction.
 
-    Every cognitive subsystem receives and updates
-    the same Mind instance.
+    Every request produces exactly one ThinkingResult.
 
-        User
-          ↓
-      Understanding
-          ↓
-      Conversation
-          ↓
-       Reasoning
-          ↓
-        Decision
-          ↓
-    Memory / Planning
-          ↓
-    Tool Execution
-          ↓
-      Response Engine
+    Planner, Executor and Memory extend this object without
+    performing additional reasoning.
     """
 
     # =====================================================
@@ -49,43 +23,10 @@ class Mind:
     # =====================================================
 
     user_message: str
+    thinking: ThinkingResult
 
     created_at: datetime = field(
         default_factory=datetime.utcnow
-    )
-
-    # =====================================================
-    # Cognitive State
-    # =====================================================
-
-    understanding: Understanding = field(
-        default_factory=Understanding
-    )
-
-    conversation: ConversationState = field(
-        default_factory=ConversationState
-    )
-
-    reasoning: Reasoning = field(
-        default_factory=Reasoning
-    )
-
-    decision: Decision = field(
-        default_factory=lambda: Decision(
-            action=DecisionAction.RESPOND,
-        )
-    )
-
-    context: Context = field(
-        default_factory=Context
-    )
-
-    emotion: Emotion = field(
-        default_factory=Emotion
-    )
-
-    confidence: Confidence = field(
-        default_factory=Confidence
     )
 
     # =====================================================
@@ -93,12 +34,6 @@ class Mind:
     # =====================================================
 
     memory_result: Any | None = None
-
-    # =====================================================
-    # Clarification
-    # =====================================================
-
-    clarification: str | None = None
 
     # =====================================================
     # Planning
@@ -119,12 +54,6 @@ class Mind:
     execution_time_ms: float = 0.0
 
     # =====================================================
-    # Reflection
-    # =====================================================
-
-    reflection: Reflection | None = None
-
-    # =====================================================
     # Final Response
     # =====================================================
 
@@ -142,17 +71,29 @@ class Mind:
     # Helper Methods
     # =====================================================
 
-    def add_task(self, task: Any) -> None:
+    def add_task(
+        self,
+        task: Any,
+    ) -> None:
+
         self.planner_tasks.append(task)
 
-    def add_tool_result(self, result: Any) -> None:
+    # -----------------------------------------------------
+
+    def add_tool_result(
+        self,
+        result: Any,
+    ) -> None:
+
         self.tool_results.append(result)
 
+    # -----------------------------------------------------
+
     def clear_execution(self) -> None:
+
         self.planner_tasks.clear()
         self.tool_results.clear()
         self.execution_time_ms = 0.0
-        self.reflection = None
 
     # =====================================================
     # Convenience Properties
@@ -160,24 +101,127 @@ class Mind:
 
     @property
     def latest_tool_result(self) -> Any | None:
-        return self.tool_results[-1] if self.tool_results else None
 
-    @property
-    def requires_tools(self) -> bool:
-        return self.decision.requires_planning
+        if not self.tool_results:
+            return None
 
-    @property
-    def is_conversation(self) -> bool:
-        return self.decision.action is DecisionAction.RESPOND
+        return self.tool_results[-1]
 
-    @property
-    def has_memory(self) -> bool:
-        return self.memory_result is not None
+    # -----------------------------------------------------
 
     @property
     def has_tool_results(self) -> bool:
-        return bool(self.tool_results)
+
+        return len(self.tool_results) > 0
+
+    # -----------------------------------------------------
 
     @property
-    def has_clarification(self) -> bool:
-        return self.clarification is not None
+    def has_memory(self) -> bool:
+
+        return self.memory_result is not None
+
+    # =====================================================
+    # Thinking Shortcuts
+    # =====================================================
+
+    @property
+    def action(self) -> str:
+
+        return self.thinking.action
+
+    # -----------------------------------------------------
+
+    @property
+    def intent(self) -> str:
+
+        return self.thinking.intent
+
+    # -----------------------------------------------------
+
+    @property
+    def goal(self) -> str:
+
+        return self.thinking.goal
+
+    # -----------------------------------------------------
+
+    @property
+    def confidence(self) -> float:
+
+        return self.thinking.confidence
+
+    # -----------------------------------------------------
+
+    @property
+    def emotion(self) -> str:
+
+        return self.thinking.emotion
+
+    # -----------------------------------------------------
+
+    @property
+    def tone(self) -> str:
+
+        return self.thinking.tone
+
+    # -----------------------------------------------------
+
+    @property
+    def requires_tools(self) -> bool:
+
+        return self.thinking.requires_tools
+
+    # -----------------------------------------------------
+
+    @property
+    def tool(self) -> str | None:
+
+        return self.thinking.tool
+
+    # -----------------------------------------------------
+
+    @property
+    def response(self) -> str:
+        """
+        Final response precedence:
+
+        1. Runtime-generated response
+        2. ThinkingEngine response
+        """
+
+        if self.final_response:
+            return self.final_response.strip()
+
+        if self.thinking.response:
+            return self.thinking.response.strip()
+
+        return ""
+
+    # -----------------------------------------------------
+
+    @property
+    def should_respond(self) -> bool:
+
+        return self.thinking.should_respond
+
+    # -----------------------------------------------------
+
+    @property
+    def should_plan(self) -> bool:
+
+        return self.thinking.should_plan
+
+    # -----------------------------------------------------
+
+    @property
+    def should_clarify(self) -> bool:
+
+        return self.thinking.should_clarify
+
+    # -----------------------------------------------------
+
+    @property
+    def should_use_memory(self) -> bool:
+
+        return self.thinking.should_use_memory

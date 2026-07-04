@@ -1,23 +1,23 @@
 from __future__ import annotations
 
-from brain.provider import manager
+from brain.providers import manager
 from brain.providers.base_llm_provider import BaseLLMProvider
 
 
 class ProviderRouter:
     """
-    Routes LLM requests to the appropriate providers.
+    Provider routing layer.
 
     Responsibilities
     ----------------
-    • Return a single provider when explicitly requested.
-    • Return an ordered provider list for automatic fallback.
-    • Hide ProviderManager from LLMService.
+    • Route requests to the appropriate provider(s).
+    • Translate request requirements into provider selection.
+    • Hide ProviderManager from the LLM layer.
 
     Never
     -----
-    • Execute requests.
-    • Perform health checks.
+    • Execute LLM requests.
+    • Track provider health.
     • Maintain provider state.
     """
 
@@ -30,11 +30,11 @@ class ProviderRouter:
         model: str | None = None,
     ) -> BaseLLMProvider:
         """
-        Return the provider that should execute
-        the next request.
+        Return the single best provider for this request.
         """
 
         if model is not None:
+
             return manager.by_model(model)
 
         return manager.provider(task)
@@ -48,15 +48,39 @@ class ProviderRouter:
         model: str | None = None,
     ) -> list[BaseLLMProvider]:
         """
-        Return providers in routing priority order.
+        Return providers ordered by routing preference.
 
-        If a model is explicitly requested,
-        only that provider is returned.
+        The ProviderManager already accounts for provider
+        availability and health. The router simply exposes
+        the ordered list to the execution layer.
         """
 
         if model is not None:
+
             return [
                 manager.by_model(model)
             ]
 
         return manager.providers(task)
+
+    # =====================================================
+
+    def default(
+        self,
+    ) -> BaseLLMProvider:
+        """
+        Convenience helper for general-purpose requests.
+        """
+
+        return manager.provider()
+
+    # =====================================================
+
+    def available(
+        self,
+    ) -> tuple[str, ...]:
+        """
+        Return currently registered providers.
+        """
+
+        return manager.provider_names()

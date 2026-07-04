@@ -21,37 +21,29 @@ class ProviderManager:
     ----------------
     • Discover providers
     • Register providers
-    • Model lookup
-    • Expose routing components
+    • Delegate provider selection
+    • Expose provider lookup
 
-    Never
-    -----
+    Does NOT:
+    ----------
     • Execute requests
-    • Build prompts
-    • Parse responses
+    • Maintain provider health
+    • Decide provider scoring
     """
-
-    # =====================================================
 
     def __init__(self) -> None:
 
-        logger.info(
-            "Initializing Provider Manager..."
-        )
+        logger.info("Initializing Provider Manager...")
 
         self.registry = ProviderRegistry()
 
-        self.policy = ProviderPolicy(
-            self.registry
-        )
+        self.policy = ProviderPolicy(self.registry)
 
-        self.selector = ProviderSelector(
-            self.registry
-        )
+        self.selector = ProviderSelector(self.registry)
 
         self.reload()
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def reload(self) -> None:
 
@@ -59,23 +51,29 @@ class ProviderManager:
 
         self._discover()
 
-    # =====================================================
+        logger.info(
+            "Provider Manager ready (%d providers).",
+            len(self.registry),
+        )
+
+    # ---------------------------------------------------------
+
+    def _candidate_providers(
+        self,
+    ) -> tuple[BaseLLMProvider, ...]:
+
+        return (
+            GroqProvider(),
+            OllamaProvider(),
+            OpenRouterProvider(),
+            GeminiProvider(),
+        )
+
+    # ---------------------------------------------------------
 
     def _discover(self) -> None:
 
-        candidates = (
-
-            GroqProvider(),
-
-            OllamaProvider(),
-
-            OpenRouterProvider(),
-
-            GeminiProvider(),
-
-        )
-
-        for provider in candidates:
+        for provider in self._candidate_providers():
 
             logger.info(
                 "Checking provider '%s'...",
@@ -93,18 +91,19 @@ class ProviderManager:
 
                     continue
 
-            except Exception:
+                self.registry.register(provider)
 
-                logger.exception(
-                    "Failed initializing '%s'",
+                logger.info(
+                    "Registered provider: %s",
                     provider.name,
                 )
 
-                continue
+            except Exception:
 
-            self.registry.register(
-                provider
-            )
+                logger.exception(
+                    "Failed initializing '%s'.",
+                    provider.name,
+                )
 
         if len(self.registry) == 0:
 
@@ -112,53 +111,37 @@ class ProviderManager:
                 "No LLM providers are available."
             )
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def provider(
         self,
         task: str = "general",
     ) -> BaseLLMProvider:
-        """
-        Return the provider selected for this task.
-        """
 
-        candidates = self.policy.providers_for(
-            task
-        )
+        candidates = self.policy.providers_for(task)
 
-        return self.selector.select(
-            candidates
-        )
+        return self.selector.select(candidates)
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def providers(
         self,
         task: str = "general",
     ) -> list[BaseLLMProvider]:
-        """
-        Return providers in routing priority order.
-
-        Used by LLMService for automatic fallback.
-        """
 
         providers: list[BaseLLMProvider] = []
 
         for name in self.policy.providers_for(task):
 
-            try:
+            if self.registry.exists(name):
 
                 providers.append(
-                    self.get(name)
+                    self.registry.get(name).provider
                 )
-
-            except ValueError:
-
-                continue
 
         return providers
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def mark_success(
         self,
@@ -171,7 +154,7 @@ class ProviderManager:
             latency_ms,
         )
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def mark_failure(
         self,
@@ -179,10 +162,10 @@ class ProviderManager:
     ) -> None:
 
         self.selector.report_failure(
-            provider_name
+            provider_name,
         )
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def provider_names(
         self,
@@ -190,7 +173,7 @@ class ProviderManager:
 
         return self.registry.names()
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def provider_count(
         self,
@@ -198,29 +181,25 @@ class ProviderManager:
 
         return len(self.registry)
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def has_provider(
         self,
         name: str,
     ) -> bool:
 
-        return self.registry.exists(
-            name
-        )
+        return self.registry.exists(name)
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def get(
         self,
         name: str,
     ) -> BaseLLMProvider:
 
-        return self.registry.get(
-            name
-        ).provider
+        return self.registry.get(name).provider
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     def by_model(
         self,
@@ -231,49 +210,39 @@ class ProviderManager:
 
         if "gemini" in model:
 
-            return self.get(
-                "Gemini"
-            )
-
-        if (
-            "gpt" in model
-            or
-            "openrouter" in model
-        ):
-
-            return self.get(
-                "OpenRouter"
-            )
-
-        if (
-            "llama" in model
-            or "qwen" in model
-            or "mistral" in model
-            or "deepseek" in model
-            or "phi" in model
-        ):
-
-            if self.has_provider(
-                "Ollama"
-            ):
-
-                return self.get(
-                    "Ollama"
-                )
-
-            return self.get(
-                "Groq"
-            )
+            return self.get("Gemini")
 
         if "groq" in model:
 
-            return self.get(
-                "Groq"
+            return self.get("Groq")
+
+        if (
+            "gpt" in model
+            or "openrouter" in model
+        ):
+
+            return self.get("OpenRouter")
+
+        if any(
+            family in model
+            for family in (
+                "llama",
+                "qwen",
+                "mistral",
+                "phi",
+                "deepseek",
             )
+        ):
+
+            if self.has_provider("Ollama"):
+
+                return self.get("Ollama")
+
+            return self.get("Groq")
 
         return self.provider()
 
-    # =====================================================
+    # ---------------------------------------------------------
 
     @property
     def current_provider(

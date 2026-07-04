@@ -2,20 +2,9 @@ from __future__ import annotations
 
 import logging
 
-from brain.conversation.conversation_engine import ConversationEngine
-
 from brain.intelligence.context import ContextManager
-from brain.intelligence.decision import DecisionEngine
 from brain.intelligence.mind import Mind
-
-from brain.intelligence.models import (
-    Confidence,
-    Emotion,
-)
-
-from brain.intelligence.reasoning import ReasoningEngine
-from brain.intelligence.understanding import UnderstandingEngine
-
+from brain.intelligence.thinking_engine import ThinkingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -26,45 +15,22 @@ class IntelligenceEngine:
 
     Responsibilities
     ----------------
-    • Coordinate every cognitive subsystem.
-    • Maintain short-term context.
-    • Construct the final Mind object.
+    • Maintain conversational context.
+    • Execute one cognitive reasoning pass.
+    • Produce a Mind object.
 
-    This class NEVER performs reasoning,
-    decision making or conversation itself.
-
-    Pipeline
-
-        User Message
-              ↓
-          Context
-              ↓
-       Understanding
-              ↓
-         Reasoning
-              ↓
-      Conversation Style
-              ↓
-          Decision
-              ↓
-             Mind
+    ThinkingEngine is the ONLY LLM-powered reasoning step.
     """
 
-    # ---------------------------------------------------------
+    # =====================================================
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         self.context = ContextManager()
 
-        self.understanding = UnderstandingEngine()
+        self.thinking = ThinkingEngine()
 
-        self.reasoning = ReasoningEngine()
-
-        self.conversation = ConversationEngine()
-
-        self.decision = DecisionEngine()
-
-    # ---------------------------------------------------------
+    # =====================================================
 
     def think(
         self,
@@ -74,7 +40,7 @@ class IntelligenceEngine:
         logger.info("Starting cognitive pipeline...")
 
         # -------------------------------------------------
-        # Context
+        # Update Context
         # -------------------------------------------------
 
         self.context.add_message(message)
@@ -82,109 +48,19 @@ class IntelligenceEngine:
         context = self.context.current
 
         # -------------------------------------------------
-        # Understanding
+        # Single Thinking Pass
         # -------------------------------------------------
 
-        understanding = self.understanding.understand(
-            message
-        )
-
-        logger.info(
-
-            "Understanding complete | goal=%s | intent=%s | confidence=%.2f",
-
-            understanding.goal,
-
-            understanding.intent,
-
-            understanding.confidence,
-
-        )
-
-        # -------------------------------------------------
-        # Reasoning
-        # -------------------------------------------------
-
-        reasoning = self.reasoning.reason(
-
-            understanding,
-
-            context,
-
-        )
-
-        logger.info("Reasoning complete.")
-
-        # -------------------------------------------------
-        # Conversation Intelligence
-        # -------------------------------------------------
-
-        conversation = self.conversation.analyze(
-
+        thinking = self.thinking.think(
             user_message=message,
-
-            understanding=understanding,
-
-            reasoning=reasoning,
-
-            context=context,
-
+            context=str(context),
         )
 
         logger.info(
-
-            "Conversation complete | tone=%s",
-
-            conversation.tone,
-
-        )
-
-        # -------------------------------------------------
-        # Executive Decision
-        # -------------------------------------------------
-
-        decision = self.decision.decide(
-
-            user_message=message,
-
-            understanding=understanding,
-
-            reasoning=reasoning,
-
-            context=context,
-
-        )
-
-        logger.info(
-
-            "Decision complete | action=%s",
-
-            decision.action.name,
-
-        )
-
-        # -------------------------------------------------
-        # Confidence
-        # -------------------------------------------------
-
-        confidence = Confidence(
-
-            score=understanding.confidence,
-
-            explanation="Derived from semantic understanding.",
-
-        )
-
-        # -------------------------------------------------
-        # Emotion
-        # -------------------------------------------------
-
-        emotion = Emotion(
-
-            label=understanding.emotional_tone,
-
-            confidence=understanding.confidence,
-
+            "Thinking complete | intent=%s | action=%s | confidence=%.2f",
+            thinking.intent,
+            thinking.action,
+            thinking.confidence,
         )
 
         # -------------------------------------------------
@@ -192,36 +68,18 @@ class IntelligenceEngine:
         # -------------------------------------------------
 
         mind = Mind(
-
             user_message=message,
-
-            understanding=understanding,
-
-            reasoning=reasoning,
-
-            conversation=conversation,
-
-            decision=decision,
-
-            context=context,
-
-            emotion=emotion,
-
-            confidence=confidence,
-
+            thinking=thinking,
         )
 
         logger.info("Cognitive pipeline completed.")
 
         return mind
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     def reset(self) -> None:
-        """
-        Reset Mike's short-term conversational state.
-        """
 
-        logger.info("Resetting cognitive state.")
+        logger.info("Resetting cognitive context.")
 
         self.context.reset()

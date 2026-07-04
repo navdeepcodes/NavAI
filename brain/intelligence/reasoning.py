@@ -9,13 +9,20 @@ from brain.intelligence.models import (
 
 class ReasoningEngine:
     """
-    Generates Mike's internal reasoning.
+    Builds Mike's internal reasoning.
 
-    This reasoning is NEVER shown directly to the user.
-    It helps Mike decide the best strategy before acting.
+    This module performs deterministic reasoning only.
+    It never calls an LLM and never generates user-facing text.
+
+    Responsibilities
+    ----------------
+    • Explain Mike's internal reasoning
+    • Summarize available context
+    • Record assumptions
+    • Assess confidence
     """
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     def reason(
         self,
@@ -26,61 +33,42 @@ class ReasoningEngine:
         reasoning = Reasoning()
 
         # -------------------------------------------------
-        # Goal
+        # User Goal
+        # -------------------------------------------------
+
+        if understanding.goal:
+
+            reasoning.thoughts.append(
+                f"Primary goal: {understanding.goal}"
+            )
+
+        # -------------------------------------------------
+        # Tool Requirement
         # -------------------------------------------------
 
         reasoning.thoughts.append(
-
-            f"The user's goal is '{understanding.goal}'."
-
+            "Tool execution required."
+            if understanding.requires_tools
+            else "Conversational response is sufficient."
         )
-
-        # -------------------------------------------------
-        # Tool Usage
-        # -------------------------------------------------
-
-        if understanding.requires_tools:
-
-            reasoning.thoughts.append(
-
-                "This request requires tool execution."
-
-            )
-
-        else:
-
-            reasoning.thoughts.append(
-
-                "This can likely be answered conversationally."
-
-            )
 
         # -------------------------------------------------
         # Context
         # -------------------------------------------------
 
         if context.current_task:
-
             reasoning.observations.append(
-
                 f"Current task: {context.current_task}"
-
             )
 
         if context.active_project:
-
             reasoning.observations.append(
-
                 f"Active project: {context.active_project}"
-
             )
 
         if context.working_directory:
-
             reasoning.observations.append(
-
                 f"Working directory: {context.working_directory}"
-
             )
 
         # -------------------------------------------------
@@ -89,24 +77,17 @@ class ReasoningEngine:
 
         if understanding.confidence < 0.70:
 
-            reasoning.assumptions.append(
-
-                "Understanding confidence is low."
-
-            )
-
-            reasoning.assumptions.append(
-
-                "A clarification may be needed."
-
+            reasoning.assumptions.extend(
+                [
+                    "Understanding confidence is low.",
+                    "Clarification may be required.",
+                ]
             )
 
         else:
 
             reasoning.assumptions.append(
-
                 "Understanding confidence is sufficient."
-
             )
 
         return reasoning
