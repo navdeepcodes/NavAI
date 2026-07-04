@@ -1,31 +1,28 @@
 from __future__ import annotations
 
-# ==========================================================
-# Mike Theme
-# ==========================================================
+# Backgrounds
+WINDOW = "#030303"
+SURFACE = "#09090B"
+SURFACE_ALT = "#111111"
 
-BACKGROUND = "#080808"
+# Borders
+BORDER = "#1F1F23"
+BORDER_LIGHT = "#2A2A2F"
 
-SURFACE = "#111111"
+# Text
+TEXT = "#F5F5F5"
+TEXT_SECONDARY = "#A1A1AA"
+TEXT_MUTED = "#71717A"
 
-SURFACE_LIGHT = "#161616"
-
-BORDER = "#232323"
-
-TEXT = "#F0F0F0"
-
-TEXT_SECONDARY = "#9A9A9A"
-
-TEXT_MUTED = "#6F6F6F"
-
-ACCENT = "#6366F1"
-
-SUCCESS = "#22C55E"
-
-WARNING = "#F59E0B"
-
+# Provider Colors
+OLLAMA = "#10B981"
+GROQ = "#0EA5E9"
+PLANNER = "#F59E0B"
 ERROR = "#EF4444"
 
-ONLINE = "#3B82F6"
+# Bubble Colors
+USER_BUBBLE = "#0D1728"
+MIKE_BUBBLE = "#111111"
 
-SHADOW = "#000000"
+# Misc
+HOVER = "#16161A"
