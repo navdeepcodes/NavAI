@@ -6,7 +6,7 @@ from voice.player import Player
 
 from brain.assistant import initialize_brain
 
-from core.runtime import Runtime
+from brain.runtime import Runtime
 
 
 class Mike:

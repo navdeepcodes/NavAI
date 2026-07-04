@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 from groq import Groq
+
+from brain.llm.llm_request import LLMRequest
+from brain.llm.provider_response import ProviderResponse
 
 from brain.providers.base_llm_provider import BaseLLMProvider
 from brain.providers.capabilities import ProviderCapability
-from brain.models import ProviderResponse
 
 from config.settings import (
     GROQ_API_KEY,
@@ -13,185 +17,147 @@ from logs.logger import logger
 
 
 class GroqProvider(BaseLLMProvider):
+    """
+    Groq LLM provider.
+
+    Responsibilities
+    ----------------
+    • Execute an LLMRequest
+    • Return a ProviderResponse
+
+    This provider does not perform routing,
+    reasoning or prompt construction.
+    """
 
     @property
-    def name(self):
-
+    def name(self) -> str:
         return "Groq"
 
-    # ---------------------------------------------------------
-
     @property
-    def capability(self):
-
+    def capability(self) -> ProviderCapability:
         return ProviderCapability(
-
             name="Groq",
-
             chat=True,
-
             vision=False,
-
             tools=True,
-
             streaming=True,
-
             reasoning_score=7,
-
             coding_score=9,
-
             speed_score=10,
-
             privacy_score=2,
-
             local=False,
-
-            context_window=131072,
-
-            cost_score=1
-
+            context_window=131_072,
+            cost_score=1,
         )
 
     # ---------------------------------------------------------
 
-    def __init__(self):
-
-        logger.info(
-            "Initializing Groq Provider..."
-        )
-
-        self.client = Groq(
-            api_key=GROQ_API_KEY
-        )
-
-        self.model = GROQ_MODEL
+    def __init__(self) -> None:
+        logger.info("Initializing Groq Provider...")
+        self.client = Groq(api_key=GROQ_API_KEY)
 
     # ---------------------------------------------------------
 
-    def _generate(
-
+    def generate(
         self,
-
-        prompt: str,
-
-        **kwargs
-
+        request: LLMRequest,
     ) -> ProviderResponse:
 
-        response = self.client.chat.completions.create(
+        if request.image is not None:
+            raise NotImplementedError(
+                "Groq does not support vision requests."
+            )
 
-            model=self.model,
+        try:
 
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+            response = self.client.chat.completions.create(
+                model=request.model or GROQ_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": request.system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": request.user_input,
+                    },
+                ],
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                top_p=request.top_p,
+                stop=list(request.stop_sequences)
+                if request.stop_sequences
+                else None,
+                stream=False,
+                timeout=request.timeout,
+            )
 
-            temperature=kwargs.get("temperature"),
+            usage = response.usage
 
-            max_tokens=kwargs.get("max_tokens")
+            return ProviderResponse(
+                text=response.choices[0].message.content or "",
+                provider=self.name,
+                model=request.model or GROQ_MODEL,
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+                raw=response,
+            )
 
-        )
-
-        usage = getattr(
-            response,
-            "usage",
-            None
-        )
-
-        return ProviderResponse(
-
-            text=response.choices[0].message.content,
-
-            provider=self.name,
-
-            model=self.model,
-
-            input_tokens=getattr(
-                usage,
-                "prompt_tokens",
-                0
-            ) if usage else 0,
-
-            output_tokens=getattr(
-                usage,
-                "completion_tokens",
-                0
-            ) if usage else 0,
-
-            raw=response
-
-        )
+        except Exception:
+            logger.exception("Groq generation failed.")
+            raise
 
     # ---------------------------------------------------------
 
-    def _generate_stream(
-
+    def stream(
         self,
-
-        prompt: str,
-
-        **kwargs
-
+        request: LLMRequest,
     ):
+        """
+        Streaming generator.
 
-        stream = self.client.chat.completions.create(
+        Returns plain text chunks.
+        """
 
-            model=self.model,
+        if request.image is not None:
+            raise NotImplementedError(
+                "Groq does not support vision requests."
+            )
 
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+        try:
 
-            stream=True,
+            stream = self.client.chat.completions.create(
+                model=request.model or GROQ_MODEL,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": request.system_prompt,
+                    },
+                    {
+                        "role": "user",
+                        "content": request.user_input,
+                    },
+                ],
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+                top_p=request.top_p,
+                stop=list(request.stop_sequences)
+                if request.stop_sequences
+                else None,
+                stream=True,
+                timeout=request.timeout,
+            )
 
-            temperature=kwargs.get("temperature"),
+            for chunk in stream:
 
-            max_tokens=kwargs.get("max_tokens")
+                if not chunk.choices:
+                    continue
 
-        )
+                delta = chunk.choices[0].delta.content
 
-        for chunk in stream:
+                if delta:
+                    yield delta
 
-            if (
-
-                chunk.choices
-
-                and
-
-                chunk.choices[0].delta.content
-
-            ):
-
-                yield chunk.choices[0].delta.content
-
-    # ---------------------------------------------------------
-
-    def _generate_vision(
-
-        self,
-
-        prompt: str,
-
-        image,
-
-        **kwargs
-
-    ):
-
-        raise NotImplementedError(
-
-            "Groq vision is not available."
-
-        )
-
-    # ---------------------------------------------------------
-
-    def supports_tools(self):
-
-        return True
+        except Exception:
+            logger.exception("Groq streaming failed.")
+            raise

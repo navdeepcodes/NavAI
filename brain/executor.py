@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from logs.logger import logger
 
 from brain.task import Task
@@ -9,14 +11,24 @@ from tools.tool_result import ToolResult
 
 class Executor:
     """
-    Executes planner tasks by delegating them to the ToolExecutor.
+    Mike Execution Engine.
 
     Responsibilities
     ----------------
-    - Validate executable tasks
-    - Dispatch tasks to the correct tool
-    - Update task execution state
-    - Return ToolResult objects
+    • Execute validated planner tasks.
+    • Dispatch tasks to the correct tool.
+    • Track execution state.
+    • Never perform planning.
+    • Never perform reasoning.
+    • Never generate responses.
+
+    Future capabilities
+    -------------------
+    • Parallel execution
+    • Dependency graphs
+    • Retry policies
+    • Cancellation
+    • Progress callbacks
     """
 
     # ---------------------------------------------------------
@@ -31,20 +43,52 @@ class Executor:
 
     def execute(
         self,
-        task: Task | None
+        tasks: Task | Iterable[Task] | None,
+    ) -> list[ToolResult]:
+
+        """
+        Execute one or more tasks.
+
+        Returns
+        -------
+        List[ToolResult]
+            One ToolResult per executed task.
+        """
+
+        if tasks is None:
+
+            logger.warning("Executor received no tasks.")
+
+            return []
+
+        if isinstance(tasks, Task):
+
+            tasks = [tasks]
+
+        results: list[ToolResult] = []
+
+        for task in tasks:
+
+            result = self._execute_task(task)
+
+            if result is not None:
+
+                results.append(result)
+
+        return results
+
+    # ---------------------------------------------------------
+
+    def _execute_task(
+        self,
+        task: Task,
     ) -> ToolResult | None:
-
-        if task is None:
-
-            logger.warning("Executor received a None task.")
-
-            return None
 
         if not task.executable:
 
             logger.info(
                 "Skipping non-executable task: %s",
-                task.description
+                task.description,
             )
 
             task.mark_complete()
@@ -54,12 +98,12 @@ class Executor:
         logger.info(
             "Executing Tool | tool=%s action=%s",
             task.tool,
-            task.action
+            task.action,
         )
 
         logger.debug(
             "Arguments: %s",
-            task.arguments
+            task.arguments,
         )
 
         try:
@@ -70,7 +114,7 @@ class Executor:
 
                 action=task.action or "",
 
-                **(task.arguments or {})
+                **(task.arguments or {}),
 
             )
 
@@ -78,7 +122,7 @@ class Executor:
 
             logger.info(
                 "Task %s completed successfully.",
-                task.id
+                task.id,
             )
 
             return result
@@ -87,7 +131,7 @@ class Executor:
 
             logger.exception(
                 "Task %s failed.",
-                task.id
+                task.id,
             )
 
             task.mark_failed(exc)
@@ -100,20 +144,24 @@ class Executor:
 
                 action=task.action or "",
 
-                error=str(exc)
+                error=str(exc),
 
             )
 
     # ---------------------------------------------------------
 
     @property
-    def available_tools(self) -> list[str]:
+    def available_tools(
+        self,
+    ) -> list[str]:
 
         return self._tool_executor.available_tools()
 
     # ---------------------------------------------------------
 
-    def reload_tools(self) -> None:
+    def reload_tools(
+        self,
+    ) -> None:
 
         logger.info("Reloading tool registry...")
 

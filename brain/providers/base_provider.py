@@ -1,79 +1,59 @@
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 
 
 class BaseProvider(ABC):
+    """
+    Base interface for every AI provider.
+
+    This class contains only functionality common to all providers.
+
+    Provider-specific request execution belongs in subclasses
+    such as BaseLLMProvider.
+
+    Responsibilities
+    ----------------
+    • Provider identity
+    • Availability checks
+
+    Never
+    -----
+    • Execute prompts
+    • Build prompts
+    • Route requests
+    • Manage conversations
+    • Execute tools
+    """
+
+    # =========================================================
 
     @property
     @abstractmethod
     def name(self) -> str:
         """
-        Provider name.
+        Human-readable provider name.
+
+        Example:
+            Gemini
+            Groq
+            Ollama
+            OpenRouter
         """
-        pass
+        ...
 
-    # -----------------------------------------
+    # =========================================================
 
-    @abstractmethod
     def health_check(self) -> bool:
         """
-        Check whether the provider is available.
-        """
-        pass
+        Verify that the provider is available.
 
-    # -----------------------------------------
+        Providers may override this to perform an actual API
+        request or connectivity check.
 
-    @abstractmethod
-    def chat(
-        self,
-        messages
-    ):
+        Returns
+        -------
+        bool
+            True if the provider is healthy.
         """
-        Multi-message conversation.
-        """
-        pass
-
-    # -----------------------------------------
-
-    @abstractmethod
-    def complete(
-        self,
-        prompt: str
-    ):
-        """
-        Stateless completion.
-        """
-        pass
-
-    # -----------------------------------------
-
-    @abstractmethod
-    def vision(
-        self,
-        prompt: str,
-        image=None
-    ):
-        """
-        Vision / image understanding.
-        """
-        pass
-
-    # -----------------------------------------
-
-    @abstractmethod
-    def stream(
-        self,
-        messages
-    ):
-        """
-        Streaming response.
-        """
-        pass
-
-    # -----------------------------------------
-
-    @abstractmethod
-    def supports_tools(self) -> bool:
-        """
-        Whether the provider supports tool/function calling.
-        """
-        pass
+        return True

@@ -1,8 +1,15 @@
+from __future__ import annotations
+
+import base64
+from pathlib import Path
+
 from openai import OpenAI
+
+from brain.llm.llm_request import LLMRequest
+from brain.llm.provider_response import ProviderResponse
 
 from brain.providers.base_llm_provider import BaseLLMProvider
 from brain.providers.capabilities import ProviderCapability
-from brain.models import ProviderResponse
 
 from config.settings import (
     OPENROUTER_API_KEY,
@@ -13,195 +20,190 @@ from logs.logger import logger
 
 
 class OpenRouterProvider(BaseLLMProvider):
+    """
+    OpenRouter provider.
+
+    Responsibilities
+    ----------------
+    • Execute an LLMRequest
+    • Return a ProviderResponse
+
+    Never performs routing, reasoning,
+    or prompt construction.
+    """
 
     @property
-    def name(self):
-
+    def name(self) -> str:
         return "OpenRouter"
 
-    # ---------------------------------------------------------
-
     @property
-    def capability(self):
-
+    def capability(self) -> ProviderCapability:
         return ProviderCapability(
-
             name="OpenRouter",
-
             chat=True,
-
             vision=True,
-
             tools=True,
-
             streaming=True,
-
             reasoning_score=10,
-
             coding_score=10,
-
             speed_score=7,
-
             privacy_score=2,
-
             local=False,
-
-            context_window=200000,
-
-            cost_score=5
-
+            context_window=200_000,
+            cost_score=5,
         )
 
     # ---------------------------------------------------------
 
-    def __init__(self):
+    def __init__(self) -> None:
 
-        logger.info(
-            "Initializing OpenRouter Provider..."
-        )
+        logger.info("Initializing OpenRouter Provider...")
 
         self.client = OpenAI(
-
             api_key=OPENROUTER_API_KEY,
-
-            base_url="https://openrouter.ai/api/v1"
-
+            base_url="https://openrouter.ai/api/v1",
         )
-
-        self.model = OPENROUTER_MODEL
 
     # ---------------------------------------------------------
 
-    def _generate(
-
+    def generate(
         self,
-
-        prompt: str,
-
-        **kwargs
-
+        request: LLMRequest,
     ) -> ProviderResponse:
 
-        response = self.client.chat.completions.create(
+        try:
 
-            model=self.model,
+            messages = self._messages(request)
 
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
+            response = self.client.chat.completions.create(
+                model=request.model or OPENROUTER_MODEL,
+                messages=messages,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens,
+                stop=list(request.stop_sequences)
+                if request.stop_sequences
+                else None,
+                stream=False,
+                timeout=request.timeout,
+            )
 
-            temperature=kwargs.get("temperature"),
+            usage = response.usage
 
-            max_tokens=kwargs.get("max_tokens")
+            return ProviderResponse(
+                text=response.choices[0].message.content or "",
+                provider=self.name,
+                model=request.model or OPENROUTER_MODEL,
+                finish_reason=response.choices[0].finish_reason,
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+                raw=response,
+            )
 
-        )
-
-        usage = getattr(
-
-            response,
-
-            "usage",
-
-            None
-
-        )
-
-        return ProviderResponse(
-
-            text=response.choices[0].message.content,
-
-            provider=self.name,
-
-            model=self.model,
-
-            finish_reason=response.choices[0].finish_reason,
-
-            input_tokens=getattr(
-                usage,
-                "prompt_tokens",
-                0
-            ) if usage else 0,
-
-            output_tokens=getattr(
-                usage,
-                "completion_tokens",
-                0
-            ) if usage else 0,
-
-            raw=response
-
-        )
+        except Exception:
+            logger.exception("OpenRouter generation failed.")
+            raise
 
     # ---------------------------------------------------------
 
-    def _generate_stream(
-
+    def stream(
         self,
-
-        prompt: str,
-
-        **kwargs
-
+        request: LLMRequest,
     ):
 
-        stream = self.client.chat.completions.create(
+        try:
 
-            model=self.model,
+            messages = self._messages(request)
 
-            messages=[
+            stream = self.client.chat.completions.create(
+                model=request.model or OPENROUTER_MODEL,
+                messages=messages,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                max_tokens=request.max_tokens,
+                stop=list(request.stop_sequences)
+                if request.stop_sequences
+                else None,
+                stream=True,
+                timeout=request.timeout,
+            )
+
+            for chunk in stream:
+
+                if not chunk.choices:
+                    continue
+
+                delta = chunk.choices[0].delta.content
+
+                if delta:
+                    yield delta
+
+        except Exception:
+            logger.exception("OpenRouter streaming failed.")
+            raise
+
+    # ---------------------------------------------------------
+
+    def _messages(
+        self,
+        request: LLMRequest,
+    ) -> list[dict]:
+
+        messages = [
+            {
+                "role": "system",
+                "content": request.system_prompt,
+            }
+        ]
+
+        if request.image is None:
+
+            messages.append(
                 {
                     "role": "user",
-                    "content": prompt
+                    "content": request.user_input,
                 }
-            ],
+            )
 
-            stream=True,
+            return messages
 
-            temperature=kwargs.get("temperature"),
+        image = self._encode_image(request.image)
 
-            max_tokens=kwargs.get("max_tokens")
-
+        messages.append(
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": request.user_input,
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image,
+                        },
+                    },
+                ],
+            }
         )
 
-        for chunk in stream:
-
-            if (
-
-                chunk.choices
-
-                and
-
-                chunk.choices[0].delta.content
-
-            ):
-
-                yield chunk.choices[0].delta.content
+        return messages
 
     # ---------------------------------------------------------
 
-    def _generate_vision(
+    @staticmethod
+    def _encode_image(
+        image_path: str,
+    ) -> str:
 
-        self,
+        path = Path(image_path)
 
-        prompt: str,
+        if not path.exists():
+            raise FileNotFoundError(path)
 
-        image,
+        suffix = path.suffix.lower().replace(".", "")
 
-        **kwargs
+        with open(path, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode()
 
-    ):
-
-        raise NotImplementedError(
-
-            "Vision support will be implemented when using a vision-capable OpenRouter model."
-
-        )
-
-    # ---------------------------------------------------------
-
-    def supports_tools(self):
-
-        return True
+        return f"data:image/{suffix};base64,{encoded}"

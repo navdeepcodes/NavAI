@@ -1,8 +1,11 @@
+from __future__ import annotations
+
 from logs.logger import logger
 
-from brain.providers.task_type import TaskType
-from brain.providers.provider_request import ProviderRequest
-from brain.providers.orchestrator import AIOrchestrator
+from brain.providers.base_llm_provider import BaseLLMProvider
+from brain.providers.provider_policy import ProviderPolicy
+from brain.providers.provider_registry import ProviderRegistry
+from brain.providers.provider_selector import ProviderSelector
 
 from brain.providers.gemini_provider import GeminiProvider
 from brain.providers.groq_provider import GroqProvider
@@ -11,363 +14,270 @@ from brain.providers.openrouter_provider import OpenRouterProvider
 
 
 class ProviderManager:
+    """
+    Central coordinator for every LLM provider.
 
-    # ---------------------------------------------------------
+    Responsibilities
+    ----------------
+    • Discover providers
+    • Register providers
+    • Model lookup
+    • Expose routing components
 
-    def __init__(self):
+    Never
+    -----
+    • Execute requests
+    • Build prompts
+    • Parse responses
+    """
+
+    # =====================================================
+
+    def __init__(self) -> None:
 
         logger.info(
             "Initializing Provider Manager..."
         )
 
-        self.providers = []
+        self.registry = ProviderRegistry()
 
-        self._discover_providers()
-
-        self.orchestrator = AIOrchestrator(
-            self.providers
+        self.policy = ProviderPolicy(
+            self.registry
         )
 
-    # ---------------------------------------------------------
+        self.selector = ProviderSelector(
+            self.registry
+        )
 
-    def _discover_providers(self):
+        self.reload()
 
-        candidates = [
+    # =====================================================
 
-            GeminiProvider(),
+    def reload(self) -> None:
+
+        self.registry.clear()
+
+        self._discover()
+
+    # =====================================================
+
+    def _discover(self) -> None:
+
+        candidates = (
 
             GroqProvider(),
 
             OllamaProvider(),
 
-            OpenRouterProvider()
+            OpenRouterProvider(),
 
-        ]
+            GeminiProvider(),
+
+        )
 
         for provider in candidates:
 
             logger.info(
-                f"Checking {provider.name}..."
+                "Checking provider '%s'...",
+                provider.name,
             )
 
             try:
 
-                if provider.health_check():
-
-                    logger.info(
-                        f"{provider.name} available."
-                    )
-
-                    self.providers.append(
-                        provider
-                    )
-
-                else:
+                if not provider.health_check():
 
                     logger.warning(
-                        f"{provider.name} unavailable."
+                        "Skipping '%s' (health check failed).",
+                        provider.name,
                     )
 
-            except Exception as e:
+                    continue
 
-                logger.exception(e)
+            except Exception:
 
-        if not self.providers:
+                logger.exception(
+                    "Failed initializing '%s'",
+                    provider.name,
+                )
 
-            raise RuntimeError(
-                "No AI providers are available."
+                continue
+
+            self.registry.register(
+                provider
             )
 
-    # ---------------------------------------------------------
+        if len(self.registry) == 0:
 
-    def reload(self):
+            raise RuntimeError(
+                "No LLM providers are available."
+            )
 
-        logger.info(
-            "Reloading providers..."
-        )
+    # =====================================================
 
-        self.providers.clear()
-
-        self._discover_providers()
-
-        self.orchestrator = AIOrchestrator(
-            self.providers
-        )
-
-    # ---------------------------------------------------------
-
-    def best_for(
-
+    def provider(
         self,
-
-        task: TaskType,
-
-        **kwargs
-
-    ):
-
-        request = ProviderRequest(
-
-            task=task,
-
-            **kwargs
-
-        )
-
-        provider = self.orchestrator.choose(
-            request
-        )
-
-        logger.info(
-            f"Selected Provider -> {provider.name}"
-        )
-
-        return provider
-
-    # ---------------------------------------------------------
-    # Internal lightweight tasks
-    # ---------------------------------------------------------
-
-    def best_for_text(self):
-
+        task: str = "general",
+    ) -> BaseLLMProvider:
         """
-        Used for internal lightweight tasks
-        such as intent detection.
+        Return the provider selected for this task.
         """
 
-        priority = [
-
-            "Groq",
-
-            "Ollama",
-
-            "OpenRouter",
-
-            "Gemini"
-
-        ]
-
-        for name in priority:
-
-            for provider in self.providers:
-
-                if provider.name == name:
-
-                    return provider
-
-        if self.providers:
-
-            return self.providers[0]
-
-        raise RuntimeError(
-            "No providers available."
+        candidates = self.policy.providers_for(
+            task
         )
 
-    # ---------------------------------------------------------
+        return self.selector.select(
+            candidates
+        )
 
-    def chat(
+    # =====================================================
 
+    def providers(
         self,
+        task: str = "general",
+    ) -> list[BaseLLMProvider]:
+        """
+        Return providers in routing priority order.
 
-        conversation,
+        Used by LLMService for automatic fallback.
+        """
 
-        **kwargs
+        providers: list[BaseLLMProvider] = []
 
-    ):
+        for name in self.policy.providers_for(task):
 
-        provider = self.best_for(
+            try:
 
-            TaskType.CHAT,
+                providers.append(
+                    self.get(name)
+                )
 
-            **kwargs
+            except ValueError:
 
-        )
+                continue
 
-        return provider.chat(
+        return providers
 
-            conversation,
+    # =====================================================
 
-            **kwargs
-
-        )
-
-    # ---------------------------------------------------------
-
-    def reasoning(
-
+    def mark_success(
         self,
+        provider_name: str,
+        latency_ms: float,
+    ) -> None:
 
-        conversation,
-
-        **kwargs
-
-    ):
-
-        provider = self.best_for(
-
-            TaskType.REASONING,
-
-            **kwargs
-
+        self.selector.report_success(
+            provider_name,
+            latency_ms,
         )
 
-        return provider.chat(
+    # =====================================================
 
-            conversation,
-
-            **kwargs
-
-        )
-
-    # ---------------------------------------------------------
-
-    def coding(
-
+    def mark_failure(
         self,
+        provider_name: str,
+    ) -> None:
 
-        conversation,
-
-        **kwargs
-
-    ):
-
-        provider = self.best_for(
-
-            TaskType.CODING,
-
-            **kwargs
-
+        self.selector.report_failure(
+            provider_name
         )
 
-        return provider.chat(
+    # =====================================================
 
-            conversation,
-
-            **kwargs
-
-        )
-
-    # ---------------------------------------------------------
-
-    def vision(
-
+    def provider_names(
         self,
+    ) -> tuple[str, ...]:
 
-        prompt,
+        return self.registry.names()
 
-        image,
+    # =====================================================
 
-        **kwargs
-
-    ):
-
-        provider = self.best_for(
-
-            TaskType.VISION,
-
-            requires_vision=True,
-
-            **kwargs
-
-        )
-
-        return provider.vision(
-
-            prompt,
-
-            image,
-
-            **kwargs
-
-        )
-
-    # ---------------------------------------------------------
-
-    def stream(
-
+    def provider_count(
         self,
+    ) -> int:
 
-        conversation,
+        return len(self.registry)
 
-        **kwargs
+    # =====================================================
 
-    ):
+    def has_provider(
+        self,
+        name: str,
+    ) -> bool:
 
-        provider = self.best_for(
-
-            TaskType.CHAT,
-
-            streaming=True,
-
-            **kwargs
-
+        return self.registry.exists(
+            name
         )
 
-        return provider.stream(
-
-            conversation,
-
-            **kwargs
-
-        )
-
-    # ---------------------------------------------------------
-
-    def available(self):
-
-        return self.providers.copy()
-
-    # ---------------------------------------------------------
-
-    def provider_names(self):
-
-        return [
-
-            provider.name
-
-            for provider in self.providers
-
-        ]
-
-    # ---------------------------------------------------------
+    # =====================================================
 
     def get(
-
         self,
+        name: str,
+    ) -> BaseLLMProvider:
 
-        name: str
+        return self.registry.get(
+            name
+        ).provider
 
-    ):
+    # =====================================================
 
-        """
-        Returns a provider by name.
-        """
+    def by_model(
+        self,
+        model: str,
+    ) -> BaseLLMProvider:
 
-        for provider in self.providers:
+        model = model.lower()
 
-            if provider.name.lower() == name.lower():
+        if "gemini" in model:
 
-                return provider
-
-        raise ValueError(
-
-            f"Unknown provider: {name}"
-
-        )
-
-    # ---------------------------------------------------------
-
-    def default(self):
-
-        """
-        Returns the first available provider.
-        Mainly useful for debugging.
-        """
-
-        if not self.providers:
-
-            raise RuntimeError(
-                "No providers available."
+            return self.get(
+                "Gemini"
             )
 
-        return self.providers[0]
+        if (
+            "gpt" in model
+            or
+            "openrouter" in model
+        ):
+
+            return self.get(
+                "OpenRouter"
+            )
+
+        if (
+            "llama" in model
+            or "qwen" in model
+            or "mistral" in model
+            or "deepseek" in model
+            or "phi" in model
+        ):
+
+            if self.has_provider(
+                "Ollama"
+            ):
+
+                return self.get(
+                    "Ollama"
+                )
+
+            return self.get(
+                "Groq"
+            )
+
+        if "groq" in model:
+
+            return self.get(
+                "Groq"
+            )
+
+        return self.provider()
+
+    # =====================================================
+
+    @property
+    def current_provider(
+        self,
+    ) -> BaseLLMProvider | None:
+
+        return self.selector.current()

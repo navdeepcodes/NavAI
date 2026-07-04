@@ -6,7 +6,7 @@ from ui.components.header import Header
 from ui.components.chat_box import ChatBox
 from ui.components.input_box import InputBox
 
-from core.runtime import Runtime
+from brain.runtime import Runtime
 
 
 class MikeWindow(ctk.CTk):
