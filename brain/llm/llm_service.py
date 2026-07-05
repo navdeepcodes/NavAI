@@ -4,37 +4,34 @@ import time
 
 from logs.logger import logger
 
-from brain.providers import manager
+from brain.knowledge import knowledge
 from brain.llm.llm_request import LLMRequest
 from brain.llm.llm_response import LLMResponse
 from brain.llm.metrics import MetricsCollector
-from brain.llm.router import ProviderRouter
+from brain.providers.provider_manager import ProviderManager
 
 
 class LLMService:
     """
-    Central execution layer for every LLM request.
+    Production LLM execution service.
 
     Responsibilities
     ----------------
-    • Execute requests
-    • Iterate through routed providers
-    • Record metrics
-    • Update provider health
-
-    Never
-    -----
-    • Build prompts
-    • Select providers
-    • Decide routing strategy
+    • Inject Mike's system knowledge.
+    • Execute requests.
+    • Automatically fail over between providers.
+    • Report provider health.
+    • Collect metrics.
     """
 
     # =====================================================
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        providers: ProviderManager | None = None,
+    ) -> None:
 
-        self.router = ProviderRouter()
-
+        self.providers = providers or ProviderManager()
         self.metrics = MetricsCollector()
 
     # =====================================================
@@ -44,52 +41,123 @@ class LLMService:
         request: LLMRequest,
     ) -> LLMResponse:
 
-        task = request.metadata.get(
+        metadata = request.metadata or {}
+
+        task = metadata.get(
             "task",
             "general",
         )
 
-        providers = self.router.providers(
-            task=task,
+        # -------------------------------------------------
+
+        system_prompt = f"""
+{knowledge.system_context}
+
+============================================================
+
+{request.system_prompt}
+""".strip()
+
+        enriched_request = LLMRequest(
+
+            system_prompt=system_prompt,
+
+            user_input=request.user_input,
+
+            parser=request.parser,
+
+            metadata=request.metadata,
+
             model=request.model,
+
+            temperature=request.temperature,
+
+            max_tokens=request.max_tokens,
+
+            timeout=request.timeout,
+
         )
 
-        last_error: Exception | None = None
+        # -------------------------------------------------
+        # Candidate providers
+        # -------------------------------------------------
 
-        for index, provider in enumerate(
-            providers,
-            start=1,
-        ):
+        if request.model:
 
-            logger.info(
+            providers = [
+                self.providers.by_model(
+                    request.model,
+                )
+            ]
 
-                "Provider %s (%d/%d)",
+        else:
 
-                provider.name,
+            providers = self.providers.providers(
+                task,
+            )
 
-                index,
+        if not providers:
 
-                len(providers),
+            logger.error(
+                "No providers available."
+            )
+
+            return LLMResponse(
+
+                success=False,
+
+                text="",
+
+                parsed=None,
+
+                model=request.model,
+
+                latency_ms=0,
+
+                metadata={
+                    "provider": None,
+                    "error": "No providers available.",
+                },
 
             )
 
-            start_time = time.perf_counter()
+        # -------------------------------------------------
+
+        overall_start = time.perf_counter()
+
+        last_error: Exception | None = None
+
+        # -------------------------------------------------
+        # Try every provider
+        # -------------------------------------------------
+
+        for provider in providers:
+
+            logger.info(
+                "Trying provider '%s'.",
+                provider.name,
+            )
+
+            provider_start = time.perf_counter()
 
             try:
 
                 response = provider.generate(
-                    request
+                    enriched_request,
                 )
 
+                if response is None:
+
+                    raise RuntimeError(
+                        "Provider returned None."
+                    )
+
                 latency = (
-
                     time.perf_counter()
-
-                    - start_time
-
+                    - provider_start
                 ) * 1000
 
-                manager.mark_success(
+                self.providers.report_success(
 
                     provider.name,
 
@@ -100,13 +168,23 @@ class LLMService:
                 parsed = None
 
                 if (
-                    request.parser is not None
+                    enriched_request.parser
                     and response.text
                 ):
 
-                    parsed = request.parser.parse(
-                        response.text
-                    )
+                    try:
+
+                        parsed = (
+                            enriched_request.parser.parse(
+                                response.text,
+                            )
+                        )
+
+                    except Exception:
+
+                        logger.exception(
+                            "Parser failed."
+                        )
 
                 self.metrics.record(
 
@@ -124,13 +202,18 @@ class LLMService:
 
                 logger.info(
 
-                    "Provider %s succeeded (%.1f ms)",
+                    "Provider '%s' succeeded (%.1f ms).",
 
                     provider.name,
 
                     latency,
 
                 )
+
+                total_latency = (
+                    time.perf_counter()
+                    - overall_start
+                ) * 1000
 
                 return LLMResponse(
 
@@ -143,15 +226,18 @@ class LLMService:
                     model=response.model
                     or provider.name,
 
-                    latency_ms=latency,
+                    latency_ms=total_latency,
 
                     metadata={
 
-                        "provider": response.provider,
+                        "provider": provider.name,
 
                         "finish_reason": response.finish_reason,
 
                         "tool_calls": response.tool_calls,
+
+                        "attempts": providers.index(provider)
+                        + 1,
 
                     },
 
@@ -160,16 +246,13 @@ class LLMService:
             except Exception as exc:
 
                 latency = (
-
                     time.perf_counter()
-
-                    - start_time
-
+                    - provider_start
                 ) * 1000
 
                 last_error = exc
 
-                manager.mark_failure(
+                self.providers.report_failure(
                     provider.name,
                 )
 
@@ -183,21 +266,22 @@ class LLMService:
 
                 )
 
-                logger.warning(
+                logger.exception(
 
-                    "Provider %s failed (%.1f ms)",
+                    "Provider '%s' failed.",
 
                     provider.name,
 
-                    latency,
-
                 )
 
-                logger.exception(exc)
+        # -------------------------------------------------
+        # All providers failed
+        # -------------------------------------------------
 
-                if not self._retryable(exc):
-
-                    break
+        total_latency = (
+            time.perf_counter()
+            - overall_start
+        ) * 1000
 
         logger.error(
             "All providers failed."
@@ -213,33 +297,24 @@ class LLMService:
 
             model=request.model,
 
-            latency_ms=0.0,
+            latency_ms=total_latency,
 
             metadata={
 
-                "error": str(last_error)
+                "provider": None,
 
+                "error": str(last_error)
                 if last_error
-                else "Unknown provider failure.",
+                else "Unknown error",
+
+                "attempted_providers": [
+                    p.name
+                    for p in providers
+                ],
 
             },
 
         )
-
-    # =====================================================
-
-    @staticmethod
-    def _retryable(
-        error: Exception,
-    ) -> bool:
-        """
-        Decide whether Mike should attempt another provider.
-
-        This will evolve to classify provider-specific
-        exceptions (timeouts, rate limits, auth errors, etc.).
-        """
-
-        return True
 
     # =====================================================
 

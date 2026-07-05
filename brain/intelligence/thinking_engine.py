@@ -32,9 +32,12 @@ class ThinkingEngine:
 
     # =====================================================
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        llm: LLMService,
+    ) -> None:
 
-        self._llm = LLMService()
+        self._llm = llm
 
     # =====================================================
 
@@ -56,7 +59,7 @@ class ThinkingEngine:
             ),
 
             metadata={
-                "task": "thinking",
+                "task": "reasoning",
             },
 
         )
@@ -75,12 +78,36 @@ class ThinkingEngine:
     ) -> str:
 
         return f"""
-Context
--------
+You are Mike's reasoning engine.
+
+Use the conversation history whenever the user asks follow-up questions.
+
+Examples:
+
+- continue
+- explain more
+- harder
+- easier
+- why?
+- what about that?
+- another one
+- yes
+- no
+
+If the latest message depends on previous messages,
+infer the missing context instead of asking unnecessary
+clarification questions.
+
+------------------------
+Conversation History
+------------------------
+
 {context}
 
-User
-----
+------------------------
+Latest User Message
+------------------------
+
 {user_message}
 
 Return ONLY valid JSON.
@@ -113,11 +140,10 @@ Return ONLY valid JSON.
         start = text.find("{")
         end = text.rfind("}")
 
-        if start != -1 and end != -1:
+        if start == -1 or end == -1:
+            raise ValueError("No JSON object found.")
 
-            return text[start:end + 1]
-
-        return text
+        return text[start:end + 1]
 
     # =====================================================
 
@@ -127,19 +153,14 @@ Return ONLY valid JSON.
     ) -> float:
 
         try:
-
             value = float(value)
 
-        except Exception:
-
+        except (TypeError, ValueError):
             return 0.0
 
         return max(
             0.0,
-            min(
-                value,
-                1.0,
-            ),
+            min(value, 1.0),
         )
 
     # =====================================================
@@ -149,11 +170,7 @@ Return ONLY valid JSON.
         value: Any,
     ) -> dict[str, Any]:
 
-        if isinstance(value, dict):
-
-            return value
-
-        return {}
+        return value if isinstance(value, dict) else {}
 
     # =====================================================
 
@@ -169,10 +186,6 @@ Return ONLY valid JSON.
             )
 
             result = ThinkingResult(
-
-                # -----------------------------------------
-                # Understanding
-                # -----------------------------------------
 
                 intent=str(
                     payload.get(
@@ -209,10 +222,6 @@ Return ONLY valid JSON.
                     )
                 ),
 
-                # -----------------------------------------
-                # Executive Decision
-                # -----------------------------------------
-
                 action=str(
                     payload.get(
                         "action",
@@ -226,10 +235,6 @@ Return ONLY valid JSON.
                         False,
                     )
                 ),
-
-                # -----------------------------------------
-                # Tool Execution
-                # -----------------------------------------
 
                 tool=payload.get(
                     "tool",
@@ -253,20 +258,12 @@ Return ONLY valid JSON.
                     )
                 ),
 
-                # -----------------------------------------
-                # Draft Response
-                # -----------------------------------------
-
                 response=str(
                     payload.get(
                         "response",
                         "",
                     )
                 ),
-
-                # -----------------------------------------
-                # Optional Outputs
-                # -----------------------------------------
 
                 clarification=payload.get(
                     "clarification",
@@ -290,54 +287,59 @@ Return ONLY valid JSON.
             )
 
             logger.info(
-                "Thinking complete | intent=%s | action=%s | tool=%s | tool_action=%s | confidence=%.2f",
+                "Thinking complete | intent=%s | action=%s | tool=%s | confidence=%.2f",
                 result.intent,
                 result.action,
                 result.tool,
-                result.tool_action,
                 result.confidence,
             )
 
             return result
 
+        except (json.JSONDecodeError, ValueError):
+
+            logger.exception(
+                "Invalid ThinkingResult JSON."
+            )
+
         except Exception:
 
             logger.exception(
-                "Failed to parse ThinkingResult."
+                "Thinking pipeline failed."
             )
 
-            return ThinkingResult(
+        return ThinkingResult(
 
-                intent="UNKNOWN",
+            intent="UNKNOWN",
 
-                goal="",
+            goal="",
 
-                confidence=0.0,
+            confidence=0.0,
 
-                emotion="neutral",
+            emotion="neutral",
 
-                tone="neutral",
+            tone="neutral",
 
-                action="CLARIFY",
+            action="CLARIFY",
 
-                requires_tools=False,
+            requires_tools=False,
 
-                tool=None,
+            tool=None,
 
-                tool_action=None,
+            tool_action=None,
 
-                arguments={},
+            arguments={},
 
-                execution_type="single",
+            execution_type="single",
 
-                response="",
+            response="",
 
-                clarification="Could you rephrase your request?",
+            clarification="Could you rephrase your request?",
 
-                planner_hint=None,
+            planner_hint=None,
 
-                memory_query=None,
+            memory_query=None,
 
-                metadata={},
+            metadata={},
 
-            )
+        )

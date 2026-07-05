@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from brain.intelligence.thinking_result import ThinkingResult
+from brain.cognition.models.cognition_state import CognitionState
 from brain.response.response_depth import ResponseDepth
 from brain.response.response_plan import ResponsePlan
 
@@ -9,26 +9,28 @@ class ResponsePlanner:
 
     def plan(
         self,
-        thinking: ThinkingResult,
+        state: CognitionState,
     ) -> ResponsePlan:
 
         plan = ResponsePlan()
 
-        if thinking.intent == "greeting":
+        if state.action == "CLARIFY":
 
             plan.depth = ResponseDepth.SHORT
 
             return plan
 
-        if thinking.intent == "question":
+        if state.action == "PLAN":
 
-            plan.depth = ResponseDepth.NORMAL
-
-            plan.include_examples = True
+            plan.depth = ResponseDepth.SHORT
 
             return plan
 
-        if thinking.intent == "explanation":
+        if state.intent in (
+            "explanation",
+            "teach",
+            "learn",
+        ):
 
             plan.depth = ResponseDepth.DETAILED
 
@@ -37,5 +39,7 @@ class ResponsePlanner:
             plan.include_summary = True
 
             return plan
+
+        plan.depth = ResponseDepth.NORMAL
 
         return plan

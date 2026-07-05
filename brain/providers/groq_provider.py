@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from groq import Groq
+from groq import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    Groq,
+)
 
 from brain.llm.llm_request import LLMRequest
 from brain.llm.provider_response import ProviderResponse
@@ -18,15 +23,18 @@ from logs.logger import logger
 
 class GroqProvider(BaseLLMProvider):
     """
-    Groq LLM provider.
+    Groq Provider
 
     Responsibilities
     ----------------
-    • Execute an LLMRequest
-    • Return a ProviderResponse
+    • Execute a request.
+    • Return ProviderResponse.
 
-    This provider does not perform routing,
-    reasoning or prompt construction.
+    Never:
+    • Retry
+    • Sleep
+    • Perform fallback
+    • Handle routing
     """
 
     @property
@@ -46,15 +54,21 @@ class GroqProvider(BaseLLMProvider):
             speed_score=10,
             privacy_score=2,
             local=False,
-            context_window=131_072,
+            context_window=131072,
             cost_score=1,
         )
 
     # ---------------------------------------------------------
 
     def __init__(self) -> None:
+
         logger.info("Initializing Groq Provider...")
-        self.client = Groq(api_key=GROQ_API_KEY)
+
+        self.client = Groq(
+            api_key=GROQ_API_KEY,
+            max_retries=0,      # Disable SDK retries
+            timeout=20.0,       # Fail fast
+        )
 
     # ---------------------------------------------------------
 
@@ -65,7 +79,7 @@ class GroqProvider(BaseLLMProvider):
 
         if request.image is not None:
             raise NotImplementedError(
-                "Groq does not support vision requests."
+                "Groq does not support vision."
             )
 
         try:
@@ -89,7 +103,6 @@ class GroqProvider(BaseLLMProvider):
                 if request.stop_sequences
                 else None,
                 stream=False,
-                timeout=request.timeout,
             )
 
             usage = response.usage
@@ -100,11 +113,38 @@ class GroqProvider(BaseLLMProvider):
                 model=request.model or GROQ_MODEL,
                 input_tokens=usage.prompt_tokens if usage else 0,
                 output_tokens=usage.completion_tokens if usage else 0,
+                finish_reason=response.choices[0].finish_reason,
                 raw=response,
             )
 
+        except APIStatusError as e:
+
+            logger.warning(
+                "Groq HTTP %s: %s",
+                e.status_code,
+                e,
+            )
+            raise
+
+        except APITimeoutError:
+
+            logger.warning(
+                "Groq request timed out."
+            )
+            raise
+
+        except APIConnectionError:
+
+            logger.warning(
+                "Groq connection failed."
+            )
+            raise
+
         except Exception:
-            logger.exception("Groq generation failed.")
+
+            logger.exception(
+                "Groq generation failed."
+            )
             raise
 
     # ---------------------------------------------------------
@@ -113,15 +153,10 @@ class GroqProvider(BaseLLMProvider):
         self,
         request: LLMRequest,
     ):
-        """
-        Streaming generator.
-
-        Returns plain text chunks.
-        """
 
         if request.image is not None:
             raise NotImplementedError(
-                "Groq does not support vision requests."
+                "Groq does not support vision."
             )
 
         try:
@@ -145,7 +180,6 @@ class GroqProvider(BaseLLMProvider):
                 if request.stop_sequences
                 else None,
                 stream=True,
-                timeout=request.timeout,
             )
 
             for chunk in stream:
@@ -158,6 +192,38 @@ class GroqProvider(BaseLLMProvider):
                 if delta:
                     yield delta
 
-        except Exception:
-            logger.exception("Groq streaming failed.")
+        except APIStatusError as e:
+
+            logger.warning(
+                "Groq HTTP %s: %s",
+                e.status_code,
+                e,
+            )
             raise
+
+        except APITimeoutError:
+
+            logger.warning(
+                "Groq stream timed out."
+            )
+            raise
+
+        except APIConnectionError:
+
+            logger.warning(
+                "Groq connection failed."
+            )
+            raise
+
+        except Exception:
+
+            logger.exception(
+                "Groq streaming failed."
+            )
+            raise
+
+    # ---------------------------------------------------------
+
+    def health_check(self) -> bool:
+
+        return bool(GROQ_API_KEY)

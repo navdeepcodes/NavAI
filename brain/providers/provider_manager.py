@@ -15,37 +15,69 @@ from brain.providers.openrouter_provider import OpenRouterProvider
 
 class ProviderManager:
     """
-    Central coordinator for every LLM provider.
+    Central façade for Mike's provider subsystem.
 
     Responsibilities
     ----------------
     • Discover providers
     • Register providers
-    • Delegate provider selection
-    • Expose provider lookup
+    • Select providers
+    • Report provider success/failure
+    • Lookup providers
 
-    Does NOT:
-    ----------
-    • Execute requests
-    • Maintain provider health
-    • Decide provider scoring
+    Exactly one instance exists during Mike's lifetime.
     """
 
-    def __init__(self) -> None:
+    _instance: ProviderManager | None = None
 
-        logger.info("Initializing Provider Manager...")
+    # =====================================================
+
+    def __new__(
+        cls,
+    ) -> ProviderManager:
+
+        if cls._instance is None:
+
+            cls._instance = super().__new__(cls)
+
+            cls._instance._initialized = False
+
+        return cls._instance
+
+    # =====================================================
+
+    def __init__(
+        self,
+    ) -> None:
+
+        if self._initialized:
+            return
+
+        self._initialized = True
+
+        logger.info(
+            "Initializing Provider Manager..."
+        )
 
         self.registry = ProviderRegistry()
 
-        self.policy = ProviderPolicy(self.registry)
+        self.policy = ProviderPolicy(
+            self.registry,
+        )
 
-        self.selector = ProviderSelector(self.registry)
+        self.selector = ProviderSelector(
+            self.registry,
+        )
 
         self.reload()
 
-    # ---------------------------------------------------------
+    # =====================================================
+    # Initialization
+    # =====================================================
 
-    def reload(self) -> None:
+    def reload(
+        self,
+    ) -> None:
 
         self.registry.clear()
 
@@ -56,7 +88,7 @@ class ProviderManager:
             len(self.registry),
         )
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     def _candidate_providers(
         self,
@@ -69,9 +101,11 @@ class ProviderManager:
             GeminiProvider(),
         )
 
-    # ---------------------------------------------------------
+    # =====================================================
 
-    def _discover(self) -> None:
+    def _discover(
+        self,
+    ) -> None:
 
         for provider in self._candidate_providers():
 
@@ -85,17 +119,14 @@ class ProviderManager:
                 if not provider.health_check():
 
                     logger.warning(
-                        "Skipping '%s' (health check failed).",
+                        "Skipping '%s'.",
                         provider.name,
                     )
 
                     continue
 
-                self.registry.register(provider)
-
-                logger.info(
-                    "Registered provider: %s",
-                    provider.name,
+                self.registry.register(
+                    provider,
                 )
 
             except Exception:
@@ -108,42 +139,44 @@ class ProviderManager:
         if len(self.registry) == 0:
 
             raise RuntimeError(
-                "No LLM providers are available."
+                "No providers are available."
             )
 
-    # ---------------------------------------------------------
+    # =====================================================
+    # Selection
+    # =====================================================
 
-    def provider(
+    def select(
         self,
         task: str = "general",
+        model: str | None = None,
     ) -> BaseLLMProvider:
 
-        candidates = self.policy.providers_for(task)
+        if model:
 
-        return self.selector.select(candidates)
+            try:
 
-    # ---------------------------------------------------------
-
-    def providers(
-        self,
-        task: str = "general",
-    ) -> list[BaseLLMProvider]:
-
-        providers: list[BaseLLMProvider] = []
-
-        for name in self.policy.providers_for(task):
-
-            if self.registry.exists(name):
-
-                providers.append(
-                    self.registry.get(name).provider
+                return self.by_model(
+                    model,
                 )
 
-        return providers
+            except Exception:
 
-    # ---------------------------------------------------------
+                logger.warning(
+                    "Requested model unavailable. Falling back."
+                )
 
-    def mark_success(
+        candidates = self.policy.providers_for(
+            task,
+        )
+
+        return self.selector.select(
+            candidates,
+        )
+
+    # =====================================================
+
+    def report_success(
         self,
         provider_name: str,
         latency_ms: float,
@@ -154,9 +187,9 @@ class ProviderManager:
             latency_ms,
         )
 
-    # ---------------------------------------------------------
+    # =====================================================
 
-    def mark_failure(
+    def report_failure(
         self,
         provider_name: str,
     ) -> None:
@@ -165,7 +198,36 @@ class ProviderManager:
             provider_name,
         )
 
-    # ---------------------------------------------------------
+    # =====================================================
+    # Lookup
+    # =====================================================
+
+    def providers(
+        self,
+        task: str = "general",
+    ) -> list[BaseLLMProvider]:
+
+        providers: list[
+            BaseLLMProvider
+        ] = []
+
+        for name in self.policy.providers_for(
+            task,
+        ):
+
+            state = self.registry.get(
+                name,
+            )
+
+            if state is not None:
+
+                providers.append(
+                    state.provider,
+                )
+
+        return providers
+
+    # =====================================================
 
     def provider_names(
         self,
@@ -173,33 +235,47 @@ class ProviderManager:
 
         return self.registry.names()
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     def provider_count(
         self,
     ) -> int:
 
-        return len(self.registry)
+        return len(
+            self.registry,
+        )
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     def has_provider(
         self,
         name: str,
     ) -> bool:
 
-        return self.registry.exists(name)
+        return self.registry.exists(
+            name,
+        )
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     def get(
         self,
         name: str,
     ) -> BaseLLMProvider:
 
-        return self.registry.get(name).provider
+        state = self.registry.get(
+            name,
+        )
 
-    # ---------------------------------------------------------
+        if state is None:
+
+            raise ValueError(
+                f"Unknown provider '{name}'."
+            )
+
+        return state.provider
+
+    # =====================================================
 
     def by_model(
         self,
@@ -210,18 +286,24 @@ class ProviderManager:
 
         if "gemini" in model:
 
-            return self.get("Gemini")
+            return self.get(
+                "Gemini",
+            )
 
         if "groq" in model:
 
-            return self.get("Groq")
+            return self.get(
+                "Groq",
+            )
 
         if (
             "gpt" in model
             or "openrouter" in model
         ):
 
-            return self.get("OpenRouter")
+            return self.get(
+                "OpenRouter",
+            )
 
         if any(
             family in model
@@ -234,15 +316,21 @@ class ProviderManager:
             )
         ):
 
-            if self.has_provider("Ollama"):
+            if self.has_provider(
+                "Ollama",
+            ):
 
-                return self.get("Ollama")
+                return self.get(
+                    "Ollama",
+                )
 
-            return self.get("Groq")
+            return self.get(
+                "Groq",
+            )
 
-        return self.provider()
+        return self.select()
 
-    # ---------------------------------------------------------
+    # =====================================================
 
     @property
     def current_provider(

@@ -1,35 +1,44 @@
 from __future__ import annotations
 
+from brain.conversation.conversation_memory import ConversationMemory
 from brain.intelligence.models import Context
 
 
 class ContextManager:
     """
-    Maintains Mike's working context during a conversation.
+    Maintains Mike's short-term working context.
+
+    Responsibilities
+    ----------------
+    • Session conversation memory
+    • Current task
+    • Tool results
+    • Active project
+    • Working directory
 
     This is NOT long-term memory.
-    It only stores information relevant to the
-    current interaction/session.
     """
 
-    # ---------------------------------------------------------
+    # =====================================================
 
-    def __init__(self):
+    def __init__(self) -> None:
 
         self._context = Context()
 
-    # ---------------------------------------------------------
-    # Context Access
-    # ---------------------------------------------------------
+        self.conversation = ConversationMemory()
+
+    # =====================================================
+    # Context
+    # =====================================================
 
     @property
     def current(self) -> Context:
 
         return self._context
 
-    # ---------------------------------------------------------
+    # =====================================================
     # Current Task
-    # ---------------------------------------------------------
+    # =====================================================
 
     def set_task(
         self,
@@ -38,31 +47,64 @@ class ContextManager:
 
         self._context.current_task = task
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
-    def clear_task(self) -> None:
+    def clear_task(
+        self,
+    ) -> None:
 
         self._context.current_task = ""
 
-    # ---------------------------------------------------------
-    # Conversation History
-    # ---------------------------------------------------------
+    # =====================================================
+    # Conversation
+    # =====================================================
 
-    def add_message(
+    def add_user_message(
         self,
         message: str,
     ) -> None:
 
-        self._context.previous_messages.append(message)
+        self.conversation.add_user(message)
 
-        # Keep only the latest 20 messages.
-        self._context.previous_messages = (
-            self._context.previous_messages[-20:]
-        )
+    # -----------------------------------------------------
 
-    # ---------------------------------------------------------
+    def add_assistant_message(
+        self,
+        message: str,
+    ) -> None:
+
+        self.conversation.add_assistant(message)
+
+    # -----------------------------------------------------
+
+    def conversation_context(
+        self,
+        limit: int = 10,
+    ) -> str:
+
+        return self.conversation.build_context(limit)
+
+    # -----------------------------------------------------
+
+    def transcript(
+        self,
+        limit: int = 10,
+    ) -> str:
+
+        return self.conversation.transcript(limit)
+
+    # -----------------------------------------------------
+
+    def set_topic(
+        self,
+        topic: str,
+    ) -> None:
+
+        self.conversation.set_topic(topic)
+
+    # =====================================================
     # Tool Results
-    # ---------------------------------------------------------
+    # =====================================================
 
     def add_tool_result(
         self,
@@ -71,14 +113,13 @@ class ContextManager:
 
         self._context.recent_tool_results.append(result)
 
-        # Keep only recent results.
         self._context.recent_tool_results = (
             self._context.recent_tool_results[-10:]
         )
 
-    # ---------------------------------------------------------
+    # =====================================================
     # Active Project
-    # ---------------------------------------------------------
+    # =====================================================
 
     def set_active_project(
         self,
@@ -87,15 +128,17 @@ class ContextManager:
 
         self._context.active_project = project
 
-    # ---------------------------------------------------------
+    # -----------------------------------------------------
 
-    def clear_active_project(self) -> None:
+    def clear_active_project(
+        self,
+    ) -> None:
 
         self._context.active_project = None
 
-    # ---------------------------------------------------------
+    # =====================================================
     # Working Directory
-    # ---------------------------------------------------------
+    # =====================================================
 
     def set_working_directory(
         self,
@@ -104,10 +147,14 @@ class ContextManager:
 
         self._context.working_directory = directory
 
-    # ---------------------------------------------------------
+    # =====================================================
     # Reset
-    # ---------------------------------------------------------
+    # =====================================================
 
-    def reset(self) -> None:
+    def reset(
+        self,
+    ) -> None:
 
         self._context = Context()
+
+        self.conversation.clear()

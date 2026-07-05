@@ -14,8 +14,8 @@ class Mind:
 
     Every request produces exactly one ThinkingResult.
 
-    Planner, Executor and Memory extend this object without
-    performing additional reasoning.
+    Planner, Executor, Conversation and Memory extend this
+    object without performing additional reasoning.
     """
 
     # =====================================================
@@ -23,11 +23,18 @@ class Mind:
     # =====================================================
 
     user_message: str
+
     thinking: ThinkingResult
 
     created_at: datetime = field(
         default_factory=datetime.utcnow
     )
+
+    # =====================================================
+    # Conversation
+    # =====================================================
+
+    conversation_memory: Any | None = None
 
     # =====================================================
     # Memory
@@ -89,7 +96,9 @@ class Mind:
 
     # -----------------------------------------------------
 
-    def clear_execution(self) -> None:
+    def clear_execution(
+        self,
+    ) -> None:
 
         self.planner_tasks.clear()
         self.tool_results.clear()
@@ -100,7 +109,9 @@ class Mind:
     # =====================================================
 
     @property
-    def latest_tool_result(self) -> Any | None:
+    def latest_tool_result(
+        self,
+    ) -> Any | None:
 
         if not self.tool_results:
             return None
@@ -110,81 +121,112 @@ class Mind:
     # -----------------------------------------------------
 
     @property
-    def has_tool_results(self) -> bool:
+    def has_tool_results(
+        self,
+    ) -> bool:
 
-        return len(self.tool_results) > 0
+        return bool(self.tool_results)
 
     # -----------------------------------------------------
 
     @property
-    def has_memory(self) -> bool:
+    def has_memory(
+        self,
+    ) -> bool:
 
         return self.memory_result is not None
+
+    # -----------------------------------------------------
+
+    @property
+    def has_conversation(
+        self,
+    ) -> bool:
+
+        return self.conversation_memory is not None
 
     # =====================================================
     # Thinking Shortcuts
     # =====================================================
 
     @property
-    def action(self) -> str:
+    def action(
+        self,
+    ) -> str:
 
         return self.thinking.action
 
     # -----------------------------------------------------
 
     @property
-    def intent(self) -> str:
+    def intent(
+        self,
+    ) -> str:
 
         return self.thinking.intent
 
     # -----------------------------------------------------
 
     @property
-    def goal(self) -> str:
+    def goal(
+        self,
+    ) -> str:
 
         return self.thinking.goal
 
     # -----------------------------------------------------
 
     @property
-    def confidence(self) -> float:
+    def confidence(
+        self,
+    ) -> float:
 
         return self.thinking.confidence
 
     # -----------------------------------------------------
 
     @property
-    def emotion(self) -> str:
+    def emotion(
+        self,
+    ) -> str:
 
         return self.thinking.emotion
 
     # -----------------------------------------------------
 
     @property
-    def tone(self) -> str:
+    def tone(
+        self,
+    ) -> str:
 
         return self.thinking.tone
 
     # -----------------------------------------------------
 
     @property
-    def requires_tools(self) -> bool:
+    def requires_tools(
+        self,
+    ) -> bool:
 
         return self.thinking.requires_tools
 
     # -----------------------------------------------------
 
     @property
-    def tool(self) -> str | None:
+    def tool(
+        self,
+    ) -> str | None:
 
         return self.thinking.tool
 
     # -----------------------------------------------------
 
     @property
-    def response(self) -> str:
+    def response(
+        self,
+    ) -> str:
         """
-        Final response precedence:
+        Final response precedence
 
         1. Runtime-generated response
         2. ThinkingEngine response
@@ -201,27 +243,35 @@ class Mind:
     # -----------------------------------------------------
 
     @property
-    def should_respond(self) -> bool:
+    def should_respond(
+        self,
+    ) -> bool:
 
         return self.thinking.should_respond
 
     # -----------------------------------------------------
 
     @property
-    def should_plan(self) -> bool:
+    def should_plan(
+        self,
+    ) -> bool:
 
         return self.thinking.should_plan
 
     # -----------------------------------------------------
 
     @property
-    def should_clarify(self) -> bool:
+    def should_clarify(
+        self,
+    ) -> bool:
 
         return self.thinking.should_clarify
 
     # -----------------------------------------------------
 
     @property
-    def should_use_memory(self) -> bool:
+    def should_use_memory(
+        self,
+    ) -> bool:
 
         return self.thinking.should_use_memory

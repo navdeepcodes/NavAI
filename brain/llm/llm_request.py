@@ -1,20 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
 
 @dataclass(slots=True, frozen=True)
 class LLMRequest:
     """
-    Provider-agnostic request passed to every LLM provider.
+    Provider-agnostic request.
 
-    This is the single contract between Mike's intelligence
-    layer and the provider layer.
-
-    Provider-specific features should remain inside `metadata`
-    whenever possible to keep this interface stable.
+    This is the only object exchanged between Mike's
+    intelligence layer and provider layer.
     """
 
     # =====================================================
@@ -26,7 +23,7 @@ class LLMRequest:
     user_input: str
 
     # =====================================================
-    # Model Selection
+    # Model
     # =====================================================
 
     model: str | None = None
@@ -42,7 +39,7 @@ class LLMRequest:
     max_tokens: int | None = None
 
     stop_sequences: Sequence[str] = field(
-        default_factory=tuple
+        default_factory=tuple,
     )
 
     stream: bool = False
@@ -50,12 +47,12 @@ class LLMRequest:
     timeout: float | None = None
 
     # =====================================================
-    # Optional Features
+    # Optional
     # =====================================================
 
     parser: Any | None = None
 
-    image: str | None = None
+    image: str |None = None
 
     tools: bool = False
 
@@ -64,36 +61,67 @@ class LLMRequest:
     # =====================================================
 
     request_id: str = field(
-        default_factory=lambda: str(uuid4())
+        default_factory=lambda: str(uuid4()),
     )
 
-    metadata: dict[str, Any] = field(
-        default_factory=dict
+    metadata: Mapping[str, Any] = field(
+        default_factory=dict,
     )
 
     # =====================================================
-    # Validation
+
+    @property
+    def task(self) -> str:
+        """
+        Convenience accessor.
+        """
+
+        return str(
+            self.metadata.get(
+                "task",
+                "general",
+            )
+        )
+
     # =====================================================
 
     def __post_init__(self) -> None:
 
-        if not self.user_input.strip():
-            raise ValueError("user_input cannot be empty.")
-
         if not self.system_prompt.strip():
-            raise ValueError("system_prompt cannot be empty.")
-
-        if not (0.0 <= self.temperature <= 2.0):
             raise ValueError(
-                "temperature must be between 0.0 and 2.0."
+                "system_prompt cannot be empty."
             )
 
-        if self.top_p is not None and not (0.0 < self.top_p <= 1.0):
+        if not self.user_input.strip():
+            raise ValueError(
+                "user_input cannot be empty."
+            )
+
+        if not 0.0 <= self.temperature <= 2.0:
+            raise ValueError(
+                "temperature must be between 0 and 2."
+            )
+
+        if (
+            self.top_p is not None
+            and not 0.0 < self.top_p <= 1.0
+        ):
             raise ValueError(
                 "top_p must be between 0 and 1."
             )
 
-        if self.max_tokens is not None and self.max_tokens <= 0:
+        if (
+            self.max_tokens is not None
+            and self.max_tokens <= 0
+        ):
             raise ValueError(
-                "max_tokens must be greater than zero."
+                "max_tokens must be > 0."
+            )
+
+        if any(
+            not isinstance(x, str)
+            for x in self.stop_sequences
+        ):
+            raise TypeError(
+                "stop_sequences must contain strings."
             )

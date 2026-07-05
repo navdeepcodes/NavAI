@@ -6,25 +6,46 @@ from brain.cognition.cognitive_loop import CognitiveLoop
 from brain.execution.executor import Executor
 from brain.intelligence.greeting_engine import GreetingEngine
 from brain.planning.planner import Planner
+from brain.response.response_engine import ResponseEngine
+from brain.skills.skill_manager import SkillManager
 
 logger = logging.getLogger(__name__)
 
 
 class MikeRuntime:
     """
-    Mike Runtime.
-
-    High-level orchestrator.
+    Mike Runtime
 
         User
-          ↓
-     ThinkingEngine
-          ↓
-      ExecutionPlan
-          ↓
-       Executor
-          ↓
-      Final Response
+          │
+          ▼
+     CognitiveLoop
+          │
+          ▼
+      SkillManager
+          │
+          ▼
+        Planner
+          │
+          ▼
+        Executor
+          │
+          ▼
+    ResponseEngine
+          │
+          ▼
+         User
+
+    Responsibilities
+    ----------------
+    • Run one complete cognition cycle.
+    • Execute high-confidence skills.
+    • Execute plans when required.
+    • Generate conversational responses.
+    • Persist conversation history.
+
+    Skills classify requests.
+    The ResponseEngine generates natural language.
     """
 
     # =====================================================
@@ -32,17 +53,32 @@ class MikeRuntime:
     def __init__(self) -> None:
 
         self.cognitive = CognitiveLoop()
+
+        self.skills = SkillManager()
+
         self.greeter = GreetingEngine()
+
         self.planner = Planner()
+
         self.executor = Executor()
+
+        self.response = ResponseEngine()
 
     # =====================================================
 
     def startup(self) -> str:
 
-        logger.info("Generating startup greeting.")
+        logger.info(
+            "Generating startup greeting."
+        )
 
-        return self.greeter.generate()
+        greeting = self.greeter.generate()
+
+        self._remember_reply(
+            greeting,
+        )
+
+        return greeting
 
     # =====================================================
 
@@ -56,91 +92,167 @@ class MikeRuntime:
             message,
         )
 
-        mind = self.cognitive.process(message)
+        state = self.cognitive.process(
+            message,
+        )
 
-        response = self._route(mind)
+        # =============================================
+        # Skill Layer
+        # =============================================
 
-        if response is None:
-            response = ""
+        skill = self.skills.process(
+            state,
+        )
+
+        if skill.handled:
+
+            logger.info(
+                "Handled by skill: %s",
+                skill.skill_name,
+            )
+
+            # Store skill information so the
+            # ResponseEngine can use it later.
+            state.metadata.setdefault(
+                "skill",
+                {},
+            )
+
+            state.metadata["skill"].update(
+                skill.metadata or {},
+            )
+
+            state.metadata["skill_name"] = (
+                skill.skill_name
+            )
+
+            state.metadata["skill_confidence"] = (
+                skill.confidence
+            )
+
+            # -----------------------------------------
+            # Backwards compatibility.
+            #
+            # Existing skills already generate replies.
+            # Future skills can simply classify and let
+            # the ResponseEngine speak naturally.
+            # -----------------------------------------
+
+            if skill.response:
+
+                self._remember_reply(
+                    skill.response,
+                )
+
+                logger.info(
+                    "FINAL RESPONSE = %r",
+                    skill.response,
+                )
+
+                return skill.response
+
+        # =============================================
+        # Runtime Pipeline
+        # =============================================
+
+        reply = self._route(
+            state,
+        )
+
+        if not reply:
+
+            logger.error(
+                "Runtime produced an empty response."
+            )
+
+            reply = (
+                "I'm sorry, something went wrong."
+            )
+
+        self._remember_reply(
+            reply,
+        )
 
         logger.info(
             "FINAL RESPONSE = %r",
-            response,
+            reply,
         )
 
-        logger.info("Runtime finished.")
+        logger.info(
+            "Runtime finished."
+        )
 
-        return response
+        return reply
 
     # =====================================================
 
     def _route(
         self,
-        mind,
+        state,
     ) -> str:
 
         logger.info(
             "Routing action: %s",
-            mind.action,
+            state.action,
         )
 
-        thinking = mind.thinking
+        # ---------------------------------------------
+        # Conversation
+        # ---------------------------------------------
 
-        # -------------------------------------------------
-        # RESPOND
-        # -------------------------------------------------
+        if state.action == "RESPOND":
 
-        if mind.should_respond:
-
-            return (
-                thinking.response
-                or "I'm here."
+            logger.info(
+                "Generating conversational response..."
             )
 
-        # -------------------------------------------------
-        # CLARIFY
-        # -------------------------------------------------
+            return self.response.generate(
+                state,
+            )
 
-        if mind.should_clarify:
+        # ---------------------------------------------
+        # Clarification
+        # ---------------------------------------------
+
+        if state.action == "CLARIFY":
+
+            logger.info(
+                "Generating clarification..."
+            )
 
             return (
-                thinking.clarification
+                state.final_response
                 or "Could you clarify your request?"
             )
 
-        # -------------------------------------------------
-        # MEMORY
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Memory
+        # ---------------------------------------------
 
-        if mind.should_use_memory:
+        if state.action == "MEMORY":
 
-            logger.info("Memory requested.")
+            logger.info(
+                "Memory requested."
+            )
 
-            return "Memory is not available yet."
+            return self.response.generate(
+                state,
+            )
 
-        # -------------------------------------------------
-        # PLAN
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Tool execution
+        # ---------------------------------------------
 
-        if mind.should_plan:
+        if state.action == "PLAN":
 
-            if (
-                not thinking.requires_tools
-                or thinking.tool is None
-                or thinking.tool_action is None
-            ):
+            if not state.requires_tools:
 
                 logger.warning(
-                    "Invalid planning request detected. "
-                    "requires_tools=%s tool=%s action=%s",
-                    thinking.requires_tools,
-                    thinking.tool,
-                    thinking.tool_action,
+                    "PLAN requested but requires_tools=False."
                 )
 
                 return (
-                    thinking.response
-                    or "I'm not sure what action needs to be performed."
+                    "I couldn't determine what action to perform."
                 )
 
             logger.info(
@@ -148,73 +260,70 @@ class MikeRuntime:
             )
 
             plan = self.planner.plan(
-                thinking
+                state,
             )
 
             if plan.empty:
 
                 logger.warning(
-                    "Planner returned an empty plan."
+                    "Planner returned an empty execution plan."
                 )
 
                 return (
-                    "I couldn't determine how to perform that task."
+                    "I couldn't generate an execution plan."
                 )
 
             logger.info(
-                "Executing execution plan..."
+                "Executing plan..."
             )
 
             report = self.executor.execute(
-                plan
+                plan,
             )
 
-            mind.metadata[
+            state.metadata[
                 "execution_report"
             ] = report
 
             if report.success:
 
-                summary = getattr(
-                    report,
-                    "summary",
-                    "",
+                logger.info(
+                    "Execution successful."
                 )
 
-                if summary:
-                    return summary
-
-                return (
-                    thinking.response
-                    or "Done."
-                )
-
-            errors = getattr(
-                report,
-                "errors",
-                [],
-            )
-
-            if errors:
+            else:
 
                 logger.warning(
-                    "Execution failed: %s",
-                    errors,
+                    "Execution failed."
                 )
 
-            return (
-                "I couldn't complete that task."
+            return self.response.generate(
+                state,
             )
 
-        # -------------------------------------------------
-        # Unknown action
-        # -------------------------------------------------
+        # ---------------------------------------------
+        # Unknown
+        # ---------------------------------------------
 
         logger.warning(
-            "Unhandled action '%s'.",
-            mind.action,
+            "Unknown action: %s",
+            state.action,
         )
 
         return (
             "I'm not sure how to handle that request."
+        )
+
+    # =====================================================
+
+    def _remember_reply(
+        self,
+        reply: str,
+    ) -> None:
+
+        if not reply:
+            return
+
+        self.cognitive.add_assistant_message(
+            reply,
         )

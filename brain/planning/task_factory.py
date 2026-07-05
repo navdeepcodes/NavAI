@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from logs.logger import logger
 
-from brain.intelligence.thinking_result import ThinkingResult
+from brain.cognition.models.cognition_state import CognitionState
 from brain.planning.task import Task
 
 
 class TaskFactory:
     """
-    Converts a ThinkingResult into executable Tasks.
+    Converts a CognitionState into executable Tasks.
 
     Responsibilities
     ----------------
@@ -17,27 +17,41 @@ class TaskFactory:
     • Never execute tools.
     • Never call an LLM.
 
-    The ThinkingEngine decides WHAT to do.
-    TaskFactory decides HOW to represent it.
+    Understanding decides WHAT the user means.
+    Decision decides WHAT Mike should do.
+    TaskFactory converts that into executable tasks.
     """
 
     # =====================================================
 
     def create_tasks(
         self,
-        thinking: ThinkingResult,
+        state: CognitionState,
     ) -> list[Task]:
 
         logger.info("Building execution tasks...")
 
         # -------------------------------------------------
-        # No execution required
+        # Nothing to execute
         # -------------------------------------------------
 
-        if (
-            not thinking.requires_tools
-            or not thinking.tool
-        ):
+        if not state.requires_tools:
+
+            logger.info(
+                "No execution required."
+            )
+
+            return []
+
+        # -------------------------------------------------
+        # Validate execution information
+        # -------------------------------------------------
+
+        if not state.tool:
+
+            logger.warning(
+                "Execution requested but no tool specified."
+            )
 
             return []
 
@@ -47,21 +61,19 @@ class TaskFactory:
 
         task = Task(
 
-            tool=thinking.tool,
+            tool=state.tool,
 
-            action=thinking.tool_action or "execute",
+            action=state.tool_action or "execute",
 
-            description=thinking.goal or thinking.intent,
+            description=state.goal or state.intent,
 
-            arguments=dict(
-                thinking.arguments
-            ),
+            arguments=dict(state.arguments),
 
         )
 
         logger.info(
 
-            "Created task | tool=%s action=%s",
+            "Created task | tool=%s | action=%s",
 
             task.tool,
 

@@ -7,6 +7,7 @@ from types import ModuleType
 
 import tools
 
+from brain.self.capability_registry import CapabilityRegistry
 from logs.logger import logger
 from tools.base_tool import BaseTool
 
@@ -20,6 +21,8 @@ class ToolRegistry:
     Every concrete subclass of BaseTool is instantiated once.
 
     Duplicate module imports and duplicate tool registrations are ignored.
+
+    Every discovered tool is also registered as one of Mike's capabilities.
     """
 
     # ---------------------------------------------------------
@@ -42,6 +45,11 @@ class ToolRegistry:
 
         self.tools: dict[str, BaseTool] = {}
 
+        #
+        # Mike's self-awareness starts here.
+        #
+        self.capabilities = CapabilityRegistry()
+
         self._visited_modules: set[str] = set()
 
         self._registered_classes: set[type] = set()
@@ -52,11 +60,12 @@ class ToolRegistry:
 
     def _discover_package(
         self,
-        package: ModuleType
+        package: ModuleType,
     ) -> None:
 
         logger.info(
-            f"Discovering package: {package.__name__}"
+            "Discovering package: %s",
+            package.__name__,
         )
 
         for module_info in pkgutil.iter_modules(package.__path__):
@@ -71,10 +80,7 @@ class ToolRegistry:
 
             full_name = f"{package.__name__}.{name}"
 
-            # Already imported
-
             if full_name in self._visited_modules:
-
                 continue
 
             self._visited_modules.add(full_name)
@@ -85,96 +91,67 @@ class ToolRegistry:
                     full_name
                 )
 
-            except Exception as e:
+            except Exception as exc:
 
                 logger.warning(
-
-                    f"Failed importing {full_name}: {e}"
-
+                    "Failed importing %s: %s",
+                    full_name,
+                    exc,
                 )
 
                 continue
 
-            self._register_module_tools(
-                module
-            )
+            self._register_module_tools(module)
 
             if hasattr(module, "__path__"):
 
-                self._discover_package(
-                    module
-                )
+                self._discover_package(module)
 
     # ---------------------------------------------------------
 
     def _register_module_tools(
         self,
-        module: ModuleType
+        module: ModuleType,
     ) -> None:
 
         for _, cls in inspect.getmembers(
-
             module,
-
-            inspect.isclass
-
+            inspect.isclass,
         ):
 
             if cls is BaseTool:
-
                 continue
 
-            if not issubclass(
-
-                cls,
-
-                BaseTool
-
-            ):
-
+            if not issubclass(cls, BaseTool):
                 continue
 
-            if inspect.isabstract(
-
-                cls
-
-            ):
-
+            if inspect.isabstract(cls):
                 continue
-
-            # Already registered
 
             if cls in self._registered_classes:
-
                 continue
 
             try:
 
                 tool = cls()
 
-                self.register(
-                    tool
-                )
+                self.register(tool)
 
-                self._registered_classes.add(
-                    cls
-                )
+                self._registered_classes.add(cls)
 
-            except Exception as e:
+            except Exception as exc:
 
                 logger.warning(
-
-                    f"Failed registering "
-
-                    f"{cls.__name__}: {e}"
-
+                    "Failed registering %s: %s",
+                    cls.__name__,
+                    exc,
                 )
 
     # ---------------------------------------------------------
 
     def register(
         self,
-        tool: BaseTool
+        tool: BaseTool,
     ) -> None:
 
         name = tool.metadata.name
@@ -182,28 +159,35 @@ class ToolRegistry:
         if name in self.tools:
 
             logger.warning(
-
-                f"Duplicate tool name "
-
-                f"ignored: {name}"
-
+                "Duplicate tool ignored: %s",
+                name,
             )
 
             return
 
         logger.info(
-
-            f"Registering tool: {name}"
-
+            "Registering tool: %s",
+            name,
         )
 
         self.tools[name] = tool
+
+        #
+        # Mike learns a new capability.
+        #
+
+        self.capabilities.register_tool(tool)
+
+        logger.info(
+            "Registered capability: %s",
+            name,
+        )
 
     # ---------------------------------------------------------
 
     def has(
         self,
-        name: str
+        name: str,
     ) -> bool:
 
         return name in self.tools
@@ -212,59 +196,51 @@ class ToolRegistry:
 
     def get(
         self,
-        name: str
+        name: str,
     ) -> BaseTool | None:
 
-        return self.tools.get(
-            name
-        )
+        return self.tools.get(name)
 
     # ---------------------------------------------------------
 
     def execute(
         self,
         tool_name: str,
-        **kwargs
+        **kwargs,
     ):
 
-        tool = self.get(
-            tool_name
-        )
+        tool = self.get(tool_name)
 
         if tool is None:
 
             raise ValueError(
-
                 f"Unknown tool: {tool_name}"
-
             )
 
-        return tool.execute(
-            **kwargs
-        )
+        return tool.execute(**kwargs)
 
     # ---------------------------------------------------------
 
-    def available(
-        self
-    ) -> list[str]:
+    def available(self) -> list[str]:
 
-        return sorted(
-            self.tools.keys()
-        )
+        return sorted(self.tools.keys())
 
     # ---------------------------------------------------------
 
-    def reload(
-        self
-    ) -> None:
+    def capabilities_list(self):
+
+        return self.capabilities.enabled()
+
+    # ---------------------------------------------------------
+
+    def reload(self) -> None:
 
         self.tools.clear()
+
+        self.capabilities = CapabilityRegistry()
 
         self._visited_modules.clear()
 
         self._registered_classes.clear()
 
-        self._discover_package(
-            tools
-        )
+        self._discover_package(tools)

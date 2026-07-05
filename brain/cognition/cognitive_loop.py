@@ -1,20 +1,33 @@
 from __future__ import annotations
 
+import logging
+
+from brain.cognition.cognition import Cognition
+from brain.cognition.models.cognition_state import CognitionState
 from brain.cognition.state import CognitiveState
 from brain.cognition.state_machine import StateMachine
-from brain.intelligence.intelligence_engine import IntelligenceEngine
-from brain.intelligence.mind import Mind
+from brain.session.context_builder import ContextBuilder
+from brain.session.session import Session
+
+logger = logging.getLogger(__name__)
 
 
 class CognitiveLoop:
     """
-    Executes a single cognitive cycle.
+    Mike's cognitive loop.
 
     Responsibilities
     ----------------
-    • Manage Mike's cognitive state.
-    • Execute one thinking pass.
-    • Return the completed Mind.
+    • Maintain the current conversation session.
+    • Build conversational context.
+    • Execute one cognition cycle.
+    • Store assistant replies.
+    • Track cognitive state.
+
+    This class never:
+    • plans execution
+    • executes tools
+    • generates responses
     """
 
     # =====================================================
@@ -23,36 +36,87 @@ class CognitiveLoop:
 
         self._state = StateMachine()
 
-        self._intelligence = IntelligenceEngine()
+        self._session = Session()
+
+        self._context_builder = ContextBuilder()
+
+        self._cognition = Cognition()
 
     # =====================================================
 
     def process(
         self,
         message: str,
-    ) -> Mind:
-
-        # Mike begins thinking.
+    ) -> CognitionState:
 
         self._state.transition(
             CognitiveState.UNDERSTANDING
         )
 
-        mind = self._intelligence.think(
-            message
-        )
+        try:
 
-        # Thinking has completed.
+            # Store user message
+            self._session.add_user(
+                message
+            )
 
-        self._state.transition(
-            CognitiveState.IDLE
-        )
+            # Build context
+            context = self._context_builder.build(
+                session=self._session,
+                user_message=message,
+            )
 
-        return mind
+            # Run cognition
+            state = self._cognition.process(
+                user_message=message,
+                context=context,
+            )
+
+            return state
+
+        finally:
+
+            self._state.transition(
+                CognitiveState.IDLE
+            )
+
+    # =====================================================
+
+    def add_assistant_message(
+        self,
+        message: str,
+    ) -> None:
+
+        if message:
+
+            self._session.add_assistant(
+                message
+            )
+
+    # =====================================================
+
+    def reset(
+        self,
+    ) -> None:
+
+        self._session.reset()
+
+        self._state.reset()
 
     # =====================================================
 
     @property
-    def state(self) -> CognitiveState:
+    def session(
+        self,
+    ) -> Session:
+
+        return self._session
+
+    # =====================================================
+
+    @property
+    def state(
+        self,
+    ) -> CognitiveState:
 
         return self._state.current

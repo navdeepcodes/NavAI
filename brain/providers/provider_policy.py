@@ -5,57 +5,51 @@ from brain.providers.provider_registry import ProviderRegistry
 
 class ProviderPolicy:
     """
-    Routing policy for LLM providers.
+    Provider routing policy.
 
     Responsibilities
     ----------------
-    • Define provider priorities.
-    • Return provider order for a task.
-    • Allow runtime overrides.
+    • Maintain provider priority per task.
+    • Return providers in priority order.
+    • Filter out unavailable providers.
 
     Never
     -----
     • Execute requests.
-    • Check provider health.
-    • Track provider state.
+    • Perform retries.
+    • Select the best provider.
     """
 
     _DEFAULT_PRIORITIES = {
-
         "conversation": [
             "Groq",
             "Ollama",
             "OpenRouter",
             "Gemini",
         ],
-
         "reasoning": [
             "OpenRouter",
             "Gemini",
             "Groq",
             "Ollama",
         ],
-
         "coding": [
             "Groq",
             "OpenRouter",
             "Ollama",
             "Gemini",
         ],
-
         "vision": [
             "Gemini",
             "OpenRouter",
             "Ollama",
         ],
-
         "general": [
             "Groq",
             "Ollama",
             "OpenRouter",
             "Gemini",
         ],
-
     }
 
     # =====================================================
@@ -69,8 +63,7 @@ class ProviderPolicy:
 
         self._priorities = {
             task: providers.copy()
-            for task, providers
-            in self._DEFAULT_PRIORITIES.items()
+            for task, providers in self._DEFAULT_PRIORITIES.items()
         }
 
     # =====================================================
@@ -80,10 +73,35 @@ class ProviderPolicy:
         task: str,
     ) -> list[str]:
 
-        return self._priorities.get(
+        priority = self._priorities.get(
             task,
             self._priorities["general"],
-        ).copy()
+        )
+
+        available: list[str] = []
+
+        for name in priority:
+
+            state = self._registry.get(name)
+
+            if state is None:
+                continue
+
+            if not state.available:
+                continue
+
+            available.append(name)
+
+        # fallback if every preferred provider is unavailable
+        if available:
+            return available
+
+        for state in self._registry.states():
+
+            if state.available:
+                available.append(state.provider.name)
+
+        return available
 
     # =====================================================
 
@@ -133,8 +151,7 @@ class ProviderPolicy:
 
         self._priorities = {
             task: providers.copy()
-            for task, providers
-            in self._DEFAULT_PRIORITIES.items()
+            for task, providers in self._DEFAULT_PRIORITIES.items()
         }
 
     # =====================================================
@@ -145,6 +162,5 @@ class ProviderPolicy:
 
         return {
             task: providers.copy()
-            for task, providers
-            in self._priorities.items()
+            for task, providers in self._priorities.items()
         }

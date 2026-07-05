@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import logging
 
-from brain.intelligence.context import ContextManager
-from brain.intelligence.mind import Mind
 from brain.intelligence.thinking_engine import ThinkingEngine
+from brain.llm.llm_service import LLMService
+from brain.session.context_builder import ContextBuilder
+from brain.session.session import Session
+
+from brain.intelligence.mind import Mind
 
 logger = logging.getLogger(__name__)
 
@@ -15,45 +18,50 @@ class IntelligenceEngine:
 
     Responsibilities
     ----------------
-    • Maintain conversational context.
-    • Execute one cognitive reasoning pass.
-    • Produce a Mind object.
-
-    ThinkingEngine is the ONLY LLM-powered reasoning step.
+    • Maintain session state
+    • Build context
+    • Run thinking layer
+    • Produce Mind (intermediate cognition output)
     """
 
     # =====================================================
 
     def __init__(self) -> None:
 
-        self.context = ContextManager()
+        self.session = Session()
+        self.context_builder = ContextBuilder()
 
-        self.thinking = ThinkingEngine()
+        self.llm = LLMService()
+        self.thinking = ThinkingEngine(self.llm)
 
     # =====================================================
 
-    def think(
-        self,
-        message: str,
-    ) -> Mind:
+    def think(self, message: str) -> Mind:
 
         logger.info("Starting cognitive pipeline...")
 
         # -------------------------------------------------
-        # Update Context
+        # Store user input
         # -------------------------------------------------
 
-        self.context.add_message(message)
-
-        context = self.context.current
+        self.session.add_user(message)
 
         # -------------------------------------------------
-        # Single Thinking Pass
+        # Build context
+        # -------------------------------------------------
+
+        context = self.context_builder.build(
+            session=self.session,
+            user_message=message,
+        )
+
+        # -------------------------------------------------
+        # Thinking layer (LLM)
         # -------------------------------------------------
 
         thinking = self.thinking.think(
             user_message=message,
-            context=str(context),
+            context=context,
         )
 
         logger.info(
@@ -64,12 +72,23 @@ class IntelligenceEngine:
         )
 
         # -------------------------------------------------
-        # Construct Mind
+        # Update session memory signals
+        # -------------------------------------------------
+
+        if thinking.goal:
+            self.session.current_topic = thinking.goal
+
+        if thinking.memory_query:
+            self.session.metadata["memory_query"] = thinking.memory_query
+
+        # -------------------------------------------------
+        # Build Mind object
         # -------------------------------------------------
 
         mind = Mind(
             user_message=message,
             thinking=thinking,
+            conversation_memory=self.session,
         )
 
         logger.info("Cognitive pipeline completed.")
@@ -78,8 +97,17 @@ class IntelligenceEngine:
 
     # =====================================================
 
+    def add_assistant_message(self, message: str) -> None:
+
+        if not message:
+            return
+
+        self.session.add_assistant(message)
+
+    # =====================================================
+
     def reset(self) -> None:
 
-        logger.info("Resetting cognitive context.")
+        logger.info("Resetting cognitive session.")
 
-        self.context.reset()
+        self.session = Session()

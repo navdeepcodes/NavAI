@@ -2,84 +2,85 @@ from __future__ import annotations
 
 from logs.logger import logger
 
-from brain.intelligence.thinking_result import ThinkingResult
+from brain.cognition.models.cognition_state import CognitionState
+from brain.execution.executor import Executor
 from brain.planning.execution_plan import ExecutionPlan
-from brain.planning.task_factory import TaskFactory
+from brain.planning.llm_planner import LLMPlanner
 
 
 class Planner:
     """
-    Mike's execution planner.
-
-    Converts a ThinkingResult into an ExecutionPlan.
+    Mike's planner.
 
     Responsibilities
     ----------------
-    • Build an execution plan.
-    • Delegate task creation.
-    • Never perform reasoning.
-    • Never execute tasks.
+    • Convert a CognitionState into an ExecutionPlan.
+    • Delegate planning to the LLM planner.
+    • Never execute tools.
     """
-
-    # =====================================================
 
     def __init__(self) -> None:
 
-        self._factory = TaskFactory()
+        self._planner = LLMPlanner()
 
     # =====================================================
 
     def plan(
         self,
-        thinking: ThinkingResult,
+        state: CognitionState,
     ) -> ExecutionPlan:
 
         logger.info("Planning execution...")
 
-        plan = ExecutionPlan(
-            goal=thinking.goal or thinking.intent,
-        )
+        if not state.requires_tools:
 
-        # -------------------------------------------------
-        # Nothing to execute
-        # -------------------------------------------------
+            logger.info("No execution required.")
 
-        if not thinking.requires_tools:
-
-            logger.info(
-                "Thinking result does not require tool execution."
+            return ExecutionPlan(
+                goal=state.goal or state.intent
             )
 
-            return plan
-
-        # -------------------------------------------------
-        # Build tasks
         # -------------------------------------------------
 
-        tasks = self._factory.create_tasks(
-            thinking,
+        available_tools = self._build_tool_catalog()
+
+        # -------------------------------------------------
+
+        return self._planner.plan(
+            state=state,
+            available_tools=available_tools,
         )
 
-        if not tasks:
+    # =====================================================
 
-            logger.warning(
-                "TaskFactory returned no executable tasks."
-            )
+    @staticmethod
+    def _build_tool_catalog() -> str:
+        """
+        Temporary tool catalog.
 
-            return plan
+        Later this will be generated automatically
+        from the Tool Registry.
+        """
 
-        # -------------------------------------------------
-        # Populate plan
-        # -------------------------------------------------
+        return """
+Browser
+--------
+open_browser
+open_url
+search
 
-        for task in tasks:
+Filesystem
+----------
+create_folder
+create_file
+delete_file
+move_file
 
-            plan.add_task(task)
+Terminal
+--------
+run_command
 
-        logger.info(
-            "Execution plan created (%d task%s).",
-            len(plan.tasks),
-            "" if len(plan.tasks) == 1 else "s",
-        )
-
-        return plan
+Email
+-----
+send_email
+"""

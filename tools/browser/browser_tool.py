@@ -6,12 +6,23 @@ from tools.tool_metadata import ToolMetadata
 from tools.tool_permission import Permission
 from tools.tool_result import ToolResult
 
+from tools.browser.browser_session import BrowserSession
 from tools.browser.open_browser import open_browser
 from tools.browser.open_url import open_url
 from tools.browser.search_browser import search_browser
 
 
 class BrowserTool(BaseTool):
+
+    # ---------------------------------------------------------
+    # Initialization
+    # ---------------------------------------------------------
+
+    def __init__(self) -> None:
+
+        super().__init__()
+
+        self.session = BrowserSession()
 
     # ---------------------------------------------------------
     # Metadata
@@ -70,7 +81,7 @@ class BrowserTool(BaseTool):
     def validate(
         self,
         action: str,
-        **kwargs
+        **kwargs,
     ) -> bool:
 
         validators = {
@@ -99,7 +110,7 @@ class BrowserTool(BaseTool):
         self,
         action: str,
         context: ToolContext,
-        **kwargs
+        **kwargs,
     ) -> ToolResult:
 
         handler = self.actions.get(action)
@@ -114,7 +125,7 @@ class BrowserTool(BaseTool):
 
                 action=action,
 
-                error=f"Unknown browser action '{action}'."
+                error=f"Unknown browser action '{action}'.",
 
             )
 
@@ -130,7 +141,7 @@ class BrowserTool(BaseTool):
 
                 action=action,
 
-                message=str(result)
+                message=str(result),
 
             )
 
@@ -144,7 +155,7 @@ class BrowserTool(BaseTool):
 
                 action=action,
 
-                error=str(exc)
+                error=str(exc),
 
             )
 
@@ -154,27 +165,39 @@ class BrowserTool(BaseTool):
 
     def _open_browser(
         self,
-        **kwargs
+        **kwargs,
     ) -> str:
 
-        return open_browser()
+        result = open_browser()
+
+        self.session.page_loaded = True
+
+        return result
 
     # ---------------------------------------------------------
 
     def _open_url(
         self,
         url: str,
-        **kwargs
+        **kwargs,
     ) -> str:
 
-        return open_url(url)
+        result = open_url(url)
+
+        self.session.update(
+            url=url,
+        )
+
+        return result
 
     # ---------------------------------------------------------
 
     def _search(
         self,
         query: str,
-        **kwargs
+        **kwargs,
     ) -> str:
 
-        return search_browser(query)
+        result = search_browser(query)
+
+        return result

@@ -14,23 +14,20 @@ from brain.providers.provider_state import (
 
 class ProviderSelector:
     """
-    Intelligent provider selector.
+    Chooses the healthiest provider from a candidate list.
 
     Responsibilities
     ----------------
     • Sticky provider reuse
-    • Automatic provider scoring
-    • Cooldown recovery
-    • Automatic failover
+    • Provider scoring
+    • Cooldown handling
+    • Current provider tracking
 
-    This class does NOT know which provider should be used
-    for a task. ProviderPolicy decides that.
-
-    This class simply chooses the healthiest provider from
-    the candidate list.
+    NOTE:
+    -----
+    This class DOES NOT perform request retries or failover.
+    LLMService is responsible for trying the next provider.
     """
-
-    # =====================================================
 
     def __init__(
         self,
@@ -41,8 +38,6 @@ class ProviderSelector:
         self._current: str | None = None
 
     # =====================================================
-    # Public API
-    # =====================================================
 
     def select(
         self,
@@ -52,82 +47,70 @@ class ProviderSelector:
         self._recover_expired()
 
         # -------------------------------------------------
-        # Prefer current provider if still healthy.
-        # Avoid unnecessary switching.
+        # Reuse current provider if still healthy
         # -------------------------------------------------
 
-        if self._current is not None:
+        if self._current:
 
-            try:
+            state = self._registry.get(self._current)
 
-                state = self._registry.get(
-                    self._current
+            if (
+                state is not None
+                and state.provider.name in candidates
+                and self._usable(state)
+            ):
+
+                logger.debug(
+                    "Reusing provider '%s'.",
+                    state.provider.name,
                 )
 
-                if (
-                    state.provider.name in candidates
-                    and self._usable(state)
-                ):
-
-                    logger.debug(
-                        "Reusing provider '%s'.",
-                        state.provider.name,
-                    )
-
-                    return state.provider
-
-            except ValueError:
-
-                self._current = None
+                return state.provider
 
         # -------------------------------------------------
-        # Score all available providers.
+        # Pick healthiest provider
         # -------------------------------------------------
 
-        best_state: ProviderState | None = None
+        best: ProviderState | None = None
         best_score = float("-inf")
 
         for name in candidates:
 
-            try:
+            state = self._registry.get(name)
 
-                state = self._registry.get(name)
-
-            except ValueError:
-
+            if state is None:
                 continue
 
             if not self._usable(state):
-
                 continue
 
             score = self._score(state)
 
             logger.debug(
                 "%s score %.2f",
-                state.provider.name,
+                name,
                 score,
             )
 
             if score > best_score:
 
                 best_score = score
-                best_state = state
+                best = state
 
-        if best_state is None:
+        if best is None:
 
             raise RuntimeError(
                 "No available providers."
             )
 
-        self._current = best_state.provider.name
+        self._current = best.provider.name
 
         logger.info(
             "Selected provider -> %s",
-            best_state.provider.name,
+            best.provider.name,
         )
 
-        return best_state.provider
+        return best.provider
 
     # =====================================================
 
@@ -137,19 +120,12 @@ class ProviderSelector:
         latency_ms: float,
     ) -> None:
 
-        try:
+        state = self._registry.get(provider_name)
 
-            state = self._registry.get(
-                provider_name
-            )
-
-        except ValueError:
-
+        if state is None:
             return
 
-        state.mark_success(
-            latency_ms
-        )
+        state.mark_success(latency_ms)
 
     # =====================================================
 
@@ -158,25 +134,20 @@ class ProviderSelector:
         provider_name: str,
     ) -> None:
 
-        try:
+        state = self._registry.get(provider_name)
 
-            state = self._registry.get(
-                provider_name
-            )
-
-        except ValueError:
-
+        if state is None:
             return
 
         state.mark_failure()
 
         cooldown = min(
-            300 * (2 ** max(0, state.consecutive_failures - 1)),
-            3600,
+            60 * (2 ** (state.consecutive_failures - 1)),
+            1800,
         )
 
         state.start_cooldown(
-            cooldown
+            cooldown,
         )
 
         logger.warning(
@@ -202,18 +173,17 @@ class ProviderSelector:
     ) -> BaseLLMProvider | None:
 
         if self._current is None:
-
             return None
 
-        try:
+        state = self._registry.get(
+            self._current,
+        )
 
-            return self._registry.get(
-                self._current
-            ).provider
-
-        except ValueError:
-
-            return None
+        return (
+            None
+            if state is None
+            else state.provider
+        )
 
     # =====================================================
 
@@ -240,8 +210,6 @@ class ProviderSelector:
         )
 
     # =====================================================
-    # Internal
-    # =====================================================
 
     def _recover_expired(
         self,
@@ -251,13 +219,11 @@ class ProviderSelector:
 
         for state in self._registry.states():
 
-            if state.status != ProviderStatus.COOLDOWN:
-                continue
-
-            if state.cooldown_until is None:
-                continue
-
-            if now >= state.cooldown_until:
+            if (
+                state.status == ProviderStatus.COOLDOWN
+                and state.cooldown_until
+                and now >= state.cooldown_until
+            ):
 
                 state.recover()
 
@@ -289,29 +255,8 @@ class ProviderSelector:
     def _score(
         state: ProviderState,
     ) -> float:
-        """
-        Calculate provider quality.
-
-        Higher score is better.
-
-        Factors
-        -------
-        • Reliability
-        • Historical latency
-        • Success rate
-        • Consecutive failures
-
-        Capability routing belongs in ProviderPolicy,
-        not here.
-        """
 
         score = 100.0
-
-        # ---------------------------------------------
-        # Latency
-        # Lower latency is better.
-        # Maximum penalty: 30.
-        # ---------------------------------------------
 
         if state.average_latency_ms > 0:
 
@@ -320,41 +265,21 @@ class ProviderSelector:
                 30.0,
             )
 
-        # ---------------------------------------------
-        # Historical reliability.
-        # Reward providers with successful history.
-        # ---------------------------------------------
-
         score += min(
-            state.success_count * 0.10,
+            state.success_count * 0.1,
             10.0,
         )
-
-        # ---------------------------------------------
-        # Success rate.
-        # Maximum reward: 25.
-        # ---------------------------------------------
 
         score += (
             state.success_rate * 25.0
         )
 
-        # ---------------------------------------------
-        # Consecutive failures.
-        # Heavy penalty.
-        # ---------------------------------------------
-
         score -= (
             state.consecutive_failures * 20.0
         )
 
-        # ---------------------------------------------
-        # Overall failures.
-        # Small penalty.
-        # ---------------------------------------------
-
         score -= min(
-            state.failure_count * 0.50,
+            state.failure_count * 0.5,
             10.0,
         )
 
