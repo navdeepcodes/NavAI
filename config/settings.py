@@ -1,3 +1,4 @@
+# Configuration settings for the Mike application
 import os
 from pathlib import Path
 from dotenv import load_dotenv
