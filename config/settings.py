@@ -11,7 +11,7 @@ load_dotenv(dotenv_path=ENV_FILE)
 APP_NAME = os.getenv("APP_NAME", "Mike")
 
 VERSION = "1.0"
-DEBUG = True
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
 
 DEFAULT_BROWSER = os.getenv("DEFAULT_BROWSER", "Opera")
 WAKE_WORD = os.getenv("WAKE_WORD", "Hey Mike")
