@@ -32,6 +32,10 @@ protobuf==7.35.1
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycparser==3.0
+pyobjc-core==12.2.2
+pyobjc-framework-Cocoa==12.2.2
+pyobjc-framework-AVFoundation==12.2.2
+pyobjc-framework-Speech==12.2.2
 pydantic==2.13.4
 pydantic_core==2.46.4
 pyparsing==3.3.2

@@ -1,0 +1,977 @@
+<title>Mike Redesign Phase 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+/* ── Tokens ────────────────────────────────────────────────
+   Committed single-theme dark. This is a specification for a
+   product that only exists on a near-black ground; rendering the
+   specimens on white would misrepresent every one of them. Every
+   colour below is painted explicitly so the page holds on any host. */
+:root{
+  --ground:#08090C;
+  --lift:#0B0D12;
+  --surface:#101219;
+  --raised:#141722;
+  --hairline:#1B1F2B;
+  --hairline-lit:#2A3350;
+  --text:#E9EBF2;
+  --dim:#98A0B4;
+  --muted:#5B6379;
+  --faint:#3A4152;
+  --indigo:#5B8CFF;
+  --cyan:#4FD8E8;
+  --amber:#E5A83B;
+  --red:#E56A5A;
+  --green:#3ECF8E;
+
+  --display:'Archivo', system-ui, -apple-system, sans-serif;
+  --body:-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Segoe UI', sans-serif;
+  --mono:'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --measure:66ch;
+  --gut:clamp(20px, 4vw, 56px);
+}
+
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--ground);
+  color:var(--text);
+  font-family:var(--body);
+  font-size:16px;
+  line-height:1.62;
+  letter-spacing:-0.005em;
+  -webkit-font-smoothing:antialiased;
+}
+img{max-width:100%;display:block}
+
+/* ── Shell ─────────────────────────────────────────────── */
+.shell{max-width:1240px;margin:0 auto;padding:0 var(--gut) 140px;}
+
+.masthead{
+  padding:clamp(64px,11vh,132px) 0 clamp(48px,7vh,84px);
+  border-bottom:1px solid var(--hairline);
+}
+.eyebrow{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:0.16em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin:0 0 26px;
+}
+h1{
+  font-family:var(--display);
+  font-variation-settings:'wdth' 112,'wght' 600;
+  font-size:clamp(38px,6.2vw,74px);
+  line-height:0.98;
+  letter-spacing:-0.025em;
+  margin:0 0 28px;
+  text-wrap:balance;
+  max-width:16ch;
+}
+.standfirst{
+  font-size:clamp(17px,2vw,20px);
+  line-height:1.55;
+  color:var(--dim);
+  max-width:56ch;
+  margin:0;
+}
+.meta-row{
+  display:flex;flex-wrap:wrap;gap:10px 26px;
+  margin-top:38px;
+  font-family:var(--mono);font-size:11.5px;color:var(--muted);
+  letter-spacing:0.04em;
+}
+.meta-row span::before{content:'';display:inline-block;width:5px;height:5px;background:var(--faint);margin-right:9px;vertical-align:2px}
+
+/* ── Sections ──────────────────────────────────────────── */
+section{padding:clamp(56px,9vh,104px) 0;border-bottom:1px solid var(--hairline)}
+section:last-of-type{border-bottom:0}
+.sec-head{display:flex;gap:22px;align-items:baseline;margin-bottom:34px}
+.sec-num{
+  font-family:var(--mono);font-size:11.5px;color:var(--indigo);
+  letter-spacing:0.1em;flex:none;padding-top:6px;
+}
+h2{
+  font-family:var(--display);
+  font-variation-settings:'wdth' 108,'wght' 600;
+  font-size:clamp(25px,3.4vw,36px);
+  line-height:1.08;letter-spacing:-0.02em;margin:0;text-wrap:balance;
+}
+h3{
+  font-family:var(--display);
+  font-variation-settings:'wdth' 100,'wght' 600;
+  font-size:18px;letter-spacing:-0.008em;margin:44px 0 14px;
+}
+h4{
+  font-family:var(--mono);font-size:11px;letter-spacing:0.14em;
+  text-transform:uppercase;color:var(--muted);font-weight:500;
+  margin:30px 0 12px;
+}
+p{max-width:var(--measure);margin:0 0 17px}
+.lede{font-size:17.5px;color:var(--dim);max-width:60ch}
+strong{font-weight:600;color:#fff}
+em{font-style:normal;color:var(--indigo)}
+a{color:var(--indigo)}
+code,.m{font-family:var(--mono);font-size:0.9em;color:var(--dim)}
+
+ul{max-width:var(--measure);margin:0 0 17px;padding-left:0;list-style:none}
+ul li{position:relative;padding-left:22px;margin-bottom:9px}
+ul li::before{content:'';position:absolute;left:0;top:11px;width:9px;height:1px;background:var(--faint)}
+
+/* ── Callouts ──────────────────────────────────────────── */
+.note{
+  border-left:2px solid var(--hairline-lit);
+  padding:4px 0 4px 22px;margin:26px 0;max-width:var(--measure);
+}
+.note.warn{border-left-color:var(--amber)}
+.note.warn h4{color:var(--amber)}
+.note p:last-child{margin-bottom:0}
+
+/* ── Evidence ──────────────────────────────────────────── */
+.evidence{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));
+  gap:20px;margin:34px 0 12px;
+}
+figure{margin:0}
+figure img{border:1px solid var(--hairline);border-radius:3px}
+figcaption{
+  font-family:var(--mono);font-size:11px;color:var(--muted);
+  margin-top:11px;letter-spacing:0.03em;line-height:1.5;
+}
+
+/* faults list */
+.faults{counter-reset:f;max-width:var(--measure);margin-top:30px}
+.faults li{
+  counter-increment:f;padding-left:38px;margin-bottom:15px;
+}
+.faults li::before{
+  content:counter(f,decimal-leading-zero);
+  position:absolute;left:0;top:0;width:auto;height:auto;background:none;
+  font-family:var(--mono);font-size:11px;color:var(--red);letter-spacing:0.06em;
+  padding-top:5px;
+}
+
+/* ── Depth ladder ──────────────────────────────────────── */
+.ladder{margin:32px 0;border-top:1px solid var(--hairline)}
+.rung{
+  display:grid;grid-template-columns:58px 152px 1fr;gap:20px;
+  padding:16px 0;border-bottom:1px solid var(--hairline);align-items:baseline;
+}
+.rung .d{font-family:var(--mono);font-size:12px;color:var(--indigo);letter-spacing:0.06em}
+.rung .n{font-family:var(--display);font-variation-settings:'wght' 600;font-size:15px}
+.rung .x{color:var(--dim);font-size:14.5px;line-height:1.5}
+@media(max-width:640px){.rung{grid-template-columns:48px 1fr;gap:6px 16px}.rung .x{grid-column:2}}
+
+/* ── IA rooms ──────────────────────────────────────────── */
+.rooms{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);margin:32px 0}
+.room{background:var(--ground);padding:26px 24px 28px}
+.room .q{font-family:var(--mono);font-size:11px;color:var(--muted);letter-spacing:0.1em;text-transform:uppercase}
+.room h3{margin:12px 0 10px;font-size:21px}
+.room p{font-size:14.5px;color:var(--dim);margin-bottom:16px;max-width:none}
+.room ul{margin:0}
+.room ul li{font-size:13.5px;padding-left:0;margin-bottom:7px;color:var(--dim);display:flex;gap:9px;align-items:baseline}
+.room ul li::before{display:none}
+.tag{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:0.08em;
+  padding:1px 5px;border:1px solid var(--faint);color:var(--muted);
+  flex:none;border-radius:2px;text-transform:uppercase;
+}
+.tag.live{border-color:#1F4A3A;color:var(--green)}
+.tag.soon{border-color:#3A3222;color:var(--amber)}
+
+/* ── Direction cards ───────────────────────────────────── */
+.dirs{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);margin:38px 0}
+.dir{background:var(--ground);padding:0 0 30px;display:flex;flex-direction:column}
+.dir-id{padding:22px 24px 0;display:flex;align-items:baseline;gap:12px}
+.dir-id .rn{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.dir-id h3{margin:0;font-size:23px;font-variation-settings:'wdth' 118,'wght' 600;letter-spacing:0.01em}
+.dir-thesis{padding:10px 24px 20px;color:var(--dim);font-size:14.5px;line-height:1.5}
+.spec-frame{margin:0 24px 18px;border:1px solid var(--hairline);background:var(--lift);height:186px;position:relative;overflow:hidden;border-radius:2px}
+.dir dl{margin:0;padding:0 24px;font-size:13.5px}
+.dir dt{font-family:var(--mono);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-top:15px}
+.dir dd{margin:3px 0 0;color:var(--dim);line-height:1.5}
+.dir .risk{margin:18px 24px 0;padding-left:14px;border-left:2px solid #3A2A28;font-size:13px;color:var(--dim);line-height:1.5}
+.dir .risk b{color:var(--red);font-weight:500;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;display:block;margin-bottom:4px}
+
+/* ── Specimen internals ────────────────────────────────── */
+/* fake user work behind Mike */
+.work-bg{position:absolute;inset:0;padding:14px 16px;opacity:0.5}
+.work-bg i{display:block;height:4px;background:#161A22;border-radius:1px;margin-bottom:7px}
+.work-bg i:nth-child(1){width:52%}
+.work-bg i:nth-child(2){width:74%}
+.work-bg i:nth-child(3){width:38%;background:#1A1F2A}
+.work-bg i:nth-child(4){width:66%}
+.work-bg i:nth-child(5){width:44%}
+.work-bg i:nth-child(6){width:70%;background:#1A1F2A}
+.work-bg i:nth-child(7){width:30%}
+.work-bg i:nth-child(8){width:58%}
+.work-bg i:nth-child(9){width:47%}
+.work-bg i:nth-child(10){width:62%}
+
+/* SEAM specimen */
+.sp-seam .rule{position:absolute;right:0;top:0;bottom:0;width:1px;background:var(--hairline-lit)}
+.sp-seam .mark{position:absolute;right:0;width:2px;background:var(--cyan);top:38%;height:24%;animation:seamTravel 4s ease-in-out infinite}
+@keyframes seamTravel{0%,100%{top:34%;height:20%}50%{top:52%;height:20%}}
+.sp-seam .panel{position:absolute;right:1px;top:30%;width:56%;border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);background:var(--ground);padding:12px 14px}
+.sp-seam .l1{font-family:var(--mono);font-size:9.5px;color:var(--cyan);letter-spacing:0.08em;margin-bottom:6px}
+.sp-seam .l2{font-size:11.5px;color:var(--text);line-height:1.45}
+
+/* CARET specimen */
+.sp-caret .rule{position:absolute;right:0;top:0;bottom:0;width:1px;background:var(--hairline)}
+.sp-caret .strip{position:absolute;right:1px;top:36%;width:62%;background:var(--ground);border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);padding:11px 14px;display:flex;gap:11px;align-items:flex-start}
+.caret{flex:none;width:3px;height:15px;background:var(--indigo);border-radius:0.5px;margin-top:1px}
+.caret.live{background:var(--cyan);animation:caretWork 1.5s ease-in-out infinite}
+@keyframes caretWork{0%,100%{transform:translateY(0);opacity:1}50%{transform:translateY(5px);opacity:0.55}}
+.sp-caret .said{font-size:11.5px;line-height:1.45;color:var(--text)}
+.sp-caret .did{font-family:var(--mono);font-size:10px;color:var(--muted);line-height:1.6;margin-top:6px}
+
+/* CHAMBER specimen */
+.sp-cham .wash{position:absolute;right:-30%;top:-30%;width:90%;height:160%;background:radial-gradient(closest-side, rgba(79,216,232,0.22), rgba(91,140,255,0.09) 45%, transparent 72%);animation:washPulse 5s ease-in-out infinite}
+@keyframes washPulse{0%,100%{opacity:0.7}50%{opacity:1}}
+.sp-cham .panel{position:absolute;right:8%;top:33%;width:56%;padding:12px 0}
+.sp-cham .l1{font-size:9.5px;font-family:var(--mono);letter-spacing:0.1em;color:var(--cyan);margin-bottom:7px}
+.sp-cham .l2{font-size:12px;color:#fff;line-height:1.45;text-shadow:0 0 18px rgba(79,216,232,0.35)}
+
+/* ── Edge storyboard ───────────────────────────────────── */
+.board{display:grid;grid-template-columns:repeat(auto-fill,minmax(224px,1fr));gap:20px;margin:34px 0}
+.frame{border:1px solid var(--hairline);background:var(--lift);border-radius:2px;overflow:hidden}
+.stage{position:relative;height:132px;overflow:hidden;background:var(--lift)}
+.frame .cap{padding:11px 13px 13px;border-top:1px solid var(--hairline);background:var(--ground)}
+.frame .cap b{display:block;font-family:var(--mono);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:var(--dim);margin-bottom:5px}
+.frame .cap span{display:block;font-size:12px;color:var(--muted);line-height:1.45}
+
+/* edge strip primitives shared by frames */
+.edge{position:absolute;right:0;background:var(--ground);border-left:1px solid var(--hairline);border-top:1px solid var(--hairline);border-bottom:1px solid var(--hairline);display:flex;align-items:flex-start;gap:9px;padding:8px 11px;transition:none}
+.edge .c{flex:none;width:3px;height:13px;background:var(--indigo);border-radius:.5px;margin-top:1px}
+.edge .t{font-size:10.5px;line-height:1.45;color:var(--text)}
+.edge .mono{font-family:var(--mono);font-size:9.5px;color:var(--muted);line-height:1.6}
+
+.e-hair{position:absolute;right:0;top:0;bottom:0;width:1px;background:var(--hairline)}
+
+/* per-state */
+.st-idle .tick{position:absolute;right:0;top:46%;width:2px;height:15px;background:#22304F;animation:breathe 3.6s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:0.45}50%{opacity:0.95}}
+
+.st-invoke .edge{top:40%;width:0;overflow:hidden;animation:openStrip 2.6s ease-in-out infinite}
+@keyframes openStrip{0%{width:6px}30%,80%{width:64%}100%{width:6px}}
+
+.st-listen .edge{top:38%;width:62%}
+.st-listen .c{background:var(--cyan);animation:stretch .9s ease-in-out infinite}
+@keyframes stretch{0%,100%{height:9px}50%{height:19px}}
+.st-listen .bars{display:flex;gap:3px;align-items:center;height:14px;margin-top:1px}
+.st-listen .bars i{width:2px;background:#1E5A63;border-radius:1px;animation:vu 1.1s ease-in-out infinite}
+.st-listen .bars i:nth-child(1){height:5px;animation-delay:0s}
+.st-listen .bars i:nth-child(2){height:11px;animation-delay:.12s}
+.st-listen .bars i:nth-child(3){height:7px;animation-delay:.24s}
+.st-listen .bars i:nth-child(4){height:13px;animation-delay:.36s}
+.st-listen .bars i:nth-child(5){height:6px;animation-delay:.48s}
+@keyframes vu{0%,100%{transform:scaleY(.5)}50%{transform:scaleY(1.35)}}
+
+.st-think .edge{top:40%;width:52%}
+.st-think .c{background:var(--indigo);animation:jitter .55s steps(2,end) infinite}
+@keyframes jitter{0%{height:13px;opacity:1}50%{height:9px;opacity:.6}100%{height:13px;opacity:1}}
+
+.st-work .edge{top:26%;width:66%;flex-direction:column;gap:6px}
+.st-work .row{display:flex;gap:9px;align-items:flex-start;width:100%}
+.st-work .c{background:var(--cyan);animation:caretWork 1.4s ease-in-out infinite}
+.st-work .done{font-family:var(--mono);font-size:9px;color:var(--muted);padding-left:12px;line-height:1.7}
+.st-work .done s{text-decoration:none;color:var(--faint)}
+
+.st-respond .edge{top:30%;width:66%}
+.st-respond .t{position:relative}
+.st-respond .t::after{content:'';display:inline-block;width:2px;height:9px;background:var(--indigo);margin-left:2px;vertical-align:-1px;animation:blink 1s steps(1,end) infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+.st-needs .edge{top:30%;width:70%;border-color:#4A3A1E;flex-direction:column;gap:8px;align-items:stretch}
+.st-needs .c{background:var(--amber)}
+.st-needs .btns{display:flex;gap:6px;padding-left:12px}
+.st-needs .btns b{font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;padding:2px 7px;border:1px solid var(--faint);color:var(--dim);font-weight:400;border-radius:2px}
+.st-needs .btns b.y{border-color:#4A3A1E;color:var(--amber)}
+
+.st-err .edge{top:38%;width:64%;border-color:#4A2A26}
+.st-err .c{background:var(--red)}
+
+.st-dismiss .edge{top:40%;width:64%;animation:closeStrip 2.8s ease-in-out infinite;overflow:hidden}
+@keyframes closeStrip{0%,25%{width:64%;opacity:1}60%,100%{width:0;opacity:0}}
+.st-dismiss .tick{position:absolute;right:0;top:46%;width:2px;height:15px;background:#22304F;opacity:0;animation:tickBack 2.8s ease-in-out infinite}
+@keyframes tickBack{0%,55%{opacity:0}75%,100%{opacity:.8}}
+
+.st-d2 .card{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:74%;background:var(--surface);border:1px solid var(--hairline-lit);border-radius:4px;padding:11px 13px;display:flex;gap:10px;align-items:center;box-shadow:0 10px 30px rgba(0,0,0,.6)}
+.st-d2 .c{flex:none;width:3px;height:14px;background:var(--indigo);animation:blink 1.1s steps(1,end) infinite}
+.st-d2 .ph{font-size:10.5px;color:var(--muted)}
+
+.st-d3 .win{position:absolute;left:9%;top:12%;right:9%;bottom:12%;background:var(--ground);border:1px solid var(--hairline-lit);border-radius:4px;padding:12px 14px;box-shadow:0 14px 40px rgba(0,0,0,.6)}
+.st-d3 .c{width:4px;height:17px;background:var(--indigo);margin-bottom:9px}
+.st-d3 .ln{height:4px;background:#181C26;border-radius:1px;margin-bottom:6px}
+.st-d3 .ln.w1{width:78%}.st-d3 .ln.w2{width:56%}.st-d3 .ln.w3{width:66%}
+
+/* ── Composition mockups (larger) ──────────────────────── */
+.mock{border:1px solid var(--hairline);background:var(--ground);border-radius:3px;overflow:hidden;margin:30px 0 12px}
+.mock-bar{display:flex;align-items:center;gap:7px;padding:9px 13px;border-bottom:1px solid var(--hairline);background:var(--lift)}
+.mock-bar i{width:9px;height:9px;border-radius:50%;background:#1D2130;display:block}
+.mock-bar span{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:8px;letter-spacing:.06em}
+.mock-body{padding:clamp(24px,4vw,46px)}
+
+/* Home composition */
+.home-top{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:10.5px;color:var(--muted);letter-spacing:.05em;margin-bottom:clamp(30px,5vw,52px)}
+.home-col{max-width:640px}
+.home-caret{width:6px;height:34px;background:var(--indigo);margin-bottom:22px;animation:breathe 3.6s ease-in-out infinite}
+.home-said{font-size:clamp(17px,2.3vw,21px);line-height:1.5;color:var(--text);margin-bottom:22px;letter-spacing:-0.012em}
+.home-did{font-family:var(--mono);font-size:12px;line-height:1.9;color:var(--muted);border-left:1px solid var(--hairline);padding-left:16px;margin-bottom:26px}
+.home-did em{color:var(--cyan);font-style:normal}
+.home-did s{text-decoration:none;color:var(--faint)}
+.home-input{display:flex;align-items:center;gap:11px;border-top:1px solid var(--hairline);padding-top:16px;margin-top:34px}
+.home-input .c{width:3px;height:16px;background:var(--indigo);animation:blink 1.1s steps(1,end) infinite;flex:none}
+.home-input span{font-size:14.5px;color:var(--muted)}
+.home-input .keys{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em}
+.home-rooms{display:flex;gap:26px;margin-top:38px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.home-rooms b{color:var(--text);font-weight:400;border-bottom:1px solid var(--indigo);padding-bottom:3px}
+
+/* generic two-register transcript */
+.reg{max-width:660px}
+.reg .u{font-size:15px;color:var(--dim);border-left:1px solid var(--hairline-lit);padding-left:15px;margin:26px 0 18px}
+.reg .s{font-size:15.5px;line-height:1.6;margin-bottom:14px}
+.reg .d{font-family:var(--mono);font-size:11.5px;line-height:1.9;color:var(--muted);padding-left:15px;border-left:1px solid var(--hairline);margin-bottom:16px}
+.reg .d em{color:var(--cyan);font-style:normal}
+.reg .d b{color:var(--red);font-weight:400}
+.reg .ts{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em}
+
+/* memory rows */
+.mem{max-width:700px;border-top:1px solid var(--hairline)}
+.mem-row{display:grid;grid-template-columns:88px 1fr auto;gap:18px;padding:14px 0;border-bottom:1px solid var(--hairline);align-items:baseline}
+.mem-row .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.mem-row .v{font-size:14.5px;line-height:1.5}
+.mem-row .v small{display:block;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:4px;letter-spacing:.04em}
+.mem-row .act{font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em}
+@media(max-width:600px){.mem-row{grid-template-columns:1fr;gap:5px}}
+
+/* conduct */
+.conduct{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1px;background:var(--hairline);border:1px solid var(--hairline);margin:30px 0}
+.conduct > div{background:var(--ground);padding:22px 22px 26px}
+.conduct h4{margin-top:0}
+.conduct ul li{font-size:13.5px;color:var(--dim);padding-left:0;display:flex;gap:9px;align-items:baseline}
+.conduct ul li::before{display:none}
+
+/* motion table */
+.motion{width:100%;border-collapse:collapse;margin:26px 0;font-size:14px}
+.motion th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:500;padding:0 16px 11px 0;border-bottom:1px solid var(--hairline)}
+.motion td{padding:12px 16px 12px 0;border-bottom:1px solid var(--hairline);color:var(--dim);vertical-align:top;line-height:1.5}
+.motion td:first-child{font-family:var(--mono);font-size:11.5px;color:var(--text);letter-spacing:.04em;white-space:nowrap}
+.scroll-x{overflow-x:auto}
+
+/* recommendation */
+.verdict{border:1px solid var(--hairline-lit);background:var(--lift);padding:clamp(26px,4vw,42px);margin:34px 0;border-radius:3px}
+.verdict .pick{display:flex;align-items:center;gap:16px;margin-bottom:20px}
+.verdict .pick i{width:6px;height:38px;background:var(--indigo);display:block;flex:none;animation:breathe 3.6s ease-in-out infinite}
+.verdict .pick h3{margin:0;font-size:clamp(24px,3.6vw,34px);font-variation-settings:'wdth' 118,'wght' 600;letter-spacing:0.005em}
+.verdict ol{max-width:var(--measure);padding-left:0;list-style:none;counter-reset:v;margin:22px 0 0}
+.verdict ol li{counter-increment:v;position:relative;padding-left:34px;margin-bottom:14px;color:var(--dim);line-height:1.55}
+.verdict ol li::before{content:counter(v,decimal-leading-zero);position:absolute;left:0;top:1px;font-family:var(--mono);font-size:10.5px;color:var(--indigo);letter-spacing:.06em}
+.verdict ol li b{color:var(--text);font-weight:600}
+
+/* closing */
+.closing{padding:clamp(58px,9vh,110px) 0 0}
+.closing blockquote{
+  margin:0 0 30px;font-family:var(--display);
+  font-variation-settings:'wdth' 100,'wght' 400;
+  font-size:clamp(21px,3vw,30px);line-height:1.32;letter-spacing:-0.018em;
+  color:var(--text);max-width:22ch;text-wrap:balance;
+}
+.closing p{max-width:58ch;color:var(--dim);font-size:16.5px}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+}
+</style>
+
+<div class="shell">
+
+<header class="masthead">
+  <p class="eyebrow">Phase 1 · Experience design · No implementation</p>
+  <h1>Mike doesn't need a window</h1>
+  <p class="standfirst">A redesign of how Mike exists on the machine — three visual languages, one recommendation, and a diagnosis of why the current Home reads as a chatbot with the lights off.</p>
+  <div class="meta-row">
+    <span>Substrate frozen</span>
+    <span>Backend untouched</span>
+    <span>Qwen3&nbsp;8B · local</span>
+    <span>PySide6 · QPainter</span>
+  </div>
+</header>
+
+<!-- ══ 00 DIAGNOSIS ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">00</span><h2>What Home V1 actually taught us</h2></div>
+  <p class="lede">Before proposing anything, here is the current build rendered at full size. Not from memory — captured from the running widget tree.</p>
+
+  <div class="evidence">
+    <figure>
+      <img src="data:image/jpeg;base64,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AooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKANHR9Rk0fVrXVolDNazxzhT0JjYNj8cV6NDrXgPS/EsPifT3vpZDqEd35boqiGMPvdSdx8xuy9B3ryiiqUmgaPZtE8faOtpFFrz3Uk8a3oEx3OB9okjdQwDozLhW43AAkHmrmqfEzSZtSfVbD7QGh1mLUoInGEkQRojq+GO05UkdeT614bRVe1lawuVHstp4s8FaGLdNMSW5xqUF35ktvGksEUcnmOnmBi0jN06gYHvXF6x4wvNYuoo5UhgtIbo3Kw28YjBZmGXYDq20YyTXHUUnNtWCxueJ9Sg1jxJqGr2oYRXV1LMgYYO13LDI9cGsOiipbu7jCiiikB/9H8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//0vwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//T/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9T8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1fwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//W/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9f8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//0PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//R/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoopQCaAEop+BS0AM2ml2mnUuDTsAzbRtNPwaMGiwEe00lSUUgI6KfgU0gigBKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/9L8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKOtKBmngYoAQDFLSgZqaKGSVxHEpZj0A600rgQ7TTwmTgDJrX+xWtnzqD5f/nlHyfxPQUHU3jG2xjSAeqjLf8AfR/pWvs0vidiea+xBFpV/Ku9YyF9W+UfmaWXTjDGzyTRZAztDgk/lVaWWWZt0zM59WOf51HS9zoh2fcjoqSipGR1PAbUEi5ViD0KnkfgetR4FJt9KFoBcOniUbrFxL/s9HH4f4VnEFTtYYI7GpASpyOCOlXxeJcDy9QG70kH3x9f7348+9O0X5C1RlEZpnSr9zaPABIpDxt9116H29j7VUIzUNNOzGncjopSMUlIAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//T/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKOtFPAxQAo4pQM0AZp9OwD41RnVXO1SQCeuB61qSXyQobfTQY0PDSH77/4D2FZQHc06tIyaWgmr7hUkUUsz+XCpZj2AzWxBpcUEQu9WYxo3Kxj77/Qdh7mll1mVVMGnILaP/Z+8fq3X8qtU0tZu35k81/hEXQblBvvZI7cf9NG5/Ic077JocX+tunc/wDTNOPzNYxLO25iST3PJowafNFbR+8LN7s2dvh3puuPyH+NH2PQ5eI7p0P/AE0Tj9Kx9ppMGnzrrFC5fNmu2g3LjfYyR3A/6Ztz+R5rHlilhcxzKVYdiMUqlkbcpII6EcGtmLWZXQQakguY+nzffH0brStTl5fih3kvMwaaRW/PpUM8Ru9IcyovLRn/AFifUdx7isKs5QcdylJPYlt7l7ckYDI330PRh/nvTrq1RU+1WpLRE456ofQ/0PeqxHcVNbXDW7k43Iww6How/wA9DQmmuWQNdUUzzUfStC8tlgYPEd0Ug3I3t6H3HeqRGazaadmNO4yiiikAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH/1PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAFA5p9IOlPUd6YCgYp4FN61J0poAroooYdGhW5u1D3LjMcTdEB6Mw9fQVFpkMVrA2sXahlQ7YUP8cn+C9TWXNNLczNPOxZ3OSTW8VyLm6v+rkN8zt0FnnmuZTPOxd26k0kUMkriOMFmJwABkmr+l6Xc6pc/Z7YDgbnduFRR1JPYV1v2yy0WM2+jfexh7lh87f7v90frWlOi5Lnm7L8yJTtojNh8LvCok1iZLUddn3pP++R0/GrYt/DFtwIppz6u4QfkM/zrnrjUCWJJyTzmsqTUOetae1pQ+GP36/8AnllLdncfaPD/T7AmP8Aro2aabfwxc8GKaA+qOHH5ED+dcH9vapo9Q560vrMXo4r7kP2T6NnVTeF3lUyaRMl0Ouz7sn/AHyev4Vy0sMkTmORSrDggjBFalvqBDAg4I5zXT/a7LWoxb6x9/GEuQPnX/e/vD9abp06nwaP8P8AgC5pR31OFgnmtZRPbsUdeQRW1LDDrULXVqoS6QbpIl6OO7KPX1FUtT0y50y5+z3IHI3Iw5VlPQg9xVGGaW3lWaBirqcgjqKwTcG4TWhpvrErU0ipXJZi7cknJ/GmdawNC5ZssynT5ThZDlCf4X7fgehrNZWRijjBBwR7indKv3/+kRx6gOr/ACSf769/xGD+dN6x9BbMySOaSnnpTKzGFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB//9X8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAClHJpKVetAD6eOlMqSmgHL61YtoJLq4S2iGWdgo/GoB0rf0P9x9o1M/8ALvEdn++/yr/WtaceaSTFJ2Vya9C3uoR6XanEEH7tT2wOXc/Xk1lCET3fkWQLb32xg9Tk4H51Ztv3GnzXP8UpEKn2+85/LA/Gl02MtP53Ty/mz79q2fvSV+v5Gey0Osvnh0az/sWzYHHNxIP+Wkg7f7q9B+dcReXnJq7f3HWuYkcu2TTxFa7sthU4dweVnOTUdFFcZsFFFFICRJWQ5FbVnecisGpI3KNkVcJuLE1c9Qsmh1i0/sa7IBJzbyH+Bz2P+y3Q+h5rhp4ZbeVoZlKuhKsp6gjrWhYXHStrxPELqK31xes4MU3/AF1jA5/4EuD9c13TXtKfP1X5f8AwXuyt0Zx1R9Kk6U1q4mbojb1p4mZbd7fgqxDfQrnp+dNPSmUr2GR0w8Gn0xutSAlFFFIAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//W/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigApy02nLQA8dafTF60+qQElbMc8Uehvbqf3ks4JH+yq8fqaxqeOlXGXLewpK5q3fyWlrCP+ebSH6uxH8gKt2S7LMv3Zj+lVNQ6wen2eP+tXof+QeuPQ/zrpj8b9DJ7HPX7kmsqr999+qFclT4jVbBRRRUDCiiigAooooA1bByDXdoPtXhy9gPPlCO4X6q20/o1efWP369E0rnTr8Hp9if+a4r0MJrdPs/yMKumpwLdaaelPamHpXIzZDKjqSo6kYw9aY1PbrTGqQG0UUUgCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/1/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKctNpy9aAHjrT6jHWpKpASU8dKjHSnrVIGa1589taTesRQ/VGP9CKuWZ32O3+6SP61Ti/f6XJEPvQOJB/ut8rfrinabKFkMLdHHH1FdMX7yfdGTWhkX6YOazK6e/gzmuadSjYNc9WNpFxd0NooorIoKKKKACiinIpdsCgDRsEyc13sB+zeHr+4P8aRwL9XcE/oprlrCDGK6fxAjWukQaeCAQwnmH+1IPkX8EGfxr0aCcYSl5fmc9R3kkcM3WmnpTjyaYxrjZuhtR1auoDbSeSxyQFJ9iQDj8M1VqWraMYw9aY1OPWmt1qQG0UUUgCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/9D8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAClHBpKKAJKeOlRjpT1PamBIvpTxwauWdg17BPJE3zwqH2d2XuR9KpdatxaSfcLp6F+xuRa3IkcbkOVdfVW4Ip9zA9lcGNTkDDI3qp5BrPB7VYeeWSNInORHkL7A84q1JctmS1qdne2UU9jFqNmxeKRQGJ6rIB8yn+Y9q4q7tDnNbGjaxJpkjKy+bBLxLEejD1HoR2NdBdaXDdQfbtLbzoD1/vp7MP611uMa0eaO/VGKbg7M8xZSpwabXSz2Ge1Zj2DA8VxSpNGykmZtFXfsUlSpYMTzU8kh3RnqpY4Fa1paHOauwWGO1ddY6QkUYur8mOI/dGPnc+ij+vQV00cPKTM51EkLo9lFCn9oXS7ooyAqf89H7IP5k9hXM61qD3t0xZt/zFmb+856n6dh7CtPWtaMp+z2+ECjaqqeEXuAe7H+Jq5KtK9VJezhsTTi2+ZhVmxiSa5Bl/1afO/wDurz+vSqhPatCb/Q7MW/SSbDv7L/Cv49T+Fcsd7voasz7iZ55mmfq7Fj+NQHpS01j2rNu+5Q2mHk049KZUgFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB/9H8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigBwNO6VHTwc0AaFhey2F2l3D1U8jsQeoP1rR1eyihdb6y5tp/mT/ZPdT9KwAcVuaXqEUKtYXw3W0v3h3U9mHuK3pyTXs5fLyJkmnzIyqeDmrmoafLp8oViHjcZjkHRhVCpacXZjvfVElXrLULvT5hPZyGNvbofYjvVAH1pacZNO6E0noztY9e0u+GNVgMb95YOh+qn+lWBY6Rdc2l7Ec9pMof1rgs0ua6Vim/jSZm6XZnf/2CvXz7fHr5gphsdJtubu9iGO0eXP6VwmRSZp/WILaH4i9nLqzuV1zRrR9tjEWI/wCWswz+SdPzrB1HW7m9diGb5uCxPzEensPYVh5orOeJnJcvTyKVJLUKQnFBPpTK57mhJFJ5cqykBtpzg9Dj1pk0rzSNLIcsxyTTCewptK+lhh0qPrSk5ppOKkBCabRRSAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//S/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKUHFJRQBJ1pwPY1EDin9aANyw1NYojY36+bbMendD6qade6U8Ef2uzbz7c9HXqPZh2NYYNXrLULqwk8y2bGeoPII9xW8aia5an3kuLTvEr9aXJFbu/RtTOX/0OY9xzGT/Sq1xouoW6+Yq+bH/fj+YfpTdKW8dV5BzLZlW3ltkyLmMuD0IOCKs7dLfpJIn+8Af5VlnIOG4PvRUqXRofKankaf8A8/H/AI4aNulp1kkf6AD+dZdFHOuwuXzH7h2puSaQZY4Xk+1a1touoXC+Yy+VH/fkO0frSjGUtIobaW5k9KdJFLGqu6lVf7pI6/St3fo2l8p/pkw7niMH+tZF7f3WoS+bdNnHCgcAD0AqpRjFavUSk29EU6aT2FBNN6ViUHSmE5oJzSUgCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP//T/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAClBxSUUAPBzS5xUdODUASbvWrdte3Vo262kZPoao5BpapSad0DV9zox4gnkGLyKKf3ZcH8xR/aGiSf62yK/7j4rncml3Gtfbz6u/qieRdDovtHh3/AJ95v++xSf2hokf+qsi3+++a57caNxo9tLsvuQci7nQnxBcRjFnFFB7quT+ZrJub26u23XUjOfc1TyaSolVnLRsailsh270puc0mQKQtUDFJxTSc0lFIAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAClyRSUUAO3Uu4UyigB+4UbhTKKAHbqTJNJRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB/9X8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1vwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACuh8NeEvFHjPURpHhLTrrUrrG7ybSJpWA9SFBwPrXPV9/+OfGmt/s5/s3eAPB3wznbS9T8caZL4n17VLf5bmWKSd4bW2WT7yxokZJAPJNAz4x8XfDzx34BnS38baPe6U8v+rF3C0Yb/dJGD+FcdX39oPin9oib4N+JPBPxi8L654n8PalpZu9NvLuNnk0y6QCWO8imcEiPbneucFa5Wf4E/A34X6HoUPx/wDEWp2mva/YQaoLDSbdZhp9pdDdA1yznl3T5ti8gUwPiuivtWP9jq9tPi/qXg/XNct4PC2k6GniqfxIiFo30aZQYZo06mSRmCKn9/PpWdqPwP8Ag5498A+IfF3wA13Uby+8KWn9pajperwLFLNYKwWS5gZCQfLyC6nkCkB8d1qanoes6Kts+r2stsL23S7tjKpXzYJM7JEz1VsHB74r6+uvgN8Evhp4Z0EfHfxJqVj4g8SafDqsdjplssyafaXIzBJcliCWdfm2ryBWz+3d4dXwjrvw48LpdxX6WHw80mBLuA5inRZLjbImf4WXBH1piPhStDStJ1TXdSh0fRbeW7u7lxHDBCpeR2PQKo5Jr6T8C/DT4EWfw7sPHfxh8R3qXWsXE8VppGiRLPcwxW7BGmud3CBm+4vUgZr7K/Zr+DHgT4LftWRQXesXd9Fd+ELvxH4YvYIFXzLS50+4d5JVbmOaFVOwD+MUAflf4j8MeIfB+sTeHvFNnNYX1vt823nXbIm8Bl3DtkEEVhV+ongLT/2cPEv7OvxU8Rarq/iHUY1vdA+1ale28Ul9GGnkEPlMxJ/eMCsnP3QK+f8ASPgd8IfBfw/0Hxt8eNb1O0uPFULXulabpFus00dgHaNLm4LcASFSUUckCgZ8d0V99+Hv2MNF1L4u3PgzUPEoj8OT+D5/GWk68kXyzWUYBBkjPKlPnEijkFeOtY/gL9n/AOAvxTfxlr/hnxTqOneHfB+j2Woz32o26+ZI8tw0UyiNT3UL5Q6l2APFAj4cor688WfA34XeIvhJe/Fn4CaxqOoroupWem6rpuqQrFcJ9vYpbTRFMhleQbSOoJrtNa/Z7/Z0+HPiqD4Q/FXxjqFt4sIii1Caytlk07TrqZQRDKxO5thYCRh05oGfB9Ffa1l+yXb+CL7xjq3x91ZtG0LwZqUWkSy2KCafULy4TzYY7VTgYaHEpY9FIrC8W/AHwFqfgrTPiz8F9ZutT8Pz63b6DqsF9EIr3Trm5OYmcL8rRyLnaw7jFID5Gor9HPE37Lf7NPg741z/ALPGueNtTPiCW/Gn293FaobK3mmIEEVwc5Lksu8rwpOK+CfGnhTVPAnjHVfBGuAC80e+nsLjb08y3kMbY9iRxTEczRRRSAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//X/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAK++dNsPDP7U3wJ8K+CrXWLHSPHHgOCfS4LfU5RBDqWlyymaLy5W+USwszLtPUGvgaj3oA/TzRb3xN+zL8MvFWr/FjxlHqut6zoFz4d0Hw5Z35vVj+2KIpLmbaxRFiiyEHXJrnvi58NYv2rNS0P4yfDTXNGh+16Jpuna1Y6ldpay6dd2EC20hKv96JlQOpWvzkPJ3Hk+tH9aYz9Y734q/CTxP4w1v8AZwttdhi0e4+HeneB7DxHLlbaTUtLmF2sjnqIJZS0Yb0ANeTeCPAcP7LPgfx14y+Ius6VNqmueG73wxoml6bdJdyTvqO1JLh9mQsUSKTz1OK/PXAxij3oEfo38X/h1a/tTN4c+M3w817RrZZNA03Stds9Su0tpdOutOgW3dirctEyqHUrXn/7cF74Kn8ReAtM8A6rFrOn6X4D0vTxdxnO5oHnU7h1UnrtPIBFfEn9aMYoA/Uj4fJqZ/Z98HS/s5X3hbTr8R3Q8X3GrGBb6O8847HJnBPkCHbt2CvWNc8f+Dp/2rvB+tv4jsdTt4PhRe2NxqiMsUMl0bG9TG3gIXdhtTg8jivxf/r1pMD0ouM+2P2aNPt/G37PvxS+EVhfWVrrmsLoN7p8N7Mtus6WFzI86q74G5VYHHevpew+IXxG+KXwh8EN8EPEGgWl74d0WLQNb0nVxbRyxS2bMEuY3nU7opYyDgHgg8c1+SPvR70Afq4PiFF/wsnxRovizxnZ+IptN+FGsaX9qhSO3s472cCRrO0KgCRVY8HHLZxXyl8Cta0nTv2fvjHpl/cxQ3F/o2kR2sTsFeZk1FGZUB5YheTjtXyfgdKWgR9l/s/eMtL8Ifs+/E+4uZ4ReC+8KXdpayMA9wbPUXlcIp5bAA3Y6A16x8X/AICaR8efjNqHxr8E+K9Dh8JeKrz+17q6vbtIrjTvPw9xDLA3zl423BcZzxX5uYoxxj160AfrH8TPiP4B/a503x18MvCmq22l3sXiez1zw2+pyCCLUra009NNkRpG4WRliEq7uoOK8rWx0X9nf4Ht8KvEOrWF94l8YeK9G1C6tbCdZ4tPsNLkZg8sq/Lvkd+g6KK/PCj3oGfZvxp17RdQ/b41bxLZXcM2nv46guFu0cGIxC6iJcP02gDOawv2j/CUXif4l/E74uaRqmnS2Ft4yureOATAz3C3U8jJLCg+/GAOWHFfJ+BjFJgUgFooooEFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB//0PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigArvNH8CyarpdpqUl/bWpv5pILaOYkF3jIBGRwOWFcHXtXhPx3omhaToVhewxTiC8uXui6bnhWQpsdCe4xu/Crgot+8J36HmMvhrXoTdZtJWWzkeKd1UlUZDhgT7VWfRtXj08arJbSi2bpMVOw56c179pnj3Q7PS4IzeRNPZSXgleVHY3JmdmEigYB3hsEN0qrH4u8G2fhKW0inErPp1vCsEm9pDLHIjupz8gXg7cDpV8ke4uZ9jyq18C+IbjSrnVHt5YxCITGjId03nvsAT3HWuVa0ultzdtGwiD+UXI43gZ259cV79q/jGwS31m80bVpLu61G9tLuwttrAwmObft54BHC4HGBXMfFu7sLe9h8OaUvlxKX1C5j/u3N5h2Q4/55rhaJQildME2eXyaVqcIlMtvIohZFkyp+Uv90H03dq6K88D6/aaTbasIJJFmWZpEVDmHyXKEP78Zr1/S/iD4QltrGz1hiUvYEk1U7ckT2YQW+PXd5fP+9WHp/xFgfUPD91fXTokU19NqCDO3NzK7DI/iypo5Idwu+x46NH1Y6d/a4tpfsucedtOzrjr9alvNA1vTrf7Xf2k0MRbbvdSBn0zXtdx460KTwikNrLDG40kae9qyMXMgGCR/Bgn5t3UGsTxP41sdYbxPF9qeWG9Fp9hVs4zC67sA/dwoNJwiluF32PJo9M1GZoEigkY3OfJABPmYODt9cGpn0PWYrFdTktZlt3ICylTtJPA59+1es+FdVXT/h3c61fKVn0uSWHS5D/E96mxwP8Arngv7E1oX3jLQfIvNXjvWlS702Czi0vacQyxiMFv7oClCwI5JNHJG12x3fY8Ol0++hExmhdfs7iObIxsY5ADehODU0WjavcWD6pBbSvbJndKFJUY68+3evV/F2seGJ9M1+fTL4XE2s6hb3ccIQqURTIzBieMgvitXwh4o8JaV4XhgubrbKLK9hmik3s3mzK4QIB8gQ5GSec0civa4ru2x46PDPiJnijFlPunyYxsPzAAEke2CDmsq5tbmyuHtbuNopUOGRxgg+4r3u0+IGkSeItQW5ucwXOmWtrayy7tkTxRxb1wvIDFSCRXA+OdQ0vxDqVzq8V3G0kMdtBGqRsomCrtdgT/AHcDk8miUIpXTGm+p53RRRWQwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//R/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAcrMjB0JBByCOCCKV5HlcySsWZjkljkk+5plFABRRRQAUUUUASGaYxCAuxRTkLk4BPfHSo6KKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9L8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//0/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAJ4LeW4fZG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GFy5wsoA6fNw31Br1T9lnwlq2h+BbDXYtReXTNUsVnNjIN3k3W8hnjbsrKOVx15r1P43rav8IvEQu8bP7PkIz/fGCn/j2K0zGjDN8jlWxVPllyuS62drpp9n+W5OGm8Hj1ClK6vZ+etj8dYzh1I9RXPXAAuJAOzt/OugT74+tYFz/wAfMn++386/BJbH6AiCiiisxhRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB//9X8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACprcgXEZP99f51DR05FMDp5Bh2B9TTKFkFxGLhf4vvezd/wDGitSQooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACvRLP4j6pb6e0F1Bb3N0vlrb3c0SvLGqZ4yR83GME9MV53RQBYu7u5v7mS9vHaWWVi7uxyWJ6kmq9FFAH13+yz8XNP8HalP4L8RyiGy1CQSwTOcLFPjaQx7K4A57Ee9fpERHNFg4ZHX6gqR+oIr8Iq9d8I/HT4neCrVbDR9SdrdOFhnAlVfpuzj8K/QOGuNFgKCweMg5QWzW68rdUfO5nkjxFT21F2b3TP110vS9P0XT4dJ0iFLe2gXZFDGNqoo7ACvib9q34vadJph+Gfh6ZZpZHV9QkjOVRUOViyOrFsFvTGK+dvEf7RXxZ8TWjWN1qRgicYZbZViyD2JUA14izM7F3JJJySeSTW3EHG9PFYWWCy+DjGSs27LTskv6sRl2RSpVVXxErtdF37sWMZdQPUVz1wQbiQj++3863mkFvGbhv4fu+7dq5uvzaR9MgoooqBhRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB//1vwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKALFvcyWzEpyD1U9DWsl5aSDOSh9CMj86waKpSaCx0XnWv/AD1X8j/hR51r/wA9V/I/4VztFPnFY6LzrX/nqv5H/CjzrX/nqv5H/Cudoo5wsdF51r/z1X8j/hR51r/z1X8j/hXO0Uc4WOi861/56r+R/wAKPOtf+eq/kf8ACudoo5wsdF51r/z1X8j/AIUeda/89V/I/wCFc7RRzhY6LzrX/nqv5H/CjzrX/nqv5H/Cudoo5wsdF51r/wA9V/I/4Ueda/8APVfyP+Fc7RRzhY6LzrX/AJ6r+R/wo861/wCeq/kf8K52ijnCx0XnWv8Az1X8j/hR51r/AM9V/I/4VztFHOFjovOtf+eq/kf8KPOtf+eq/kf8K52ijnCx0XnWv/PVfyP+FHnWv/PVfyP+Fc7RRzhY6LzrX/nqv5H/AAo861/56r+R/wAK52ijnCx0XnWv/PVfyP8AhR51r/z1X8j/AIVztFHOFjovOtf+eq/kf8KPOtf+eq/kf8K52ijnCx0XnWv/AD1X8j/hR51r/wA9V/I/4VztFHOFjovOtf8Anqv5H/CjzrX/AJ6r+R/wrnaKOcLHReda/wDPVfyP+FHnWv8Az1X8j/hXO0Uc4WOi861/56r+R/wo861/56r+R/wrnaKOcLHReda/89V/I/4Ueda/89V/I/4VztFHOFjovOtf+eq/kf8ACjzrX/nqv5H/AArnaKOcLHReda/89V/I/wCFHnWv/PVfyP8AhXO0Uc4WOi861/56r+R/wo861/56r+R/wrnaKOcLHReda/8APVfyP+FHnWv/AD1X8j/hXO0Uc4WOi861/wCeq/kf8KPOtf8Anqv5H/Cudoo5wsdF51r/AM9V/I/4Ueda/wDPVfyP+Fc7RRzhY6LzrX/nqv5H/CjzrX/nqv5H/Cudoo5wsdF51r/z1X8j/hR51r/z1X8j/hXO0Uc4WOi861/56r+R/wAKPOtf+eq/kf8ACudoo5wsdF51r/z1X8j/AIUeda/89V/I/wCFc7RRzhY6LzrX/nqv5H/CjzrX/nqv5H/Cudoo5wsdF51r/wA9V/I/4Ueda/8APVfyP+Fc7RRzhY6LzrX/AJ6r+R/wo861/wCeq/kf8K52ijnCx0XnWv8Az1X8j/hUb3lpGM5Ln0AwPzrBoo5wsWLi5kuWy/AHRR0FV6KKkYUUUUgCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//X/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9D8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//0fwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//S/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9P8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//V/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9b8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAsR2l3LC1zFFI0cf33VSVX6kcD8ar17vZS+I5dF0OfwheQW9lb2jreCSVFjSfe5lM8bH5g6kY+U5HArUsfCfheTw3YPcx2skryacyyREBpPPmVZUJ8wsxCthhsUKRxWqpN7C5j50qTyZjCbgI3lhtpfB27iM4z0zjtX0bP4X0J9WjhvbPTrOeO6vBBAjiRZ7aJMxll8wAvv4Xcy7uc9K1ZtH0e3iu9L0W0sLqN76wmkgnlRURZLc+eyjzMDaSc4ZtueKfsWLnPmVNPv5I1mjglZHG5WCEgjdtyDjkbiB9eOtMWyvGuGtFhkMq7t0YU7hs5bI68YOfSve4I/D9nYy22mTq0DW88aFpOSi6nHs6nglBnjGRzV6/bTblrRI1thBBPrcbSo4EgYLK0QZt24hxg56NxR7LzDmPm2ivou50DwJFYac0FrHPE0llskEscRm3rmdHcyljk5zlFCkYzg15t8R9NsNN1iBdPWCMS26u0cIClG3MMSKHkUNgD7rYIwcc1MqbSuNSuee0UUVmMKsQ2l3cq728UkixjLlFLBR6nHT8ar17z8MpryXRYrBHMEIvzI11bXKRSwEqoLTxyfLJFgZH4jvVwjzOwm7Hg1OVHdgiqSSQAAOcnoK94OkeDbfwQdRjihu5Vglle4+QH7SsxCqcyBtpUD5AhyDnNbXiO4t7mTX4Yrew2vf6fcRvGUDG3bcDIpDdQcZxyM8iq9l5i5j5vlilglaCdWR0JVlYYII6gg9CKjr6A1K18Jm6fTmtrWQ3f9syPcs5MqtA8ht9rbsD7oxn7wNXZfDnhn+zZZlsbJ7SGTTfs8iTbLiRJmXzhMS3yFuRlgMduKPZPow5j5yor0n4l6Zpum6lbHTUgiE0JZoogFZMOwAkVXkUHGMFTyOcV5tUSVnYpO4UUUVIDtj7PMwducbscZ9M1M9pdRRefLE6pu2bmUgbsZxn1wc49K9C0y68PRfDzytcilnP8AarFEglWNx+4Xk5Vsjt0616XqkPh7UfETvPGl3G+py4i85eVFlHsOGZVbDdsjcRjNaqndbiufNWDjNFfRU9hoENtqOhyLY/Zv7S02W4eLCtFBIhEpUF2IKE4YKWClj+EFxpfhqx332q6fp8VzDFqDxWscu+KSKJUMDttc8liQOcsO1Hsn3FzHz5RXq9zZeHpfAp8YiCJJ5UOmiBQQFuhJ5hmUZ7Q4Hpk15RUSjYpO4UUUVIBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH/0PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAMmpre4ntLiO6tnKSROHRgeVZTkEfQ1DRQBJLLJPK08zFndizMepJOSfxNR0UUAFFFFABRRRQAUUUUAFFFFABRRRQAVu33ifxBqWnR6Tf3ksttFt2xMxKjYML9cDgZ6VhUU7gFFFFIAooooAKKKKACiiigC/capqF1ZQadcTM0Ftu8mMn5U3nLED1PrVCiimAUUUUgCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9H8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//2Q==" alt="Mike Home V1, idle state: a concentric-arc orb centred on black, greeting text, and a rounded input pill.">
+      <figcaption>Home V1 · idle</figcaption>
+    </figure>
+    <figure>
+      <img src="data:image/jpeg;base64,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AooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKANHR9Rk0fVrXVolDNazxzhT0JjYNj8cV6NDrXgPS/EsPifT3vpZDqEd35boqiGMPvdSdx8xuy9B3ryiiqUmgaPZtE8faOtpFFrz3Uk8a3oEx3OB9okjdQwDozLhW43AAkHmrmqfEzSZtSfVbD7QGh1mLUoInGEkQRojq+GO05UkdeT614bRVe1lawuVHstp4s8FaGLdNMSW5xqUF35ktvGksEUcnmOnmBi0jN06gYHvXF6x4wvNYuoo5UhgtIbo3Kw28YjBZmGXYDq20YyTXHUUnNtWCxueJ9Sg1jxJqGr2oYRXV1LMgYYO13LDI9cGsOiipbu7jCiiikB/9H8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//0vwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//T/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9T8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1fwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//W/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKcFNADaKfspdlAEdFS7BSbKAI6KfspCpoAbRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH/1/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoopwXNADcZp4T1qRVqYLTFciCU8LUyoalEYp2JbK2wU4IT0rsNN1S2tbdILbS4Licfell3yE89lBAH611FtL8QbsZ03Tgi9vKs0x+bKT+taKCfU5p15R6Jert/meVeTJ12t+VMKEda9n+w/FvGfstx9Ps8f8tlUbmX4hWgzqWnB17+bZp/NUB/Wm6fr9xmsXd6OL/7e/wCAeSbBTStd9LrGlyEx6xo8Snu1uzwN+Tbx+lQnSvC2o/8AINvXtJD/AMs71cL+EiZH/fQFTydmbKvb4otfj+RwhSoinpXUar4b1fSFEt5EfKb7syEPG30dcg1glahxa0ZvCpGSvF3KWMUVOy1EVxUljaKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/0PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiinKM0AKq5qdVoVanVaZLYirU6pTlWplWmQ2RhakCVKFp4FMm5v6X4r8QaNZfYNJn+zpuLFo0QSEn/bxux+NVrrX/EF8c3l9cy5/vyuf61d0fwl4m1840exnnH95UO38T0rr1+EniSEZ1SewsfUX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5Rh2qs61dcVXcVznpxZQYVXIwauOKquKk1QyiiikMKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/0/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKlQcVFU6CgCwgq2o4qulWl7VSM5FhBUyjJqNelTIKpGMiygr0DwZ4TXX4dQ1W7k8q10yFZXOM75HYLHEPduT7AGuCQV7zYp/YvwosYV4k1a8nvZD3McH7mIfTd5hrooxTbb6Hn46rKEIxg9ZNL9X+CZ53r2pbQQDivIb+7e5lIzxXVeI7sjIzXCisasrs7sHSUY3FooorE7AooooAKv2F29tKBniqFIaadhNJqzPdfC2uXFpcRXlpIUliZXRx1VlOQfzra+KmkWseqW/irTEEdprURudi/djnU7Z4x6AP8wHowryrw5dk4Ga94vkGtfCm+ibmTSbyC8jPpHcfuZR9N3lmu2m+em4/M+fxEfYYmFRdXZ/Pb8bfieFQXNxY3Ud7aMUlhdZI2HUMpyD+Yrt/ipawN4ij8R2ShbfW7WLUUA6B5BiVfwkDVwjivQ9c/4mPwo0a/bl9Pv7qwJ/2JAsyD8y1RHWMo/M6qvu1qVRdbr71f80vvPKHFVWHFXG6VVbvXOegik4qq44q69VHFSzWJBRRRSKCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/9T8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACrCVXqwtMC3HVpe1VEq2vaqMpFodKnjquvSp46pGUjoNBsY9T1mz02YlUuLiKJiOoDsFOPzr3DxnEtp4b8PWUX3I9KBH1aeYk14Zol2LDVrS+P/LC4ik/74cH+lfQnj61P9g6S68iGO7sSfe3upcf+Oup+hrror3Jf12PFx7axFFPa/6M+VPELEy4965yuo8RREOW965euKe579D4EFFFFQahRRRQAUUUUAdH4eYiXHvX0n4V/e+EvEsDdG0d3/GOaJh/KvnHw7ES4b3r6N0RvsHgDxLqD8BrGK0X3a4nj4/75Rj+FduG6+j/ACPBzXWyXeP5o8DfpXodt+8+Dl+p/wCWet2zD/gUEgP8hXnj9K9SMcdp8BnmcfPfeI1VD/s29qS36yCpp9fRmuKdlTXeS/P/ACPGz0qq3erLdKrN3rnPSRVkqo9Wnqq1JmsSvRRRUlBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB/9X8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACplPFQ1KhoAuIatqaooatoeKpGci4h4qZDVZDU4PNUjJl5ORivp+znHirwDMq/NLCI9SUd+FW2ux+DJFIfZs18uI1evfC7xLJpeorYbRI28ywRMcCUsuyaA+00eQP9sLXVh5JS5XszyczoylTVSG8df6/rY868RWBIbivNGUoxRuor6j8ceGYbG4E+nsZrG6TzrSbH3o27H0ZT8rDsQa8C1jSXjcyIORWVam0zswGKjOC1OYooIKna3BormPTCiiigApVUuwReppACx2rya6fR9JeRxI45NVGLbInNQV2dL4dsCAvFeu+N5xoXw/07w6OJtUnOpTL3EMQMUAP+8S7flUHgnw1b3czXWpv5FhaJ595P/ciXrj/AGm+6o7k15/4x8SzeLPENxrcqeUjkJBCOkUMY2xoP91QPxya7UuSm+7PAb+sYpLpHV+vRfr8l3OUkNd14s1WaLwZ4e8HlQoto59Qkx1L3j5XP0jRMexrmtB0o67rMGmltiO26aTskSDdI5/3VBNV/EmrjXNcudTRdkcj4iT+5EgCxr+CgCsU2ot99DulFTrQT+zr+aX5swSGYhF5JOAPrUuq6Zf6Lfy6ZqkTQXEJ2yRvwVJGefwNdz8MNFh13xzZRXnFrasby6Y9Fhtx5jZ+uMfjXIeKdbm8SeIb7X5/vXlxJN9Ax4H4DAqOX3OZm0ardd0lsld/N6fk/wADm3NVGPFWHNVnNZM7YkVFFFIYUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAf/W/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigApynBptFAFtDg1bQ1QU96soaaJki8pxVkHIqkp4qwjVRk0W0arcUjIwZSQQcgjqCKzwcVOjVaZk0e1+HviNDcO+jeL032F1tLyRj54ZwMfaFHqwx5i/xdetL4p8GTaftuFKT2s43QXMXzRyL2IPY+oPIrxtX9a7nwt471jwurWcWy5spTmWznG6NvcDqp9xXRGqpLlqfeeXVwkqcvaYb5ro/Ts/wf4nHal4eySQK5ebRriM/LX05DP8AD3xUA1ncnSblutvd/NFn/ZlHQfUUXXwt1t182ziju4zyHtpFkB/I5pPDc2sdSoZoqfu1fdfnp/wPuPlr+zbr0qzDo1xIfmr6F/4Vn4j3bf7PuM/7hrXtfhbraL5t5FHaRjkvcyLGB+ZzUrCy7Gss3opfEvvPC9N8PYIJFeueFvBk2obrhikFrAN09zL8sca9yT3PoBya2Jp/h74VBa8uTq1yvS3tPliz/tSnqPoK4TX/ABh4h8azR6TBH5VsrfuLG1UhAfXA5Y+5rRRhT31fY5pVq+J+BWXd/ov6Rf8AG/jK01G2Twv4ZDR6VbtvLNw9zKOPNk9v7q9h715e7Vd1OyudLvJNPvABLEQHCkMAcZxkccd6ynasak3KV5Hdh6MKdNRp7fn5mzaa1/Z+kXmn26YmvNkbzZ5EK/MyD/ebGT6DFc8TgUpOa7HwN4VXxVrBW+fyNOs0Nxf3B6Rwryef7zdFHrU6zaijWUoUYyqy23Z09v8A8UX8L5rx/lv/ABM3kRD+JLGI5dv+2j4HuBXirmu08d+K28W+IJNSjTybWNVt7OAdIoI+EUfhyfc1wrmirJN2jsgwdKUYudT4pO78uy+SsiJzk1WY5NSse9QVgd6CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAHocGrCnFVKmVs0Ay8jVZBrPRqso1UjNovK3Y1IDiqgaplf1ppmbRbV66zSNfsILP+ytYs0urfcWVl+SZCepV+/wBDxXGA96eGq4ytsY1KSmrM9E/sDQtT+bQNRQMekF5+6ce277ppV8L+NNNPmWcU2OzWz5B/FDXnof1q5BqF5a820skf+4xX+Vac0eqMHRqLRSuvNf5WO9834kY8rdqf03Sf41A3hfxpqR8y8imx3a5fAH/fZrmP+Ek13GPttzj/AK6N/jVC41C8ujm5lkk/32LfzpucfMmNGotlFfL/AIKO1/sDQtM+fX9RQsOsFn+9c+xb7oqvdeLxaW7WPheAWETDDyA7p5B/tP2HsK4Yv6UwtUudvh0LWGu71Hf8vu/zuSO5JyahJzSE966Xwx4S1nxddGDTUCQx/NPcynbFEvcsx4/CoScnaJ0TlCnFzm7JFHQNA1XxPqsWi6NH5k0p+iqo6sx7KO5rtvGmvaXoukD4d+EZPMtYnD6hdr1u5x6f9M06KO/Wn674r0bwzpUvhDwAxZZRtvtSIxJcY6ondY/5148zVcmoJxjv1/yOenCVeaq1FaK2X6v9F03euzXaqzHNOdqgZsVzs9JIY5yaZRRSKCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9D8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigApQcUlFAE6tmplaqYODmpVbNMTRfV6mDelUFeplenchouh8VYAk8vzip2Zxuxxn0z0rPD13Phfx/rXhW3ews1gntZX3yW9xGsiM2MZ55BwKqKTfvMxq86jemrv1scsGFLn0r1A+LPhrrHOuaC9pIesmny7R9drUn9mfB68+aDVNQtM/wywB8fiDWvs/5ZL+vU5frTX8SlJfK/wCVzzDJoz616f8A8Ix8MOv/AAkr49PszZoOmfB+z5n1TULsj+GKEJn8SaPZS6tfeg+uQ6Rk/wDt1/5Hl5YVq6RoWt+ILgWui2sty5/55qSB9T0Fd3/wlnw20jnQ9Be6kHSS/lLD67VrG1j4peLNUgNjDMljbHjyLNREuPcryfzpcsF8Ur+g/a4if8Onbzk/0V/0N8eDPDHhIC6+IF6ss45Gm2TB5CfSRxwo9e9c14o+IGoa7aro2nxJp2lxn93Z2/Cn3c9XP1rz95WZizEknkk9TULPSdXTlirIunhPeVSs+aS+5ei/XV+Y9nquzUjPULNisbnckKzYqEnNBOTmkpFBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH/9H8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAJA/Y1IG9Kr0oJFAFsPUgeqQf1p4cU7isXQ/oad5hqnupdxp3FylzzDSeYaq7zSbjRcXKWS/qaYXqDdTC4pXHykxeoy3rURf0ppJNA7Dy/YVHRRSGFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH//S/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAClyaSigB25qTJpKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//0/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKt2to9ySc7VHVjTAqUVuCxs14O5v0p32Oy9G/OnysLmDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3vsdl6N+dH2Oy9G/OjlYGDRW99jsvRvzo+x2Xo350crAwaK3DY2bcDcv61nXVo9sQc7lPRhQ4tBcqUUUVIBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB/9T8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACulCiKJIV6KoJ+pGTXNHpXTyfe/AfyFXATGUUUVYgoq3c2F7ZJDJdxPGtxGJoiwxvQkqGHqMgjPtVZEaRxGgyWIAHuaQk09UNorX1jQtW0HVLrRdUgeK5s5XhnTGdjocMCRxwazPKl2h9rYY4BwcE+gpjI6KkaKVCA6sN3TIIz9KXyJ/N8nY2/wDu4O78utAEVFdDpXhbXNYWCa0gIhuLtbFJ3+WITvyFZjwOOTWPPaXFvJJHIp/dsUZgMrkHHXp1HFAFaipDFKEEhRgpGQcHGPrQsUrKXVGKgZJAOMfWgCOipRBMQCqMQxwMA8k+laMOi3s2lXWsDasVpJFFKrMA+6Xdtwp5P3Tn0oAyaKlMEwkEJRg56Lg5Ofar0WjarPp1xq0NvI1taukc8oU7Y2kztDehO0/lQBmUV2/h/wCHviXxLpX9t6ekaWv2uOxEsziNWnlxhRnrgHJPYVjat4b1fRDaC+i5vrYXcAT5t0RZkDce6GizAwaKeI5GVnVSQv3iAcD6+lMoAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKUoJYnhboykj6gZFJT4/vfgf5GgDmKKB0orEoKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9X8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAA9K6eT734D+QrmD0rp5PvfgP5CrgJjK7zwJL4Fa6n0/x6ky20yq0d1b8yRPG24qF6ESrlD6HB7VwdFU1dWMa1P2kHC7V+q0Z1PjLxRc+MNfl1iVBDFhYba3X7kFvGNscS+yqPxOT3rnrRlS7idzgLIhJ9gRVeihK2iKp0404KnBWSPui/+J3hmPxzZW9pfWjabf8AinWJdUZkVhJZzGMRF2IzsYFivvzUHh3WfC+r6F4W0uW7s1mivtFhhs7ba4mK3CiTzI2XdG4BJdskPXw9gVLBPNazpdWzGOSNg6OpwyspyCD2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XcuDivGKKQHex/FH4gR6dJpK6rcG1l0waPJCSCjWSyNMsJBHIEjMwPUEnBrgqKKYBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABT4/vfgf5GmUkjiGF5j6FV9yRigDnB0ooorEoKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/0fwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKsW9zJbNlOh6g9DVeimBsDUoCPmjIPsad/aNt/cb86xaKfMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtFHMwsbX9o239xvzo/tG2/uN+dYtXoNPuJ4/OOI4/77nA/D1ppyewrIuf2jbf3G/Oj+0bb+4351B/Z8H/P1D+tH2CD/AJ+of1qrSDQn/tG2/uN+dH9o239xvzqD7BB/z9Q/rR9gg/5+of1otINCf+0bb+4350f2jbf3G/OoP7PhPAuof1qvcWNxbKHcAoejqcqfxpPmQaF/+0bb+4350f2jbf3G/OsWip5mOxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxtf2jbf3G/Oj+0bb+4351i0UczCxsHUoAPljJPuaz7i5kuWy/QdAOgqvRQ5NhYKKKKkAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//9L8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigC9p8Ec0xkuP9VEpkfHcDoPxJAqO7u5ryXzZT7Ko4VR6AVa0/57a7hX7zQhh9EdWP6DNZdW9IpB1Dpya7nUfhp470nRo/EGoabNHaS+Vh8qWHn/6regJdN/8ADuAz2rhWGVI619ia5418Lf2CfEV9q1leatGdMaxurFJYLyX7O8e9b2L/AFREcakA5JLAEURSd7g2fIt7Z3enXkun38bQzwO0csbjDI6nBUjsQeKre9fetx8RPBE/im+1O41ywktJNdvL3VVkgZ21HTZo0+zQR5T70Y3IVOAGO7JxXOeJNa0DTPhlZWGpX9l9kufBsCQ6SIs3J1CRyYZ94XHygZLbs4G3HNU4LuK58W1dsr1rRyGG+J+JIz0Yf4+hqlRWabTuhlq9thaXTQqdy8MjeqsMqfyNVa1NW+W5SE/eihjRv94KMj8OlZdOSs2gQUUUVIBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB/9P8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigCa2uJLWdbiL7ynIz0PqD7GtGSzt70+dprKueTC5wVP8Ask8EenesiiqT6MLGj/ZOo/8API/mP8aP7I1H/nkfzH+NZ+5vU/nS7m9T+dP3ewal/wDsjUf+eR/Mf4099N1WTHmRs20BRlgcAdAOelZu5vU/nRub1P50e72DUv8A9kaj/wA8j+JH+NWIorbTT590VllHKRKcqD2LHpx6Csfc3qfzpKLpbIB8kjyu0shyzEkk9yaZRRUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQB//9T8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1fwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACirNtayXLELwo+8x6CtZLW0i4C7z6t/hVKLYXMCiuj8u3/wCeSflR5dv/AM8k/Knyhc5yiuj8u3/55J+VHl2//PJPyo5Quc5RXR+Xb/8APJPyo8u3/wCeSflRyhc5yiuj8u3/AOeSflR5dv8A88k/KjlC5zlFdH5dv/zyT8qPLt/+eSflRyhc5yiuj8u3/wCeSflR5dv/AM8k/KjlC5zlFdH5dv8A88k/Kjy7f/nkn5UcoXOcoro/Lt/+eSflR5dv/wA8k/KjlC5zlFdH5dv/AM8k/Kjy7f8A55J+VHKFznKK6Py7f/nkn5UeXb/88k/KjlC5zlFdH5dv/wA8k/Kjy7f/AJ5J+VHKFznKK6Py7f8A55J+VHl2/wDzyT8qOULnOUV0fl2//PJPyo8u3/55J+VHKFznKK6Py7f/AJ5J+VHl2/8AzyT8qOULnOUV0fl2/wDzyT8qPLt/+eSflRyhc5yiuj8u3/55J+VHl2//ADyT8qOULnOUV0fl2/8AzyT8qPLt/wDnkn5UcoXOcoro/Lt/+eSflR5dv/zyT8qOULnOUV0fl2//ADyT8qPLt/8Ankn5UcoXOcoro/Lt/wDnkn5UeXb/APPJPyo5Quc5RXR+Xb/88k/Kjy7f/nkn5Uco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oqL7VZ/3z/3z/wDXo+1Wf98/98//AF6NAsS0VF9qs/75/wC+f/r0farP++f++f8A69GgWJaKi+1Wf98/98//AF6PtVn/AHz/AN8//Xo0CxLRUX2qz/vn/vn/AOvR9qs/75/75/8Ar0aBYloqL7VZ/wB8/wDfP/16PtVn/fP/AHz/APXo0CxLRUX2qz/vn/vn/wCvR9qs/wC+f++f/r0aBYloqL7VZ/3z/wB8/wD16PtVn/fP/fP/ANejQLEtFRfarP8Avn/vn/69H2qz/vn/AL5/+vRoFiWiovtVn/fP/fP/ANej7VZ/3z/3z/8AXo0CxLRUX2qz/vn/AL5/+vR9qs/75/75/wDr0aBYloqL7VZ/3z/3z/8AXo+1Wf8AfP8A3z/9ejQLEtFRfarP++f++f8A69H2qz/vn/vn/wCvRoFiWiovtVn/AHz/AN8//Xo+1Wf98/8AfP8A9ejQLEtdx4Z+JXjvwcnk+G9UubWP/nmrkp/3yeK4L7VZ/wB8/wDfP/16PtVn/fP/AHz/APXrWlXqUZc9Kbi+6diZ04zXLNXR6X4h+LnxI8VW5s9c1i6mhbrGG2qfqFwDXnNRfarP++f++f8A69RPqFsg/dqXPvwKdfE1a8uetNyfm7ihSjBcsI2XkWZJfs0RnPXonufX8K5ypp55Lh98hz6DsPpUNc0nc1SCiiipAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/0fwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//S/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9P8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD//V/COiiitSAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9b8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//1/wjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAsR2l3LC1zFFI0cf33VSVX6kcD8ar17vZS+I5dF0OfwheQW9lb2jreCSVFjSfe5lM8bH5g6kY+U5HArUsfCfheTw3YPcx2skryacyyREBpPPmVZUJ8wsxCthhsUKRxWqpN7C5j50qTyZjCbgI3lhtpfB27iM4z0zjtX0bP4X0J9WjhvbPTrOeO6vBBAjiRZ7aJMxll8wAvv4Xcy7uc9K1ZtH0e3iu9L0W0sLqN76wmkgnlRURZLc+eyjzMDaSc4ZtueKfsWLnPmVNPv5I1mjglZHG5WCEgjdtyDjkbiB9eOtMWyvGuGtFhkMq7t0YU7hs5bI68YOfSve4I/D9nYy22mTq0DW88aFpOSi6nHs6nglBnjGRzV6/bTblrRI1thBBPrcbSo4EgYLK0QZt24hxg56NxR7LzDmPm2ivou50DwJFYac0FrHPE0llskEscRm3rmdHcyljk5zlFCkYzg15t8R9NsNN1iBdPWCMS26u0cIClG3MMSKHkUNgD7rYIwcc1MqbSuNSuee0UUVmMKsQ2l3cq728UkixjLlFLBR6nHT8ar17z8MpryXRYrBHMEIvzI11bXKRSwEqoLTxyfLJFgZH4jvVwjzOwm7Hg1OVHdgiqSSQAAOcnoK94OkeDbfwQdRjihu5Vglle4+QH7SsxCqcyBtpUD5AhyDnNbXiO4t7mTX4Yrew2vf6fcRvGUDG3bcDIpDdQcZxyM8iq9l5i5j5vlilglaCdWR0JVlYYII6gg9CKjr6A1K18Jm6fTmtrWQ3f9syPcs5MqtA8ht9rbsD7oxn7wNXZfDnhn+zZZlsbJ7SGTTfs8iTbLiRJmXzhMS3yFuRlgMduKPZPow5j5yor0n4l6Zpum6lbHTUgiE0JZoogFZMOwAkVXkUHGMFTyOcV5tUSVnYpO4UUUVIDtj7PMwducbscZ9M1M9pdRRefLE6pu2bmUgbsZxn1wc49K9C0y68PRfDzytcilnP8AarFEglWNx+4Xk5Vsjt0616XqkPh7UfETvPGl3G+py4i85eVFlHsOGZVbDdsjcRjNaqndbiufNWDjNFfRU9hoENtqOhyLY/Zv7S02W4eLCtFBIhEpUF2IKE4YKWClj+EFxpfhqx332q6fp8VzDFqDxWscu+KSKJUMDttc8liQOcsO1Hsn3FzHz5RXq9zZeHpfAp8YiCJJ5UOmiBQQFuhJ5hmUZ7Q4Hpk15RUSjYpO4UUUVIBRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFABRRRQAUUUUAFFFFAH/0PwjooorUgKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAMmpre4ntLiO6tnKSROHRgeVZTkEfQ1DRQBJLLJPK08zFndizMepJOSfxNR0UUAFFFFABRRRQAUUUUAFFFFABRRRQAVu33ifxBqWnR6Tf3ksttFt2xMxKjYML9cDgZ6VhUU7gFFFFIAooooAKKKKACiiigC/capqF1ZQadcTM0Ftu8mMn5U3nLED1PrVCiimAUUUUgCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/9H8I6KKK1ICiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//2Q==" alt="Mike Home V1, working state: the orb turns cyan above a grey rounded card listing three steps with green checkmarks and a Stop button.">
+      <figcaption>Home V1 · working</figcaption>
+    </figure>
+  </div>
+
+  <p>The problem is not the palette. Both frames are structurally a <strong>chatbot empty-state</strong>: centred avatar, greeting, pill composer, three-link footer. Nine specific faults:</p>
+
+  <ul class="faults">
+    <li><strong>The composition is the ChatGPT/Siri empty state.</strong> Centred mark, greeting, rounded input, footer links. Reordering the pixels won't change what it's a copy of.</li>
+    <li><strong>The orb is the most-taken mark in software.</strong> Concentric arcs with a bloom is Siri, Copilot, Gemini, and forty startups. It also reads as a spinner, which means "wait", not "intelligence".</li>
+    <li><strong>Roughly 55% of the frame is unresourced black.</strong> That isn't restraint. Restraint is space doing work; this is space nothing was put in.</li>
+    <li><strong>The greeting occupies the most valuable position on screen and says nothing.</strong> "Good afternoon. / Ready when you are." is two lines of filler in the optical centre.</li>
+    <li><strong>The brightest object is the send button.</strong> A saturated blue circle out-shouts Mike himself, to submit a form.</li>
+    <li><strong>Activity is a dashboard card.</strong> Grey rounded rectangle, green ticks, centred Stop. This is the component library talking, not the product.</li>
+    <li><strong>Nothing distinguishes what Mike said from what Mike did.</strong> One typeface, one register, so a claim and a fact look identical — a real honesty problem given the known narration limitation.</li>
+    <li><strong>Nothing on screen belongs to <em>this</em> computer.</strong> No path, no project, no editor, no moment. It would look the same on any machine, which is the opposite of the pitch.</li>
+    <li><strong>The frontmost-app readout says "ChatGPT".</strong> Mike's own UI is quietly captioning its problem in the top-right corner.</li>
+  </ul>
+
+  <div class="note warn">
+    <h4>The real fault</h4>
+    <p>Every one of those is downstream of a single decision: <strong>Mike was built as a place you go</strong>. Repainting a destination still leaves a destination. The rest of this document changes the model, not the paint.</p>
+  </div>
+</section>
+
+<!-- ══ 01 THESIS ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>One product, five depths</h2></div>
+  <p class="lede">Mike's primary surface is not a window. Depth is chosen by what the user needs, never by what the interface wants to show.</p>
+
+  <div class="ladder">
+    <div class="rung"><span class="d">D0</span><span class="n">Ambient</span><span class="x">Running, listening for the wake word, holding situation. Zero pixels. The default state, and where Mike spends 99% of its life.</span></div>
+    <div class="rung"><span class="d">D1</span><span class="n">Edge</span><span class="x">A temporary opening at the screen edge. Answers, acts, asks, disappears. Never takes focus. <em>The most important surface in the product.</em></span></div>
+    <div class="rung"><span class="d">D2</span><span class="n">Invocation</span><span class="x">Summoned deliberately by shortcut or wake word. A single line that accepts typing. Takes focus because the user asked for it.</span></div>
+    <div class="rung"><span class="d">D3</span><span class="n">Home</span><span class="x">Where you dwell: review, memory, record, settings. Opened a few times a week, not a few times an hour.</span></div>
+    <div class="rung"><span class="d">D4</span><span class="n">Embedded</span><span class="x">Inside the editor. Same identity at gutter scale. Future — the bridge exists, the presence does not.</span></div>
+  </div>
+
+  <p>The escalation rule: <strong>Mike may deepen only on user action.</strong> A D1 answer never promotes itself to D2. Work started at D1 finishes at D1. If the answer is too big for the edge, the edge says so and offers the escalation — it does not perform it.</p>
+</section>
+
+<!-- ══ 02 IA ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>Information architecture</h2></div>
+  <p class="lede">Not a settings sidebar with feature names. Four rooms, each answering a question a person actually asks. Everything in the brief maps into one of them.</p>
+
+  <div class="rooms">
+    <div class="room">
+      <p class="q">Doing</p>
+      <h3>Now</h3>
+      <p>The Home surface itself. Presence, the live exchange, what is running this second, and the composer.</p>
+      <ul>
+        <li><span class="tag live">live</span> Conversation</li>
+        <li><span class="tag live">live</span> Current work + Stop</li>
+        <li><span class="tag live">live</span> Voice &amp; wake word</li>
+        <li><span class="tag live">live</span> Situation context</li>
+      </ul>
+    </div>
+    <div class="room">
+      <p class="q">Doing · past</p>
+      <h3>Record</h3>
+      <p>Everything Mike actually did, and everything that came out of it. Append-only, timestamped, never speculative. Activity and Library are one thing: <em>a log with artefacts attached</em>.</p>
+      <ul>
+        <li><span class="tag live">live</span> Action log</li>
+        <li><span class="tag live">live</span> Results &amp; failures</li>
+        <li><span class="tag soon">later</span> Library of artefacts</li>
+      </ul>
+    </div>
+    <div class="room">
+      <p class="q">Knowing</p>
+      <h3>Mind</h3>
+      <p>What Mike holds about you and your work. Readable as prose, editable in place, deletable without ceremony.</p>
+      <ul>
+        <li><span class="tag live">live</span> Memory</li>
+        <li><span class="tag soon">later</span> Projects</li>
+        <li><span class="tag soon">later</span> Schedules</li>
+      </ul>
+    </div>
+    <div class="room">
+      <p class="q">Being · Boundaries · Reach</p>
+      <h3>Conduct</h3>
+      <p>How Mike behaves and what it may touch. One room, because from the user's side "how you act" and "what you're allowed to act on" are the same conversation.</p>
+      <ul>
+        <li><span class="tag live">live</span> Manner · Limits · Reach</li>
+        <li><span class="tag live">live</span> Safety, privacy, IDE</li>
+        <li><span class="tag soon">later</span> Appearance</li>
+      </ul>
+    </div>
+  </div>
+
+  <p><strong>Why four and not seventeen.</strong> The brief's list is a feature inventory. Users don't arrive with features in mind; they arrive with a question. <span class="m">Record</span> answers "what happened", <span class="m">Mind</span> answers "what do you know", <span class="m">Conduct</span> answers "how do you behave and what can you touch", and <span class="m">Now</span> is where they already are. Anything that fits none of these is a feature we haven't justified.</p>
+
+  <p><strong>Library folds into Record</strong> because an artefact without the action that produced it is orphaned — you look for "the site you built me on Tuesday", not for a file. <strong>Projects and Schedules live in Mind</strong>, not Record, because they are things Mike <em>holds</em>, not things Mike <em>did</em>.</p>
+
+  <div class="note">
+    <h4>Capability honesty</h4>
+    <p>Green <span class="tag live">live</span> is backed by code that exists today — <span class="m">brain/activity_store.py</span>, <span class="m">brain/memory_store.py</span>, <span class="m">brain/situation_store.py</span>, <span class="m">memory/</span>, the safety gate, the VS&nbsp;Code bridge. Amber <span class="tag soon">later</span> has <em>no backing store</em> and must not be drawn as a working surface. Designing the room is fine; shipping an empty room with buttons is not.</p>
+  </div>
+</section>
+
+<!-- ══ 03 DIRECTIONS ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>Three visual languages</h2></div>
+  <p class="lede">Not three palettes. Three different answers to "what <em>is</em> Mike, visually" — spatial, typographic, luminous. Each specimen below shows the same moment: Mike working at the screen edge while you use another app.</p>
+
+  <div class="dirs">
+
+    <!-- SEAM -->
+    <article class="dir">
+      <div class="dir-id"><span class="rn">I</span><h3>SEAM</h3></div>
+      <p class="dir-thesis">Mike has no body. Mike is a change in the shape of the display — the OS growing a margin to make room.</p>
+      <div class="spec-frame sp-seam">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="rule"></div>
+        <div class="panel">
+          <div class="l1">RUNNING</div>
+          <div class="l2">pytest tests/ -x</div>
+        </div>
+        <div class="mark"></div>
+      </div>
+      <dl>
+        <dt>Identity</dt><dd>A 2px vertical rule. Its <em>length and position</em> along the edge carry state — nothing else changes.</dd>
+        <dt>Type</dt><dd>SF Pro at one weight. Mono for machine facts. No display face at all.</dd>
+        <dt>Colour</dt><dd>Near-achromatic. Indigo only in the seam; cyan only when live.</dd>
+        <dt>Surfaces</dt><dd>None. No cards, no radii. Content sits on ground, divided by hairlines.</dd>
+        <dt>Space</dt><dd>Everything hangs off one vertical axis and grows leftward.</dd>
+        <dt>Motion</dt><dd>Along the axis only. Nothing fades, nothing scales.</dd>
+      </dl>
+      <p class="risk"><b>Risk</b>Superb at D1, thin at D3. A whole window built from one hairline reads as unfinished rather than austere, and the identity is nearly invisible in a screenshot — bad for a product people show each other.</p>
+    </article>
+
+    <!-- CARET -->
+    <article class="dir">
+      <div class="dir-id"><span class="rn">II</span><h3>CARET</h3></div>
+      <p class="dir-thesis">Mike is a living cursor. The caret is the computer's oldest symbol for "attention is here" — and nobody in AI has claimed it.</p>
+      <div class="spec-frame sp-caret">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="rule"></div>
+        <div class="strip">
+          <span class="caret live"></span>
+          <div>
+            <div class="said">Two tests fail on the same assertion.</div>
+            <div class="did">read  test_compute.py<br>run   pytest -x</div>
+          </div>
+        </div>
+      </div>
+      <dl>
+        <dt>Identity</dt><dd>A caret. 3×13 at the edge, 4×17 invoked, 6×34 at Home. One object, three sizes.</dd>
+        <dt>Type</dt><dd>Two registers, strictly: <strong>prose = what Mike said</strong>, <strong>mono = what Mike observed or did</strong>. The rule replaces every icon and badge.</dd>
+        <dt>Colour</dt><dd>Greyscale everywhere. <em>The caret is the only coloured object on screen</em> — indigo at rest, cyan when live, amber when it stops for you.</dd>
+        <dt>Surfaces</dt><dd>One tone, used only where typing happens.</dd>
+        <dt>Space</dt><dd>A baseline grid. A terminal that grew up and learned typography.</dd>
+        <dt>Motion</dt><dd>Caret behaviours: breathe, stretch, jitter, travel, halt.</dd>
+      </dl>
+      <p class="risk"><b>Risk</b>Could read as "just a terminal" if the prose isn't set with real care. The whole direction rests on typographic execution — there is nothing else to hide behind.</p>
+    </article>
+
+    <!-- CHAMBER -->
+    <article class="dir">
+      <div class="dir-id"><span class="rn">III</span><h3>CHAMBER</h3></div>
+      <p class="dir-thesis">Presence without an object. Mike doesn't appear — the room changes temperature. Light enters from an edge and falls across the work.</p>
+      <div class="spec-frame sp-cham">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="wash"></div>
+        <div class="panel">
+          <div class="l1">RUNNING</div>
+          <div class="l2">pytest tests/ -x</div>
+        </div>
+      </div>
+      <dl>
+        <dt>Identity</dt><dd>The wash. Direction and intensity of light encode state; there is no mark to point at.</dd>
+        <dt>Type</dt><dd>SF Pro Display, light weights, large. Mono kept to a minimum.</dd>
+        <dt>Colour</dt><dd>Indigo and cyan as <em>illumination</em> only — long gradients, never a bordered shape.</dd>
+        <dt>Surfaces</dt><dd>Defined by where light falls. No hairlines anywhere.</dd>
+        <dt>Space</dt><dd>Layered depth; content sits in the light rather than on a plane.</dd>
+        <dt>Motion</dt><dd>Slow, atmospheric, continuous.</dd>
+      </dl>
+      <p class="risk"><b>Risk</b>Two fatal ones. It is the closest of the three to the AI-glow cliché we're escaping — and <strong>V1 already attempted it</strong>. Large soft gradients in QPainter band visibly on an 8-bit surface and cost real CPU at 30fps; "atmospheric" degrades to "muddy", which is exactly what the screenshots in §00 show.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ══ 04 RECOMMENDATION ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>Recommendation</h2></div>
+
+  <div class="verdict">
+    <div class="pick"><i></i><h3>CARET</h3></div>
+    <p class="lede">Mike is the place the machine is paying attention. Everything else on screen is greyscale text.</p>
+    <ol>
+      <li><b>It is genuinely unclaimed.</b> Orbs, waveforms and blooms are taken by every assistant shipping today. No AI product uses the caret as its identity, and it is the one symbol that is native to computing rather than borrowed from science fiction.</li>
+      <li><b>It promises the right thing.</b> A caret means <em>attention and a place to act</em> — not autonomy. Given the measured Qwen3 8B narration limitation, an identity that promises attentiveness rather than agency is the honest one. An orb implies a mind working alone; a caret implies a machine waiting with you.</li>
+      <li><b>It survives every depth unchanged.</b> 3px in the edge strip, in a VS&nbsp;Code gutter, in the menu bar; 34px at Home. SEAM cannot fill D3. CHAMBER cannot exist 3px wide. CARET is the only one that is the same object at D1 and D4.</li>
+      <li><b>Qt renders it perfectly.</b> A hard-edged rectangle and well-set text are exactly what QPainter is good at. Blur, bloom and large gradients are what it is bad at — and that gap is visibly why V1 looks cheap. This direction removes the failure mode instead of fighting it.</li>
+      <li><b>It solves said-vs-did for free.</b> The prose/mono split makes claims and facts typographically inseparable from their status, with no card, badge, icon or colour code. That is the honesty requirement met by the type system itself.</li>
+      <li><b>It absorbs SEAM.</b> SEAM's real contribution is <em>behaviour</em> — the edge as displaced geometry, growth along one axis, no floating panels. CARET takes that wholesale and supplies the identity SEAM lacks. This is composition, not hedging: SEAM gives the room its shape, CARET gives it its occupant.</li>
+    </ol>
+  </div>
+
+  <p><strong>CHAMBER is rejected on evidence, not taste.</strong> We built it, it is the thing in §00, and its failure was as much technical as conceptual. Reviving it would mean betting the identity on the one class of rendering our toolkit does worst.</p>
+</section>
+
+<!-- ══ 05 D1 ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>D1 · The edge, state by state</h2></div>
+  <p class="lede">The strip is only as tall as the text it holds. It never takes focus, never covers more than a corner, and dies on <span class="m">Esc</span>, on click-away, or on its own once the answer is read. Frames are live — motion is the state indicator.</p>
+
+  <div class="board">
+
+    <div class="frame">
+      <div class="stage st-idle">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div><div class="tick"></div>
+      </div>
+      <div class="cap"><b>01 · Idle</b><span>A 2px tick at the right edge, breathing at 3.6s. No strip, no text. This is what "Mike is on" looks like.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-invoke">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge"><span class="c"></span><span class="t">Listening…</span></div>
+      </div>
+      <div class="cap"><b>02 · Invocation</b><span>The tick becomes a caret and the strip opens leftward from it. 180ms, one axis, no fade or scale.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-listen">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge">
+          <span class="c"></span>
+          <span class="bars"><i></i><i></i><i></i><i></i><i></i></span>
+        </div>
+      </div>
+      <div class="cap"><b>03 · Listening</b><span>Caret turns cyan and stretches to real mic amplitude. Live means live — cyan appears nowhere decorative.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-think">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge"><span class="c"></span><span class="mono">thinking</span></div>
+      </div>
+      <div class="cap"><b>04 · Thinking</b><span>Caret compresses and jitters inward, indigo. One mono word. No spinner, no percentage, no invented step count.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-work">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge">
+          <div class="row"><span class="c"></span><span class="mono">run pytest -x</span></div>
+          <div class="done"><s>read test_compute.py</s></div>
+        </div>
+      </div>
+      <div class="cap"><b>05 · Working</b><span>Caret travels down the baseline. Completed actions dim above; the current one is bright. <em>Nothing below the caret</em> — future steps are unknowable.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-respond">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge"><span class="c"></span><span class="t">It's comparing a str to an int</span></div>
+      </div>
+      <div class="cap"><b>06 · Responding</b><span>Text types out <em>from</em> the caret, which rides the last character. Prose register — this is Mike talking.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-needs">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge">
+          <div class="row"><span class="c"></span><span class="mono">rm -rf build/</span></div>
+          <div class="btns"><b class="y">⏎ allow</b><b>esc deny</b></div>
+        </div>
+      </div>
+      <div class="cap"><b>07 · Needs user</b><span>Caret stops dead and turns amber — the only still state. Amber appears nowhere else in the product.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-err">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge"><span class="c"></span><span class="mono">port 8787 in use</span></div>
+      </div>
+      <div class="cap"><b>08 · Error</b><span>Red caret, mono, the actual failure text. No apology copy, no "something went wrong".</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-dismiss">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="edge"><span class="c"></span><span class="t">Done — 14 passing</span></div>
+        <div class="tick"></div>
+      </div>
+      <div class="cap"><b>09 · Dismissed</b><span>Collapses back to the tick along the same axis. Reversal of invocation, 140ms. Nothing is left behind.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-d2">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="e-hair"></div>
+        <div class="card"><span class="c"></span><span class="ph">Ask Mike</span></div>
+      </div>
+      <div class="cap"><b>10 · Escalate → D2</b><span>User starts typing at the edge. The caret detaches, moves to centre, and the line follows it. The caret is the continuity.</span></div>
+    </div>
+
+    <div class="frame">
+      <div class="stage st-d3">
+        <div class="work-bg"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+        <div class="win"><span class="c" style="display:block"></span><div class="ln w1"></div><div class="ln w2"></div><div class="ln w3"></div></div>
+      </div>
+      <div class="cap"><b>11 · Escalate → D3</b><span>Only on explicit request ("open this up"). Home opens <em>already scrolled to this exchange</em> — never to a greeting.</span></div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <h4>Rules the edge must obey</h4>
+    <p>Never accepts focus (<span class="m">WindowDoesNotAcceptFocus</span>, already in the build). Never wider than 380pt or taller than 4 lines — past that it says <span class="m">↩ open</span> instead of growing. Anchors to the edge nearest the frontmost window's caret, not to a fixed corner. Auto-collapses 6s after a terminal state, but <em>never</em> while amber.</p>
+  </div>
+</section>
+
+<!-- ══ 06 D2 ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>D2 · Invocation</h2></div>
+  <p class="lede">⌘⇧Space or "Hey Mike" from anywhere. The distinction from D1 is intent: you asked, so Mike may take focus.</p>
+
+  <div class="mock">
+    <div class="mock-bar"><i></i><i></i><i></i><span>invoked · anywhere</span></div>
+    <div class="mock-body" style="display:flex;justify-content:center;padding:56px 24px">
+      <div style="width:100%;max-width:520px;background:var(--surface);border:1px solid var(--hairline-lit);border-radius:5px;padding:15px 18px;display:flex;align-items:center;gap:13px;box-shadow:0 20px 60px rgba(0,0,0,.65)">
+        <span style="flex:none;width:4px;height:19px;background:var(--indigo);animation:blink 1.1s steps(1,end) infinite"></span>
+        <span style="font-size:15px;color:var(--muted)">Ask, or just talk</span>
+        <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint);letter-spacing:.06em">⌘⇧␣</span>
+      </div>
+    </div>
+  </div>
+
+  <p><strong>How Mike enters.</strong> Not a window that fades in. The caret is drawn at the current mouse-or-focus point at full size, then <em>the line unrolls sideways from it</em> in 160ms. The caret is already blinking before the surface exists — Mike arrives first, the interface catches up. Dismiss reverses it: the line rolls back into the caret, the caret fades over 90ms.</p>
+
+  <p><strong>One line, not a window.</strong> No title bar, no send button, no mic icon — Return submits, ⌘⇧Space or Esc dismisses, and holding the shortcut is push-to-talk. If a response is short it renders in place, under the line. If it isn't, the answer moves to the edge and the invocation closes, so Mike hands you back your screen.</p>
+</section>
+
+<!-- ══ 07 D3 ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>D3 · Home</h2></div>
+  <p class="lede">No hero, no orb, no greeting, no cards, no sidebar. Home opens <em>into the last exchange</em>, because Mike is continuous — there is no empty state to fill with a salutation.</p>
+
+  <div class="mock">
+    <div class="mock-bar"><i></i><i></i><i></i><span>Mike</span></div>
+    <div class="mock-body">
+      <div class="home-top">
+        <span>VS Code · mike-site/index.html</span>
+        <span>14:22 · 8 actions today</span>
+      </div>
+      <div class="home-col">
+        <div class="home-caret"></div>
+        <div class="home-said">Two tests were failing on the same assertion — <code>compute()</code> was comparing a string to an int. I converted the input before the addition and reran the suite.</div>
+        <div class="home-did">
+          <s>read&nbsp;&nbsp;tests/test_compute.py</s><br>
+          <s>run&nbsp;&nbsp;&nbsp;pytest tests/ -x&nbsp;&nbsp;<span style="color:var(--red)">2 failed</span></s><br>
+          <s>write&nbsp;compute.py&nbsp;&nbsp;+3 −1</s><br>
+          <s>run&nbsp;&nbsp;&nbsp;pytest tests/&nbsp;&nbsp;<span style="color:var(--green)">14 passed</span></s>
+        </div>
+        <div class="home-input">
+          <span class="c"></span><span>Ask, or just talk</span>
+          <span class="keys">⌘⇧␣ anywhere</span>
+        </div>
+        <div class="home-rooms"><b>Now</b><span>Record</span><span>Mind</span><span>Conduct</span></div>
+      </div>
+    </div>
+  </div>
+
+  <p><strong>What carries the composition.</strong> A single left-aligned column on a baseline grid. The caret at top-left is Mike; it breathes when idle and is the only colour above the fold. Context sits in the top rail as machine facts, not as a badge — it names <em>this</em> computer, which is the thing V1 never did.</p>
+
+  <p><strong>What is deliberately absent.</strong> No greeting (filler). No capability grid (a features page pretending to be a home). No orb (taken). No dashboard cards (the component library talking). No sidebar — the four rooms are four words on one line, because four destinations don't need furniture.</p>
+
+  <p><strong>Rooms open as full-surface replacements</strong>, not panels. Home is a single column that changes contents; the caret stays put across the transition, so the room changes around Mike rather than Mike moving between rooms.</p>
+</section>
+
+<!-- ══ 08 CONVERSATION ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>Conversation</h2></div>
+  <p class="lede">A mode, not the product. No bubbles, no avatars, no alternating sides — three registers doing the work instead.</p>
+
+  <div class="mock"><div class="mock-body">
+    <div class="reg">
+      <div class="u">why is the dev server not reloading</div>
+      <div class="s">Vite is watching <code>src/</code> but the file you're editing is in <code>public/</code>, which is served statically — it won't trigger HMR.</div>
+      <div class="d">read&nbsp;&nbsp;vite.config.js<br>list&nbsp;&nbsp;public/</div>
+
+      <div class="u">move it then</div>
+      <div class="d">move&nbsp;&nbsp;public/app.js → src/app.js<br>run&nbsp;&nbsp;&nbsp;npm run dev&nbsp;&nbsp;<em>running</em><br><span style="color:var(--faint)">│</span> waiting</div>
+      <div class="ts">14:22:04 · 3 actions · 6.1s</div>
+    </div>
+  </div></div>
+
+  <p>The <strong>three registers</strong>, and nothing else: user input sits dim behind a hairline rule; <strong>prose is what Mike said</strong>; <strong>mono behind a rule is what Mike observed or did</strong>. A reader can tell a claim from a fact without reading a word — which is precisely the protection needed against a model that sometimes narrates instead of acting.</p>
+
+  <p><strong>Long conversations</strong> collapse by exchange, not by message: older exchanges compress to a one-line mono summary with their action count, expanding on click. <strong>Voice conversation</strong> is the same surface with the caret cyan and amplitude-driven; spoken replies stream into the prose register as they're synthesised, so reading and hearing stay in sync. <strong>Memory references</strong> are underlined inline and open the Mind row that produced them — a claim you can audit in one click. <strong>Continuation from D1/D2</strong> appends to the same thread; there is one conversation, entered at different depths.</p>
+</section>
+
+<!-- ══ 09 ACTIVITY ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">09</span><h2>Record</h2></div>
+  <p class="lede">What Mike actually did — never what it intends to do. Backed by <span class="m">brain/activity_store.py</span>, which only ever receives completed and in-flight events.</p>
+
+  <div class="mock"><div class="mock-body">
+    <div class="reg">
+      <div class="ts">TODAY · 14:22</div>
+      <div class="d" style="margin-top:10px">
+        <s>run&nbsp;&nbsp;&nbsp;pytest tests/ -x</s><br>
+        <span style="color:var(--red)">└ 2 failed · test_compute.py:41</span><br>
+        <s>write&nbsp;compute.py&nbsp;&nbsp;+3 −1</s><br>
+        <s>run&nbsp;&nbsp;&nbsp;pytest tests/</s><br>
+        <span style="color:var(--green)">└ 14 passed · 1.8s</span>
+      </div>
+      <div class="ts" style="margin-top:22px">13:47</div>
+      <div class="d" style="margin-top:10px">
+        <s>open&nbsp;&nbsp;Visual Studio Code</s><br>
+        <s>create&nbsp;~/Developer/mike-site/</s><br>
+        <b>run&nbsp;&nbsp;&nbsp;npm create vite@latest&nbsp;&nbsp;denied by user</b>
+      </div>
+    </div>
+  </div></div>
+
+  <p><strong>Failures and denials are first-class entries</strong>, rendered in the same weight as successes. A log that only shows wins is a marketing surface. Denials in particular are the user's own decisions and belong in the record.</p>
+
+  <p><strong>Structural honesty.</strong> There is no row for an action that has not started, because Agency V2 genuinely cannot know the next step until the current tool returns. The current action is the last row and the only bright one; there is never anything beneath it. No progress bar, no step count, no percentage — all three would require knowing a total we do not have.</p>
+</section>
+
+<!-- ══ 10 MEMORY ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">10</span><h2>Mind · Memory</h2></div>
+  <p class="lede">Prose you can read, not rows you administer. Each item is a sentence in Mike's voice, with its provenance in mono beneath it.</p>
+
+  <div class="mock"><div class="mock-body">
+    <div class="mem">
+      <div class="mem-row">
+        <span class="k">About you</span>
+        <span class="v">You work on a MacBook Air M4 with 16&nbsp;GB of memory, and you care about everything staying local.<small>learned 2 Sep · from conversation · referenced 6×</small></span>
+        <span class="act">edit · forget</span>
+      </div>
+      <div class="mem-row">
+        <span class="k">Preference</span>
+        <span class="v">You want direct answers and you get annoyed when I hedge.<small>learned 3 Sep · from correction · referenced 2×</small></span>
+        <span class="act">edit · forget</span>
+      </div>
+      <div class="mem-row">
+        <span class="k">Work</span>
+        <span class="v">Mike itself lives at <code>~/Developer/NavAI-v0</code> and the backend is frozen.<small>learned 1 Sep · from conversation · referenced 11×</small></span>
+        <span class="act">edit · forget</span>
+      </div>
+    </div>
+  </div></div>
+
+  <p><strong>Why prose.</strong> A key/value table makes memory feel like a database you maintain; a sentence makes it feel like something Mike believes — which is what it is, and what makes a wrong one worth correcting. <span class="m">edit</span> opens the sentence for direct editing. <span class="m">forget</span> deletes immediately with a single undo, no confirmation dialog: hesitating to delete a memory is the wrong instinct to design in.</p>
+
+  <p><strong>Provenance is the trust mechanism.</strong> When it was learned, where from, and how often it has actually been used. A memory referenced 11 times is load-bearing; one referenced zero times in a month is a candidate for forgetting, and Mind can say so.</p>
+</section>
+
+<!-- ══ 11 FUTURE ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">11</span><h2>Continuity surfaces — designed, not buildable</h2></div>
+  <div class="note warn">
+    <h4>No backing store exists</h4>
+    <p>Projects, Schedules and Library have <strong>no persistence today</strong>. They are designed here so the IA has room for them; each needs its own store before any of it is drawn in the app. Shipping an empty room with working-looking buttons is the exact dishonesty §08 of the brief forbids.</p>
+  </div>
+
+  <h3>Projects</h3>
+  <p>A persistent area of work: a root path, the memories scoped to it, and its slice of the Record. Not a project manager — Mike's answer to "we've been working on this for weeks". Entered by opening a folder Mike already knows, never by filling in a form. <em>Needs: a project store keyed by path, plus memory scoping.</em></p>
+
+  <h3>Schedules</h3>
+  <p>Things Mike is expected to do at a time. Written as a sentence, kept as one line, and shown with the last actual outcome attached — a schedule that has never successfully run must say so on its own row. <em>Needs: a scheduler, a durable queue, and a policy for confirmation gates when nobody is at the keyboard — the hardest of the three, because unattended agency and the safety gate are in direct tension.</em></p>
+
+  <h3>Library</h3>
+  <p>Not a folder. The artefacts Mike produced, each still attached to the action that produced it, so it is found by the story rather than the filename. <em>Needs: artefact tracking on write/create tool calls.</em></p>
+</section>
+
+<!-- ══ 12 CONDUCT ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">12</span><h2>Conduct</h2></div>
+  <p class="lede">One room, three sections. Written as statements about Mike rather than labelled switches — the setting <em>is</em> the sentence.</p>
+
+  <div class="conduct">
+    <div>
+      <h4>Manner — how Mike behaves</h4>
+      <ul>
+        <li><span class="tag live">live</span> Speaks replies aloud</li>
+        <li><span class="tag live">live</span> Wakes on "Hey Mike"</li>
+        <li><span class="tag live">live</span> Voice &amp; rate</li>
+        <li><span class="tag live">live</span> Answer length</li>
+        <li><span class="tag soon">later</span> Appearance</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Limits — what Mike may do</h4>
+      <ul>
+        <li><span class="tag live">live</span> Always asks before writing, deleting, running</li>
+        <li><span class="tag live">live</span> Folders Mike may touch</li>
+        <li><span class="tag live">live</span> Everything stays on this Mac</li>
+        <li><span class="tag live">live</span> Screen vision on request only</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Reach — where Mike can act</h4>
+      <ul>
+        <li><span class="tag live">live</span> VS Code bridge · 127.0.0.1:8787</li>
+        <li><span class="tag live">live</span> Shortcut ⌘⇧Space</li>
+        <li><span class="tag live">live</span> Edge position &amp; behaviour</li>
+        <li><span class="tag live">live</span> Applications Mike may open</li>
+      </ul>
+    </div>
+  </div>
+
+  <p><strong>Limits is deliberately not editable into unsafety.</strong> The confirmation gate has no off switch here — it is stated as a fact about Mike, not offered as a preference. Scope can be narrowed but the gate itself is architecture, and a settings screen that can disable it would be a second safety system by another name.</p>
+
+  <p><strong>Privacy states rather than asks.</strong> "Everything stays on this Mac" with the evidence beneath it — no cloud endpoints, no analytics, no telemetry, model running locally at <span class="m">qwen3:8b</span>. It is the product's strongest claim and it should read as a fact, not a toggle.</p>
+</section>
+
+<!-- ══ 13 MOTION & HONESTY ══ -->
+<section>
+  <div class="sec-head"><span class="sec-num">13</span><h2>Motion, and what it may claim</h2></div>
+  <p class="lede">One object moves: the caret. Everything else is still. Motion is the entire state indicator, so nothing else needs a label.</p>
+
+  <div class="scroll-x">
+  <table class="motion">
+    <thead><tr><th>State</th><th>Caret</th><th>Colour</th><th>Driven by</th></tr></thead>
+    <tbody>
+      <tr><td>idle</td><td>Opacity breathe, 3.6s</td><td>indigo</td><td>nothing — the resting state</td></tr>
+      <tr><td>listening</td><td>Stretches vertically to amplitude</td><td>cyan</td><td>real mic level from the voice engine</td></tr>
+      <tr><td>thinking</td><td>Compresses, 2-step jitter</td><td>indigo</td><td>model request in flight</td></tr>
+      <tr><td>working</td><td>Travels down the baseline</td><td>cyan</td><td>tool_start / tool_end</td></tr>
+      <tr><td>needs user</td><td>Stops completely — the only still state</td><td>amber</td><td>confirmation gate blocking</td></tr>
+      <tr><td>responding</td><td>Rides the last character of the stream</td><td>indigo</td><td>real tokens, at token rate</td></tr>
+      <tr><td>error</td><td>Single hard displacement, then still</td><td>red</td><td>raised exception</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p><strong>Every row is a signal that already exists</strong> in the frozen runtime. Nothing in this table requires a new backend event, and nothing animates on a timer that isn't tied to real work — an animation running while nothing happens is a lie told at 30fps.</p>
+
+  <p><strong>Reduced motion</strong> (<span class="m">com.apple.universalaccess reduceMotion</span>, already readable) drops all animation; state falls back to caret colour plus one mono word, and the interface loses nothing it needed.</p>
+
+  <div class="note warn">
+    <h4>What this design may never render</h4>
+    <p>Progress bars. Step counts ("3 of 7"). Speculative future steps. "Mike is working autonomously." Completion language before a tool returns. Any queue of pending actions. All six require knowledge Agency V2 does not have, and drawing them would make the interface lie on the model's behalf.</p>
+  </div>
+</section>
+
+<!-- ══ CLOSING ══ -->
+<section class="closing">
+  <p class="eyebrow">The question</p>
+  <blockquote>If nobody thought of Mike as an app, what would using it feel like?</blockquote>
+  <p>It would feel like the computer started paying attention. You would never launch anything and there would be nothing to arrive at — you'd be in the editor, say what you wanted, and a caret would appear at the edge of the screen where you were already looking. It would do the thing, or tell you plainly that it couldn't, and then it would leave.</p>
+  <p>You would open Home the way you open a drawer: not to use Mike, but to see what the two of you have accumulated — what it did last week, what it believes about you, what it is allowed to touch. And the strongest proof it worked would be that you stopped noticing you were using software at all: only that the machine, lately, is paying attention.</p>
+</section>
+
+</div>

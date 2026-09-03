@@ -37,7 +37,7 @@ class FileManager:
     # File Operations
     # -----------------------------
 
-    def create_file(self, path: str):
+    def create_file(self, path: str, content: str | None = None):
 
         file = resolve_path(path)
 
@@ -46,18 +46,33 @@ class FileManager:
             exist_ok=True
         )
 
-        file.touch(exist_ok=True)
+        if content is None:
+            file.touch(exist_ok=True)
+        else:
+            file.write_text(content)
 
         return str(file)
 
+
+    MAX_READ_CHARS = 12_000
 
     def read_file(self, path: str):
 
         file = resolve_path(path)
 
-        return file.read_text(
-            encoding="utf-8"
+        text = file.read_text(
+            encoding="utf-8",
+            errors="replace",
         )
+
+        if len(text) > self.MAX_READ_CHARS:
+            return (
+                text[:self.MAX_READ_CHARS]
+                + f"\n\n--- Truncated: showing first {self.MAX_READ_CHARS:,} of "
+                f"{len(text):,} characters. ---"
+            )
+
+        return text
 
 
     def write_file(

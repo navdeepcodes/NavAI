@@ -16,53 +16,27 @@ from ui.widgets.conversation.user_bubble import UserBubble
 
 
 class MessageFactory:
-    """
-    Factory responsible for converting ChatMessage
-    objects into conversation widgets.
-
-    Presentation layer only.
-    """
-
-    # =====================================================
 
     @staticmethod
-    def create(
-        message: ChatMessage,
-    ) -> QWidget:
+    def create(message: ChatMessage) -> QWidget:
 
         if message.type is MessageType.USER:
-
-            return UserBubble(
-                message.text
-            )
+            return UserBubble(message.text)
 
         if message.type is MessageType.MIKE:
-
-            return MikeBubble(
-                message.text
-            )
+            return MikeBubble(message.text)
 
         if message.type is MessageType.THINKING:
-
             return ThinkingBubble()
 
         if message.type is MessageType.PLANNER:
-
-            return PlannerBubble(
-                message.text
-            )
+            return PlannerBubble(message.text)
 
         if message.type is MessageType.TOOL:
-
-            return ToolBubble(
-                message.text
-            )
+            return ToolBubble(message.text)
 
         if message.type is MessageType.SYSTEM:
-
-            return SystemBubble(
-                message.text
-            )
+            return SystemBubble(message.text)
 
         raise RuntimeError(
             f"Unknown message type: {message.type!r}"

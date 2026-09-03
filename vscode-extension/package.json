@@ -1,0 +1,37 @@
+{
+  "name": "mike-bridge",
+  "displayName": "Mike Bridge",
+  "description": "Lets the Mike desktop assistant see and act on your editor. Entirely local — nothing leaves this machine.",
+  "version": "0.1.0",
+  "publisher": "mike",
+  "private": true,
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Mike",
+      "properties": {
+        "mike.port": {
+          "type": "number",
+          "default": 8787,
+          "description": "Local port the Mike desktop app listens on."
+        },
+        "mike.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Share editor context with Mike."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "mike.showStatus",
+        "title": "Mike: Show Connection Status"
+      }
+    ]
+  }
+}

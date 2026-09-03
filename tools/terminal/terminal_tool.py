@@ -6,7 +6,7 @@ from tools.tool_metadata import ToolMetadata
 from tools.tool_permission import Permission
 from tools.tool_result import ToolResult
 
-from tools.terminal.actions import run
+from tools.terminal.actions import run, run_background
 
 
 class TerminalTool(BaseTool):
@@ -60,6 +60,8 @@ class TerminalTool(BaseTool):
 
             "run": self._run,
 
+            "run_background": self._run_background,
+
         }
 
     # ---------------------------------------------------------
@@ -75,6 +77,10 @@ class TerminalTool(BaseTool):
         validators = {
 
             "run": lambda: bool(
+                kwargs.get("command")
+            ),
+
+            "run_background": lambda: bool(
                 kwargs.get("command")
             ),
 
@@ -154,7 +160,17 @@ class TerminalTool(BaseTool):
     def _run(
         self,
         command: str,
+        cwd: str | None = None,
         **kwargs,
     ):
 
-        return run(command)
+        return run(command, cwd=cwd)
+
+    def _run_background(
+        self,
+        command: str,
+        cwd: str | None = None,
+        **kwargs,
+    ):
+
+        return run_background(command, cwd=cwd)

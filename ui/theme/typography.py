@@ -1,41 +1,28 @@
 from __future__ import annotations
 
-"""
-Application typography.
-
-Keep this file minimal.
-Every UI component should use these constants rather than
-hardcoding font sizes.
-"""
-
 # ==========================================================
 # Font Families
 # ==========================================================
 
-# Uses the native macOS system font.
-# Change to "Inter" later if you bundle it.
-FONT = "Helvetica Neue"
+FONT = ".AppleSystemUIFont"
 
-# Monospace font
-MONO_FONT = "JetBrains Mono"
-
+MONO_FONT = "Menlo"
 
 # ==========================================================
 # Font Sizes
 # ==========================================================
 
-TITLE = 26
-SUBTITLE = 18
+TITLE = 24
+SUBTITLE = 16
 
 SECTION = 15
-BODY = 16
+BODY = 15
 
 SMALL = 13
 TINY = 11
 
-
 # ==========================================================
-# Optional Weights
+# Weights
 # ==========================================================
 
 LIGHT = 300

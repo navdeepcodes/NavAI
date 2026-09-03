@@ -5,6 +5,50 @@ import subprocess
 
 
 # ---------------------------------------------------------
+# Open Application
+# ---------------------------------------------------------
+
+def open_application(name: str, path: str | None = None) -> str:
+    """
+    Launch or focus an application by name. Generic on purpose — nothing
+    here knows about any particular app.
+
+    Args:
+        name: Application name, e.g. "Visual Studio Code", "Safari".
+        path: Optional file or folder to open with it.
+    """
+
+    if not name or not name.strip():
+        raise ValueError("Application name is required.")
+
+    name = name.strip()
+    system = platform.system()
+
+    if system != "Darwin":
+        raise NotImplementedError(
+            "Opening applications is only implemented for macOS."
+        )
+
+    command = ["open", "-a", name]
+
+    if path:
+        command.append(path)
+
+    result = subprocess.run(command, capture_output=True, text=True)
+
+    if result.returncode != 0:
+        message = (result.stderr or "").strip()
+        raise RuntimeError(
+            message or f"Could not open '{name}'. Is it installed?"
+        )
+
+    if path:
+        return f"Opened {path} in {name}."
+
+    return f"Opened {name}."
+
+
+# ---------------------------------------------------------
 # Lock Screen
 # ---------------------------------------------------------
 

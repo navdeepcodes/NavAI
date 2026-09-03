@@ -1,39 +1,43 @@
 from __future__ import annotations
 
 from ui.theme import colors
+from ui.theme import typography
 
 from ui.widgets.conversation.bubble_base import BubbleBase
 
 
 class PlannerBubble(BubbleBase):
-    """
-    Planner reasoning bubble.
-    """
 
-    def __init__(
-        self,
-        text: str,
-    ) -> None:
+    def __init__(self, text: str) -> None:
 
         super().__init__(
-            title="Planner",
             text=text,
+            show_header=True,
+            header_text="PLANNING",
         )
 
         self.setStyleSheet(
-            self.styleSheet()
-            + f"""
+            f"""
+            QFrame#bubble {{
+                background: {colors.ACTION_SURFACE};
+                border: 1px solid {colors.ACTION_BORDER};
+                border-radius: 10px;
+            }}
 
-QFrame#bubble {{
+            QLabel#header {{
+                color: {colors.WARNING};
+                font-size: {typography.TINY}px;
+                font-weight: 600;
+                letter-spacing: 0.5px;
+                background: transparent;
+                border: none;
+            }}
 
-    background:#15130F;
-
-}}
-
-QLabel#header {{
-
-    color:{colors.PLANNER};
-
-}}
-"""
+            QLabel#content {{
+                color: {colors.TEXT_SECONDARY};
+                font-size: {typography.SMALL}px;
+                background: transparent;
+                border: none;
+            }}
+            """
         )

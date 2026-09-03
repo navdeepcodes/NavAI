@@ -65,4 +65,14 @@ def resolve_path(path: str) -> Path:
 
             return value / remaining
 
-    return Path(path).expanduser().resolve()
+    expanded = Path(path).expanduser()
+
+    if expanded.is_absolute():
+
+        return expanded.resolve()
+
+    # Anything else relative is relative to home, matching what Mike is told
+    # ("paths like Desktop/folder are relative to home"). Resolving against
+    # the process working directory instead would silently write the user's
+    # files into Mike's own source tree.
+    return (HOME / expanded).resolve()

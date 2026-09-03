@@ -60,6 +60,8 @@ class SystemTool(BaseTool):
 
         return {
 
+            "open_application": actions.open_application,
+
             "lock": actions.lock,
 
             "sleep": actions.sleep,

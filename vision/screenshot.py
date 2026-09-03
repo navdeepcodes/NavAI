@@ -1,29 +1,33 @@
-import tempfile
 import subprocess
+import tempfile
+
+from PIL import Image
+
+from config.ollama import VISION_RESOLUTION
+from logs.logger import logger
 
 
 class Screenshot:
 
-    def capture(self):
+    def capture(self) -> str:
+        raw = tempfile.mktemp(suffix="_raw.png")
+        subprocess.run(["screencapture", "-x", raw], check=True)
 
-        path = tempfile.mktemp(
-            suffix=".png"
-        )
+        img = Image.open(raw)
+        ratio = VISION_RESOLUTION / max(img.size)
 
-        subprocess.run(
+        if ratio < 1.0:
+            new_size = (int(img.width * ratio), int(img.height * ratio))
+            img = img.resize(new_size, Image.LANCZOS)
 
-            [
+        out = tempfile.mktemp(suffix=".png")
+        img.save(out)
+        logger.info("Screenshot: %dx%d → %s", img.width, img.height, out)
 
-                "screencapture",
+        import os
+        try:
+            os.unlink(raw)
+        except OSError:
+            pass
 
-                "-x",
-
-                path
-
-            ],
-
-            check=True
-
-        )
-
-        return path
+        return out

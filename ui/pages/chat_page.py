@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -12,23 +12,8 @@ from ui.widgets.input import InputBar
 
 
 class ChatPage(QWidget):
-    """
-    Mike Main Workspace.
 
-    Layout
-    ------
-    Header
-        ↓
-    Conversation
-        ↓
-    Composer
-
-    Presentation layer only.
-    """
-
-    COMPOSER_WIDTH = 1180
-
-    # =====================================================
+    COMPOSER_WIDTH = 800
 
     def __init__(self) -> None:
 
@@ -36,51 +21,31 @@ class ChatPage(QWidget):
 
         self._build_ui()
 
-    # =====================================================
-
     def _build_ui(self) -> None:
 
         root = QVBoxLayout(self)
 
-        root.setContentsMargins(
-            0,
-            0,
-            0,
-            20,
-        )
+        root.setContentsMargins(0, 0, 0, 0)
 
-        root.setSpacing(12)
+        root.setSpacing(0)
 
-        # -------------------------------------------------
         # Header
-        # -------------------------------------------------
 
         self.header = Header()
 
-        root.addWidget(
-            self.header
-        )
+        root.addWidget(self.header)
 
-        # -------------------------------------------------
         # Conversation
-        # -------------------------------------------------
 
         self.conversation = ConversationPanel()
 
-        root.addWidget(
-            self.conversation,
-            1,
-        )
+        root.addWidget(self.conversation, 1)
 
-        # -------------------------------------------------
-        # Composer
-        # -------------------------------------------------
+        # Input
 
         self.input = InputBar()
 
-        self.input.setMaximumWidth(
-            self.COMPOSER_WIDTH
-        )
+        self.input.setMaximumWidth(self.COMPOSER_WIDTH)
 
         root.addWidget(
             self.input,
@@ -88,50 +53,44 @@ class ChatPage(QWidget):
             Qt.AlignHCenter,
         )
 
-    # =====================================================
     # Conversation API
-    # =====================================================
 
-    def add_user_message(
-        self,
-        text: str,
-    ) -> None:
+    def add_user_message(self, text: str) -> None:
 
-        self.conversation.add_user(
-            text
-        )
+        self.conversation.add_user(text)
 
-    # -----------------------------------------------------
+        self.input.hide_hint()
 
-    def add_mike_message(
-        self,
-        text: str,
-    ) -> None:
+    def add_mike_message(self, text: str) -> None:
 
-        self.conversation.add_mike(
-            text
-        )
+        self.conversation.add_mike(text)
 
-    # -----------------------------------------------------
+    def begin_mike_stream(self):
 
-    def show_thinking(
-        self,
-    ) -> None:
+        return self.conversation.begin_mike_stream()
+
+    def add_action_card(self, text: str):
+
+        return self.conversation.add_action_card(text)
+
+    def show_tool_status(self, text: str) -> None:
+
+        self.conversation.show_tool(text)
+
+    def show_thinking(self) -> None:
+
+        self.header.thinking()
 
         self.conversation.show_thinking()
 
-    # -----------------------------------------------------
+    def hide_thinking(self) -> None:
 
-    def hide_thinking(
-        self,
-    ) -> None:
+        self.header.ready()
 
         self.conversation.hide_thinking()
 
-    # -----------------------------------------------------
-
-    def clear(
-        self,
-    ) -> None:
+    def clear(self) -> None:
 
         self.conversation.clear()
+
+        self.input.show_hint()

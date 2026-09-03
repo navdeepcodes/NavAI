@@ -1,39 +1,30 @@
 from __future__ import annotations
 
 from ui.theme import colors
+from ui.theme import typography
 
 from ui.widgets.conversation.bubble_base import BubbleBase
 
 
 class SystemBubble(BubbleBase):
-    """
-    Runtime / system information.
-    """
 
-    def __init__(
-        self,
-        text: str,
-    ) -> None:
+    def __init__(self, text: str) -> None:
 
-        super().__init__(
-            title="System",
-            text=text,
-        )
+        super().__init__(text=text)
 
         self.setStyleSheet(
-            self.styleSheet()
-            + f"""
+            f"""
+            QFrame#bubble {{
+                background: transparent;
+                border: none;
+                border-radius: 0;
+            }}
 
-QFrame#bubble {{
-
-    background:#141414;
-
-}}
-
-QLabel#header {{
-
-    color:{colors.TEXT_MUTED};
-
-}}
-"""
+            QLabel#content {{
+                color: {colors.TEXT_MUTED};
+                font-size: {typography.SMALL}px;
+                background: transparent;
+                border: none;
+            }}
+            """
         )

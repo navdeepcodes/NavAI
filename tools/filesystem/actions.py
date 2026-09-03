@@ -17,17 +17,21 @@ def create_folder(path: str):
     return f"Folder created successfully at {folder}."
 
 
-def create_file(path: str):
+def create_file(path: str, content: str | None = None):
     """
-    Create a file.
+    Create a file, optionally with initial content.
 
     Args:
         path: File path.
+        content: Text to write. Omit for an empty file.
     """
 
-    file = manager.create_file(path)
+    file = manager.create_file(path, content)
 
-    return f"File created successfully at {file}."
+    if content is None:
+        return f"File created successfully at {file}."
+
+    return f"File created successfully at {file} ({len(content)} characters)."
 
 
 def read_file(path: str):

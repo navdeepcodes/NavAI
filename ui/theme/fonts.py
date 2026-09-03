@@ -2,40 +2,34 @@ from __future__ import annotations
 
 from PySide6.QtGui import QFont
 
-
 # ==========================================================
 # Font Families
 # ==========================================================
 
-# Temporary system fonts.
-# Later we'll bundle Inter and JetBrains Mono with the app.
-
-SANS = "Helvetica Neue"
+SANS = ".AppleSystemUIFont"
 MONO = "Menlo"
-
 
 # ==========================================================
 # Font Sizes
 # ==========================================================
 
-TITLE_SIZE = 22
+TITLE_SIZE = 24
 HEADER_SIZE = 14
-BODY_SIZE = 13
-MESSAGE_SIZE = 14
-INPUT_SIZE = 14
-STATUS_SIZE = 11
-SMALL_SIZE = 10
-
+BODY_SIZE = 15
+MESSAGE_SIZE = 15
+INPUT_SIZE = 15
+STATUS_SIZE = 12
+SMALL_SIZE = 11
 
 # ==========================================================
 # Fonts
 # ==========================================================
 
-TITLE = QFont(MONO, TITLE_SIZE)
-TITLE.setBold(True)
+TITLE = QFont(SANS, TITLE_SIZE)
+TITLE.setWeight(QFont.Weight.Bold)
 
 HEADER = QFont(SANS, HEADER_SIZE)
-HEADER.setBold(True)
+HEADER.setWeight(QFont.Weight.DemiBold)
 
 BODY = QFont(SANS, BODY_SIZE)
 
@@ -59,12 +53,6 @@ def font(
     italic: bool = False,
     mono: bool = False,
 ) -> QFont:
-    """
-    Create a font with the Mike design system.
-
-    Example:
-        label.setFont(font(16, bold=True))
-    """
 
     family = MONO if mono else SANS
 

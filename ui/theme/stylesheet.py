@@ -58,14 +58,15 @@ QScrollArea > QWidget > QWidget {{
    ========================================================= */
 
 QScrollBar:vertical {{
-    width: 8px;
+    width: 6px;
     background: transparent;
+    margin: 4px 0;
 }}
 
 QScrollBar::handle:vertical {{
     background: {colors.BORDER};
-    border-radius: 4px;
-    min-height: 40px;
+    border-radius: 3px;
+    min-height: 32px;
 }}
 
 QScrollBar::handle:vertical:hover {{
@@ -82,6 +83,40 @@ QScrollBar::sub-page:vertical {{
 
 QScrollBar:horizontal {{
     height: 0px;
+}}
+
+/* =========================================================
+   Message Box (Confirmation Dialog)
+   ========================================================= */
+
+QMessageBox {{
+    background: {colors.SURFACE};
+}}
+
+QMessageBox QLabel {{
+    color: {colors.TEXT};
+    font-size: {typography.BODY}px;
+    padding: 8px 4px;
+}}
+
+QMessageBox QPushButton {{
+    background: {colors.SURFACE_ELEVATED};
+    border: 1px solid {colors.BORDER};
+    border-radius: 8px;
+    color: {colors.TEXT};
+    font-size: {typography.SMALL}px;
+    font-weight: 500;
+    min-width: 80px;
+    padding: 8px 20px;
+}}
+
+QMessageBox QPushButton:hover {{
+    background: {colors.SURFACE_HOVER};
+    border-color: {colors.BORDER_STRONG};
+}}
+
+QMessageBox QPushButton:pressed {{
+    background: {colors.SURFACE_ACTIVE};
 }}
 
 """

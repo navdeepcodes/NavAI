@@ -3,17 +3,18 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
-    QApplication,
     QFrame,
     QHBoxLayout,
+    QLabel,
     QPushButton,
-    QTextEdit,
     QSizePolicy,
-    QStyle,
+    QTextEdit,
     QVBoxLayout,
 )
 
 from ui.theme import colors
+from ui.theme import typography
+from ui.widgets.input.voice_button import VoiceButton
 
 
 # ==========================================================
@@ -26,7 +27,7 @@ class CommandInput(QTextEdit):
     submitted = Signal(str)
 
     MIN_HEIGHT = 44
-    MAX_HEIGHT = 120
+    MAX_HEIGHT = 140
 
     def __init__(self) -> None:
 
@@ -34,12 +35,10 @@ class CommandInput(QTextEdit):
 
         self._build()
 
-    # -----------------------------------------------------
-
     def _build(self) -> None:
 
         self.setPlaceholderText(
-            "Message Mike..."
+            "Ask Mike to do something..."
         )
 
         self.setAcceptRichText(False)
@@ -56,86 +55,53 @@ class CommandInput(QTextEdit):
             Qt.ScrollBarAlwaysOff
         )
 
-        self.setFrameShape(
-            QFrame.NoFrame
-        )
+        self.setFrameShape(QFrame.NoFrame)
 
         self.setSizePolicy(
             QSizePolicy.Expanding,
             QSizePolicy.Fixed,
         )
 
-        self.setFixedHeight(
-            self.MIN_HEIGHT
-        )
+        self.setFixedHeight(self.MIN_HEIGHT)
 
-        self.textChanged.connect(
-            self._resize
-        )
+        self.textChanged.connect(self._resize)
 
-        # Fix oversized first render
-        QTimer.singleShot(
-            0,
-            self._resize,
-        )
+        QTimer.singleShot(0, self._resize)
 
-    # -----------------------------------------------------
-
-    def keyPressEvent(
-        self,
-        event,
-    ) -> None:
+    def keyPressEvent(self, event) -> None:
 
         if (
             event.key()
-            in (
-                Qt.Key_Return,
-                Qt.Key_Enter,
-            )
-            and not (
-                event.modifiers()
-                & Qt.ShiftModifier
-            )
+            in (Qt.Key_Return, Qt.Key_Enter)
+            and not (event.modifiers() & Qt.ShiftModifier)
         ):
-
             text = self.toPlainText().strip()
 
             if text:
-
-                self.submitted.emit(
-                    text
-                )
-
+                self.submitted.emit(text)
                 self.clear()
 
             return
 
         super().keyPressEvent(event)
 
-    # -----------------------------------------------------
-
     def _resize(self) -> None:
 
-        document_height = (
+        doc_height = (
             self.document()
             .documentLayout()
             .documentSize()
             .height()
         )
 
-        height = int(document_height) + 12
+        height = int(doc_height) + 12
 
         height = max(
             self.MIN_HEIGHT,
-            min(
-                self.MAX_HEIGHT,
-                height,
-            ),
+            min(self.MAX_HEIGHT, height),
         )
 
-        self.setFixedHeight(
-            height
-        )
+        self.setFixedHeight(height)
 
 
 # ==========================================================
@@ -147,8 +113,6 @@ class InputBar(QFrame):
 
     submitted = Signal(str)
 
-    BUTTON_SIZE = 36
-
     def __init__(self) -> None:
 
         super().__init__()
@@ -157,62 +121,26 @@ class InputBar(QFrame):
 
         self._theme()
 
-    # -----------------------------------------------------
-
     def _build(self) -> None:
 
         outer = QVBoxLayout(self)
 
-        outer.setContentsMargins(
-            32,
-            12,
-            32,
-            18,
-        )
+        outer.setContentsMargins(0, 8, 0, 16)
 
-        outer.setSpacing(0)
+        outer.setSpacing(6)
+
+        # Composer frame
 
         self.composer = QFrame()
+        self.composer.setObjectName("composer")
 
-        self.composer.setObjectName(
-            "composer"
-        )
+        layout = QHBoxLayout(self.composer)
 
-        layout = QHBoxLayout(
-            self.composer
-        )
-
-        layout.setContentsMargins(
-            14,
-            8,
-            14,
-            8,
-        )
+        layout.setContentsMargins(16, 6, 10, 6)
 
         layout.setSpacing(8)
 
-        style = QApplication.style()
-
-        # -------------------------------------------------
-        # Attachment
-        # -------------------------------------------------
-
-        self.attach = QPushButton()
-
-        self.attach.setIcon(
-            style.standardIcon(
-                QStyle.SP_FileIcon
-            )
-        )
-
-        self.attach.setFixedSize(
-            self.BUTTON_SIZE,
-            self.BUTTON_SIZE,
-        )
-
-        # -------------------------------------------------
         # Input
-        # -------------------------------------------------
 
         self.input = CommandInput()
 
@@ -220,60 +148,35 @@ class InputBar(QFrame):
             self.submitted.emit
         )
 
-        # -------------------------------------------------
-        # Voice
-        # -------------------------------------------------
+        layout.addWidget(self.input, 1)
 
-        self.voice = QPushButton("●")
+        # Voice button
 
-        self.voice.setFixedSize(
-            self.BUTTON_SIZE,
-            self.BUTTON_SIZE,
+        self.voice = VoiceButton()
+
+        layout.addWidget(self.voice)
+
+        # Send button
+
+        self.send = QPushButton("↑")
+        self.send.setObjectName("send_btn")
+        self.send.setFixedSize(32, 32)
+
+        self.send.clicked.connect(self._submit)
+
+        layout.addWidget(self.send)
+
+        outer.addWidget(self.composer)
+
+        # Hint
+
+        self._hint = QLabel(
+            "Mike can use your browser, files, and terminal."
         )
+        self._hint.setObjectName("hint")
+        self._hint.setAlignment(Qt.AlignCenter)
 
-        # -------------------------------------------------
-        # Send
-        # -------------------------------------------------
-
-        self.send = QPushButton()
-
-        self.send.setIcon(
-            style.standardIcon(
-                QStyle.SP_ArrowForward
-            )
-        )
-
-        self.send.setFixedSize(
-            self.BUTTON_SIZE,
-            self.BUTTON_SIZE,
-        )
-
-        self.send.clicked.connect(
-            self._submit
-        )
-
-        layout.addWidget(
-            self.attach
-        )
-
-        layout.addWidget(
-            self.input,
-            1,
-        )
-
-        layout.addWidget(
-            self.voice
-        )
-
-        layout.addWidget(
-            self.send
-        )
-
-        outer.addWidget(
-            self.composer
-        )
-
-    # -----------------------------------------------------
+        outer.addWidget(self._hint)
 
     def _theme(self) -> None:
 
@@ -287,64 +190,69 @@ class InputBar(QFrame):
             QFrame#composer {{
                 background: {colors.SURFACE};
                 border: 1px solid {colors.BORDER};
-                border-radius: 22px;
+                border-radius: 18px;
+            }}
+
+            QFrame#composer:focus-within {{
+                border-color: {colors.BORDER_STRONG};
             }}
 
             QTextEdit {{
                 background: transparent;
                 border: none;
                 color: {colors.TEXT};
-                font-size: 15px;
-                padding: 2px 4px;
+                font-size: {typography.BODY}px;
+                padding: 4px 2px;
             }}
 
             QTextEdit:focus {{
                 border: none;
             }}
 
-            QPushButton {{
+            QPushButton#send_btn {{
+                background: {colors.ACCENT};
+                border: none;
+                border-radius: 16px;
+                color: #fff;
+                font-size: 16px;
+                font-weight: 700;
+            }}
+
+            QPushButton#send_btn:hover {{
+                background: {colors.ACCENT_DIM};
+            }}
+
+            QPushButton#send_btn:disabled {{
+                background: {colors.SURFACE_ELEVATED};
+                color: {colors.TEXT_DISABLED};
+            }}
+
+            QLabel#hint {{
+                color: {colors.TEXT_DISABLED};
+                font-size: {typography.TINY}px;
                 background: transparent;
                 border: none;
-                border-radius: 18px;
-                color: {colors.TEXT};
-                font-size: 15px;
-            }}
-
-            QPushButton:hover {{
-                background: {colors.HOVER};
-            }}
-
-            QPushButton:pressed {{
-                background: {colors.HOVER};
+                padding: 0;
             }}
             """
         )
-
-    # -----------------------------------------------------
 
     def _submit(self) -> None:
 
         text = self.text().strip()
 
         if not text:
-
             return
 
-        self.submitted.emit(
-            text
-        )
+        self.submitted.emit(text)
 
         self.clear()
 
-    # =====================================================
     # Public API
-    # =====================================================
 
     def text(self) -> str:
 
         return self.input.toPlainText()
-
-    # -----------------------------------------------------
 
     def clear(self) -> None:
 
@@ -354,33 +262,20 @@ class InputBar(QFrame):
             self.input.MIN_HEIGHT
         )
 
-    # -----------------------------------------------------
-
     def focus(self) -> None:
 
-        self.input.setFocus(
-            Qt.OtherFocusReason
-        )
+        self.input.setFocus(Qt.OtherFocusReason)
 
-    # -----------------------------------------------------
+    def set_enabled(self, enabled: bool) -> None:
 
-    def set_enabled(
-        self,
-        enabled: bool,
-    ) -> None:
+        self.input.setEnabled(enabled)
 
-        self.input.setEnabled(
-            enabled
-        )
+        self.send.setEnabled(enabled)
 
-        self.attach.setEnabled(
-            enabled
-        )
+    def hide_hint(self) -> None:
 
-        self.voice.setEnabled(
-            enabled
-        )
+        self._hint.hide()
 
-        self.send.setEnabled(
-            enabled
-        )
+    def show_hint(self) -> None:
+
+        self._hint.show()
