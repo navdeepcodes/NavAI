@@ -7,6 +7,12 @@ venv/
 
 # Environment Variables
 .env
+.env.*
+!.env.example
+
+# Credentials — never track real OAuth/token files
+credentials.json
+storage/token.json
 
 # macOS
 .DS_Store
