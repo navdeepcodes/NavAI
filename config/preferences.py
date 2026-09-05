@@ -66,13 +66,36 @@ def _load() -> dict[str, Any]:
             stored = json.loads(_PATH.read_text())
             if isinstance(stored, dict):
                 # Only accept keys we know about, so a stale file can't
-                # smuggle in surprises.
-                values.update({k: v for k, v in stored.items() if k in DEFAULTS})
+                # smuggle in surprises — and only values of the right shape.
+                # Checking the key alone let a hand-edited file put a dict
+                # where a voice name belongs, or the word "fast" where a
+                # speaking rate belongs, and the wrong type travelled all the
+                # way to the code that used it.
+                values.update({
+                    k: v for k, v in stored.items()
+                    if k in DEFAULTS and _acceptable(k, v)
+                })
     except Exception:
         logger.exception("Could not read preferences; using defaults.")
 
     _cache = values
     return _cache
+
+
+def _acceptable(key: str, value: Any) -> bool:
+    """Is this value the same shape as the default it replaces?
+
+    Booleans are checked before numbers on purpose: in Python `True` is an
+    int, and a preference that wants a rate should not accept `true`.
+    """
+    expected = DEFAULTS[key]
+    if isinstance(expected, bool):
+        return isinstance(value, bool)
+    if isinstance(expected, (int, float)):
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if isinstance(expected, str):
+        return isinstance(value, str)
+    return isinstance(value, type(expected))
 
 
 def get(key: str, default: Any = None) -> Any:
@@ -86,7 +109,12 @@ def all_values() -> dict[str, Any]:
 
 
 def set_value(key: str, value: Any) -> None:
-    if key not in DEFAULTS:
+    if key not in DEFAULTS or not _acceptable(key, value):
+        if key in DEFAULTS:
+            logger.warning(
+                "Refused a %s for preference %r, which holds a %s.",
+                type(value).__name__, key, type(DEFAULTS[key]).__name__,
+            )
         return
 
     with _lock:

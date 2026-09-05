@@ -117,3 +117,55 @@ def test_diagnostics_reports_hardware_and_voice():
     # same, and when they differ the reason must be recorded.
     if voice["configured"] != voice["will_use"]:
         assert voice.get("reason")
+
+
+# ── configuration cannot carry the wrong shape ────────────
+
+def test_a_hand_edited_preference_of_the_wrong_type_is_ignored(tmp_path, monkeypatch):
+    """The allowlist checked keys and not values, so a file could put a dict
+    where a voice name belongs, or the word "fast" where a speaking rate
+    belongs, and the wrong type travelled to the code that used it."""
+    import importlib
+    import json
+
+    monkeypatch.setenv("MIKE_DATA_DIR", str(tmp_path))
+    (tmp_path / "preferences.json").write_text(json.dumps({
+        "voice_provider": {"nested": True},
+        "voice_rate": "fast",
+        "wake_word_enabled": "yes",
+        "voice_qwen_speaker": "Aiden",      # this one is fine
+    }))
+
+    from config import preferences
+    importlib.reload(preferences)
+
+    assert preferences.get("voice_provider") == "native", "a dict got through"
+    assert preferences.get("voice_rate") == 185, "a string rate got through"
+    assert preferences.get("wake_word_enabled") is True, "a string bool got through"
+    assert preferences.get("voice_qwen_speaker") == "Aiden", "a valid value was lost"
+
+
+def test_setting_a_value_of_the_wrong_type_is_refused(tmp_path, monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("MIKE_DATA_DIR", str(tmp_path))
+    from config import preferences
+    importlib.reload(preferences)
+
+    preferences.set_value("voice_rate", "very fast")
+    assert preferences.get("voice_rate") == 185
+
+    preferences.set_value("voice_rate", 200)
+    assert preferences.get("voice_rate") == 200
+
+
+def test_a_boolean_is_not_accepted_where_a_number_belongs(tmp_path, monkeypatch):
+    """True is an int in Python, so the obvious isinstance check accepts it."""
+    import importlib
+
+    monkeypatch.setenv("MIKE_DATA_DIR", str(tmp_path))
+    from config import preferences
+    importlib.reload(preferences)
+
+    preferences.set_value("voice_rate", True)
+    assert preferences.get("voice_rate") == 185
