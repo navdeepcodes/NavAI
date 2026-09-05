@@ -87,3 +87,62 @@ def explain_missing(capability: str) -> str:
         f"{caps.model} doesn't support {capability}. "
         f"{caps.explain()} Switching to a model that does would enable it."
     )
+
+
+def check_hardware() -> dict[str, Any]:
+    """What this machine is, and whether what Mike is running fits on it.
+
+    Reported rather than acted on. Mike does not resize himself behind the
+    user's back — the point is that "why is this slow" has an answer that is
+    a measurement instead of a guess.
+    """
+    from brain.hardware import current
+
+    machine = current()
+    report = machine.as_dict()
+    report["headroom_gb"] = machine.headroom_gb()
+    report["under_pressure"] = machine.under_pressure()
+
+    concerns: list[str] = []
+    if machine.under_pressure():
+        concerns.append(
+            f"only {machine.available_memory_gb:.1f} GB of memory is available; "
+            "responses will be slow and audio may stutter"
+        )
+    if machine.free_disk_gb < 5:
+        concerns.append(
+            f"only {machine.free_disk_gb:.0f} GB of disk is free; "
+            "models and logs need room"
+        )
+    report["concerns"] = concerns
+    return report
+
+
+def check_voice() -> dict[str, Any]:
+    """Which voice Mike will actually use, and why — before he needs it.
+
+    The configured voice and the voice that will speak are not always the
+    same thing: a missing model or a broken runtime falls back silently and
+    on purpose. This is where that becomes visible.
+    """
+    from voice.providers import get_provider
+    from voice.providers.native import NativeVoice
+
+    try:
+        from config import preferences
+
+        configured = str(preferences.get("voice_provider", "native"))
+    except Exception:
+        configured = "native"
+
+    provider = get_provider(configured)
+    ok, detail = provider.available()
+    report = {
+        "configured": configured,
+        "will_use": provider.name if ok else NativeVoice().name,
+        "available": ok,
+        "detail": detail,
+    }
+    if configured != report["will_use"]:
+        report["reason"] = detail
+    return report

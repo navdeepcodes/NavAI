@@ -35,9 +35,37 @@ from pathlib import Path
 from logs.logger import logger
 from voice.providers.base import VoiceProvider
 
-# The interpreter with mlx-audio installed. Deliberately not Mike's own.
-DEFAULT_PYTHON = Path.home() / ".mike-tts-bench" / "bin" / "python"
-DEFAULT_HF_HOME = Path.home() / ".mike-tts-bench" / "hf"
+# Where the neural voice lives: a Python environment with mlx-audio, and the
+# model weights. Deliberately not Mike's own environment — see the note at
+# the top of this file.
+#
+# Several locations are searched rather than one being assumed. The first
+# working installation was created by hand for a benchmark, in a directory
+# called ".mike-tts-bench", and production code ended up depending on it —
+# so Mike's voice quietly rested on a folder whose name says it is
+# disposable, with nothing to install it and nothing to say it was needed.
+# The supported location is under Mike's own application-support directory;
+# the benchmark path is still honoured so an existing setup keeps working.
+def _voice_home_candidates() -> list[Path]:
+    override = os.environ.get("MIKE_VOICE_HOME", "").strip()
+    candidates = [Path(override)] if override else []
+    candidates.append(
+        Path.home() / "Library" / "Application Support" / "Mike" / "voice")
+    candidates.append(Path.home() / ".mike-tts-bench")
+    return candidates
+
+
+def voice_home() -> Path | None:
+    """The first installation that actually has an interpreter in it."""
+    for candidate in _voice_home_candidates():
+        if (candidate / "bin" / "python").exists():
+            return candidate
+    return None
+
+
+def _installed_home() -> Path:
+    """Where to look, falling back to the supported location for messages."""
+    return voice_home() or _voice_home_candidates()[-1]
 
 MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit"
 
@@ -73,7 +101,10 @@ class QwenVoice(VoiceProvider):
     def __init__(self, python: Path | None = None, model: str = MODEL,
                  voice: str | None = None, instruct: str | None = None,
                  chunk_seconds: float = 0.5) -> None:
-        self._python = Path(python or os.environ.get("MIKE_QWEN_PYTHON", DEFAULT_PYTHON))
+        home = _installed_home()
+        self._home = home
+        self._python = Path(
+            python or os.environ.get("MIKE_QWEN_PYTHON", home / "bin" / "python"))
         self._model = model
         self._voice = voice or self._preference("voice_qwen_speaker", "Ryan")
         # How Mike should sound, in words. Configurable because the right
@@ -123,12 +154,18 @@ class QwenVoice(VoiceProvider):
 
     def available(self) -> tuple[bool, str]:
         if not self._python.exists():
-            return False, f"no interpreter at {self._python}"
+            return False, (
+                f"the neural voice is not installed (no interpreter at "
+                f"{self._python}). See docs/voice-setup.md."
+            )
         if shutil.which("afplay") is None:
             return False, "afplay is not on this machine"
-        weights = DEFAULT_HF_HOME / "hub" / f"models--{self._model.replace('/', '--')}"
+        weights = self._home / "hf" / "hub" / f"models--{self._model.replace('/', '--')}"
         if not weights.exists():
-            return False, f"model weights are not downloaded ({self._model})"
+            return False, (
+                f"the voice model is not downloaded ({self._model}). "
+                "See docs/voice-setup.md."
+            )
         if self._voice not in VOICES:
             return False, (f"unknown voice {self._voice!r}; this model has: "
                            + ", ".join(sorted(VOICES)))
@@ -147,7 +184,7 @@ class QwenVoice(VoiceProvider):
                 self._kill_worker()
 
             env = dict(os.environ)
-            env["HF_HOME"] = str(DEFAULT_HF_HOME)
+            env["HF_HOME"] = str(self._home / "hf")
             env["MIKE_QWEN_TTS_MODEL"] = self._model
             env["MIKE_QWEN_TTS_VOICE"] = self._voice
             env["MIKE_QWEN_TTS_INSTRUCT"] = self._instruct
@@ -242,6 +279,11 @@ class QwenVoice(VoiceProvider):
             self._mailboxes.pop(request_id, None)
 
     def _kill_worker(self) -> None:
+        # Clean the workspace even when the worker is already gone. A killed
+        # process cannot tidy up after itself, and each one left a directory
+        # behind — empty here, but the parent is the only thing that knows
+        # where they are once the child is dead.
+        self._sweep_workspaces()
         if self._proc is None:
             return
         try:
@@ -545,6 +587,17 @@ class QwenVoice(VoiceProvider):
         self._kill_worker()
 
     # ── reporting ─────────────────────────────────────────
+
+    @staticmethod
+    def _sweep_workspaces() -> None:
+        """Remove worker scratch directories, including any orphaned by a
+        previous run that was killed rather than shut down."""
+        import glob
+        import tempfile
+
+        pattern = os.path.join(tempfile.gettempdir(), "mike-qwen-tts-*")
+        for path in glob.glob(pattern):
+            shutil.rmtree(path, ignore_errors=True)
 
     @property
     def healthy(self) -> bool:

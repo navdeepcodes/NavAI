@@ -185,4 +185,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    finally:
+        # Chunks are written here and deleted as they play; anything left is
+        # from an utterance that was interrupted.
+        import shutil as _shutil
+        for _dir in [d for d in (globals().get("workdir"),) if d]:
+            _shutil.rmtree(_dir, ignore_errors=True)

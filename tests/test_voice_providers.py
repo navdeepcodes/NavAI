@@ -398,12 +398,46 @@ def test_an_invalid_speaker_is_refused_before_it_reaches_the_model():
 
 
 def test_a_missing_model_is_reported_not_crashed(tmp_path, monkeypatch):
-    from voice.providers import qwen as qwen_module
+    """And the message points at the instructions, because "not downloaded"
+    with no next step is not much better than silence."""
+    from voice.providers.qwen import QwenVoice
 
-    monkeypatch.setattr(qwen_module, "DEFAULT_HF_HOME", tmp_path / "nothing-here")
-    ok, why = qwen_module.QwenVoice().available()
+    home = tmp_path / "voice"
+    (home / "bin").mkdir(parents=True)
+    (home / "bin" / "python").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("MIKE_VOICE_HOME", str(home))
+
+    provider = QwenVoice()
+    provider._home = home
+    ok, why = provider.available()
     assert not ok
     assert "not downloaded" in why
+    assert "voice-setup" in why
+
+
+def test_the_voice_installation_is_searched_for_not_assumed(tmp_path, monkeypatch):
+    """Mike's production voice used to depend on a directory created by hand
+    for a benchmark, named as though it were disposable. Where it lives is
+    now discovered, and overridable."""
+    from voice.providers import qwen as qwen_module
+
+    home = tmp_path / "chosen"
+    (home / "bin").mkdir(parents=True)
+    (home / "bin" / "python").write_text("#!/bin/sh\n")
+    monkeypatch.setenv("MIKE_VOICE_HOME", str(home))
+
+    assert qwen_module.voice_home() == home
+
+
+def test_no_installation_at_all_is_reported_clearly(tmp_path, monkeypatch):
+    from voice.providers import qwen as qwen_module
+
+    monkeypatch.setenv("MIKE_VOICE_HOME", str(tmp_path / "nowhere"))
+    monkeypatch.setattr(qwen_module.Path, "home", staticmethod(lambda: tmp_path))
+
+    ok, why = qwen_module.QwenVoice().available()
+    assert not ok
+    assert "not installed" in why
 
 
 def test_a_missing_interpreter_is_reported_not_crashed(tmp_path):
@@ -481,3 +515,22 @@ def test_stopping_discards_the_queued_remainder_of_the_reply():
     provider._pending = [(1, "first"), (2, "second"), (3, "third")]
     provider.stop()
     assert provider._pending == []
+
+
+def test_worker_scratch_directories_do_not_accumulate(tmp_path, monkeypatch):
+    """Each worker writes audio chunks to a scratch directory. A worker that
+    is killed cannot clean up after itself, so the parent sweeps — including
+    directories orphaned by a previous run that never shut down."""
+    import tempfile
+
+    from voice.providers.qwen import QwenVoice
+
+    monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
+    orphans = [tmp_path / f"mike-qwen-tts-{i}" for i in range(3)]
+    for path in orphans:
+        path.mkdir()
+        (path / "chunk_000001.wav").write_bytes(b"leftover")
+
+    QwenVoice._sweep_workspaces()
+
+    assert not any(p.exists() for p in orphans), "scratch directories survived"
