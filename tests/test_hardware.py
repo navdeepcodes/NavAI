@@ -169,3 +169,74 @@ def test_a_boolean_is_not_accepted_where_a_number_belongs(tmp_path, monkeypatch)
 
     preferences.set_value("voice_rate", True)
     assert preferences.get("voice_rate") == 185
+
+
+# ── what a model costs, beside what it can do ─────────────
+
+def test_locality_is_derived_rather_than_declared():
+    """A provider that reaches the network is not local however it is
+    labelled, so this follows from the provider rather than a flag someone
+    has to remember to set."""
+    from brain.providers.base import Capabilities
+
+    assert Capabilities(model="qwen3.5:9b", provider="ollama").is_local
+    assert not Capabilities(model="gpt", provider="openai").is_local
+    assert not Capabilities(model="deepseek", provider="deepseek").is_local
+
+
+def test_an_unmeasured_cost_is_unknown_rather_than_no():
+    """"We have not measured this" and "this does not fit" are different
+    answers, and a caller that conflates them will refuse models it has
+    simply never tried."""
+    from brain.providers.base import Capabilities
+
+    caps = Capabilities(model="qwen3.5:9b", provider="ollama")
+    assert caps.fits_on(current()) is None
+
+
+def test_a_measured_model_is_judged_against_real_headroom():
+    from brain.hardware import Machine
+    from brain.providers.base import Capabilities
+
+    roomy = Machine(
+        system="Darwin", architecture="arm64", chip="test", cpu_cores=8,
+        total_memory_gb=32.0, available_memory_gb=20.0, swap_used_gb=0.0,
+        free_disk_gb=100.0, unified_memory=True, metal=True,
+    )
+    cramped = Machine(
+        system="Darwin", architecture="arm64", chip="test", cpu_cores=8,
+        total_memory_gb=8.0, available_memory_gb=4.0, swap_used_gb=2.0,
+        free_disk_gb=20.0, unified_memory=True, metal=True,
+    )
+    caps = Capabilities(model="qwen3.5:9b", provider="ollama") \
+        .with_observation(observed_resident_gb=6.2)
+
+    assert caps.fits_on(roomy) is True
+    assert caps.fits_on(cramped) is False
+
+
+def test_a_cloud_model_has_no_local_footprint_to_judge():
+    from brain.providers.base import Capabilities
+
+    caps = Capabilities(model="gpt", provider="openai") \
+        .with_observation(observed_resident_gb=6.2)
+    assert caps.fits_on(current()) is None, "a cloud model was judged on local memory"
+
+
+def test_only_observations_can_be_set_from_a_run():
+    """Declarations describe what a model claims and observations describe
+    what it did. Letting a run overwrite a declaration erases the distinction
+    the class exists for, and can() would have nothing left to prefer."""
+    import pytest
+
+    from brain.providers.base import Capabilities
+
+    caps = Capabilities(model="m", provider="ollama")
+    with pytest.raises(ValueError) as exc:
+        caps.with_observation(declared_tools=False)
+    assert "not observations" in str(exc.value)
+
+    updated = caps.with_observation(observed_tools=True, observed_first_token_ms=620)
+    assert updated.observed_tools is True
+    assert updated.observed_first_token_ms == 620
+    assert updated.declared_tools is caps.declared_tools

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import json
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from typing import Any, Iterator, Literal
 
 
@@ -160,6 +160,40 @@ class Capabilities:
     observed_streaming: bool | None = None
     observed_notes: tuple[str, ...] = ()
 
+    # ── what it costs to run, as opposed to what it can do ──
+    #
+    # Kept beside the capabilities rather than in a separate table because
+    # they answer the same question from two directions: "can this model do
+    # the job" and "can this machine hold it while doing so". A model that
+    # fits perfectly and swaps the machine is not a usable model.
+    #
+    # Both are None until measured. There is deliberately no declared
+    # equivalent: a published parameter count does not tell you what a
+    # quantised build costs resident on a particular machine, and a published
+    # benchmark does not tell you what it does on this one.
+    observed_resident_gb: float | None = None
+    observed_first_token_ms: int | None = None
+
+    @property
+    def is_local(self) -> bool:
+        """Does this run on the user's machine?
+
+        Derived rather than declared, so it cannot disagree with reality: a
+        provider that reaches the network is not local however it is
+        labelled.
+        """
+        return self.provider in ("ollama", "local", "mlx")
+
+    def fits_on(self, machine, reserve_gb: float = 3.0) -> bool | None:
+        """Can this machine hold this model right now?
+
+        None means unknown — the cost has not been measured — which is a
+        different answer from "no" and callers should treat it that way.
+        """
+        if not self.is_local or self.observed_resident_gb is None:
+            return None
+        return machine.can_host(self.observed_resident_gb, reserve_gb)
+
     def can(self, what: Literal["text", "vision", "tools", "streaming", "thinking"]) -> bool:
         """Observation wins over declaration; declaration is the fallback."""
         observed = {
@@ -178,6 +212,21 @@ class Capabilities:
         }[what]
 
     def with_observation(self, **kwargs: Any) -> "Capabilities":
+        """A copy carrying what Mike just measured.
+
+        Only the observed_* fields may be set this way. Declarations describe
+        what a model claims and observations describe what it did; letting an
+        observation overwrite a declaration would erase the distinction the
+        whole class is built on, and `can()` would have nothing left to
+        prefer.
+        """
+        allowed = {f.name for f in fields(self) if f.name.startswith("observed_")}
+        unknown = set(kwargs) - allowed
+        if unknown:
+            raise ValueError(
+                f"{sorted(unknown)} are not observations. Only observed_* "
+                "fields can be set from a real run."
+            )
         return replace(self, **kwargs)
 
     def explain(self) -> str:
