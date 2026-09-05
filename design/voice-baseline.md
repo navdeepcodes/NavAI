@@ -145,10 +145,12 @@ to start all leave the core runtime answering.
    synthesis. Replacing it cannot make Mike meaningfully faster to talk to.
 2. **The current engine is free.** Zero resident memory, zero GPU, 17% of one
    core while actually speaking.
-3. **Barge-in is nearly instant and would not be, with a neural engine.**
-   4.6 ms is `terminate()` on a subprocess. A model generating audio in-process
-   has to be interrupted at a chunk boundary and has to unload or idle
-   somewhere.
+3. **Barge-in is nearly instant.** 4.6 ms is `terminate()` on a subprocess.
+   *(This section originally predicted that a neural engine would be
+   substantially worse here. It was measured afterwards and the prediction was
+   wrong — abandoning a streaming MLX generator costs 0.1–0.6 ms, and the
+   committed-audio tail is bounded by the streaming interval. See
+   `design/tts-candidate-qwen3.md`.)*
 4. **Voice quality is the one real weakness.** `say -v Samantha` is a 2005-era
    formant-ish concatenative voice, and it is what makes Mike sound like a
    utility. That is a quality argument, not a latency or resource argument, and

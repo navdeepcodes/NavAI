@@ -1,10 +1,23 @@
-"""macOS native text-to-speech using the say command."""
+"""Mike's speaking voice.
+
+This used to *be* the macOS `say` command. It now drives a VoiceProvider, so
+which voice Mike speaks in is a choice rather than an assumption baked into
+every call site. The queueing, sentence-splitting and streaming behaviour
+above it is unchanged, because that logic was never about `say`.
+
+The fallback rule is the important part. A neural voice can fail in ways the
+system voice cannot — a worker that will not start, a model that produces
+nothing, a generation that runs away. Whenever that happens the utterance is
+handed to the native voice and Mike finishes the sentence. Mike never goes
+silent because the good voice broke.
+"""
 from __future__ import annotations
 
 import re
-import subprocess
 
 from logs.logger import logger
+from voice.providers import VoiceProvider, get_provider
+from voice.providers.native import NativeVoice
 
 VOICE = "Samantha"
 RATE = 185
@@ -15,31 +28,68 @@ _SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
 
 class Speaker:
 
-    def __init__(self) -> None:
-        self._process: subprocess.Popen | None = None
+    def __init__(self, provider: VoiceProvider | None = None) -> None:
         self._queue: list[str] = []
         self._streaming = False
+        # The native voice is held separately from the configured one: it is
+        # the fallback, so it must exist even when it is not the default.
+        self._native = NativeVoice()
+        self._provider = provider or self._configured_provider(self._native)
+        self._fell_back = False
+
+    @staticmethod
+    def _configured_provider(native: NativeVoice) -> VoiceProvider:
+        """The configured voice, reusing the fallback instance when they are
+        the same thing.
+
+        Returning a second NativeVoice when native is the configured choice
+        left Mike holding two of them. Behaviour survived it — stop() stops
+        both — but one voice should be one object, and the duplicate made
+        "which one is actually speaking?" ambiguous.
+        """
+        try:
+            from config import preferences
+
+            choice = str(preferences.get("voice_provider", "native") or "native")
+        except Exception:
+            return native
+
+        if choice.strip().lower() in ("", "native", "macos", "say", "samantha"):
+            return native
+        provider = get_provider(choice)
+        return native if provider.name == "native" else provider
+
+    @property
+    def provider_name(self) -> str:
+        return self._provider.name
+
+    @property
+    def fell_back(self) -> bool:
+        """True if the configured voice failed and the native one covered."""
+        return self._fell_back
+
+    def _say(self, text: str) -> None:
+        """Speak through the configured provider, falling back if it cannot."""
+        if self._provider is not self._native:
+            if self._provider.speak(text):
+                return
+            self._fell_back = True
+            logger.warning(
+                "Voice provider %r could not speak (%s); using the native voice.",
+                self._provider.name,
+                getattr(self._provider, "last_failure", "no reason given"),
+            )
+        self._native.speak(text)
 
     def speak(self, text: str) -> None:
         if not text or not text.strip():
             return
-
         self.stop()
-
         clean = clean_for_speech(text)
         if not clean:
             return
-
-        try:
-            self._process = subprocess.Popen(
-                ["say", "-v", VOICE, "-r", str(RATE), clean],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            logger.info("Speaking (%s %dwpm): %s", VOICE, RATE, clean[:80])
-        except Exception as exc:
-            logger.exception("TTS failed: %s", exc)
-            self._process = None
+        logger.info("Speaking (%s): %s", self._provider.name, clean[:80])
+        self._say(clean)
 
     def speak_sentence(self, sentence: str) -> None:
         clean = clean_for_speech(sentence)
@@ -57,16 +107,8 @@ class Speaker:
         if not self._queue:
             return
         text = self._queue.pop(0)
-        try:
-            self._process = subprocess.Popen(
-                ["say", "-v", VOICE, "-r", str(RATE), text],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            logger.info("Speaking chunk (%s %dwpm): %s", VOICE, RATE, text[:60])
-        except Exception as exc:
-            logger.exception("TTS failed: %s", exc)
-            self._process = None
+        logger.info("Speaking chunk (%s): %s", self._provider.name, text[:60])
+        self._say(text)
 
     def pump(self) -> None:
         if self.is_speaking():
@@ -81,26 +123,27 @@ class Speaker:
     def stop(self) -> None:
         self._queue.clear()
         self._streaming = False
-        if self._process is not None:
-            try:
-                self._process.terminate()
-                self._process.wait(timeout=1)
-            except Exception:
-                try:
-                    self._process.kill()
-                except Exception:
-                    pass
-            self._process = None
+        # Both, always. After a fallback the native voice may be the one
+        # making noise even though the configured provider is the Qwen one,
+        # and stopping only the configured provider would leave it talking.
+        self._provider.stop()
+        if self._provider is not self._native:
+            self._native.stop()
 
     def is_speaking(self) -> bool:
-        if self._process is None:
-            return False
-        return self._process.poll() is None
+        return self._provider.is_speaking() or (
+            self._provider is not self._native and self._native.is_speaking()
+        )
 
+    def shutdown(self) -> None:
+        """Release the provider. Called from the app's teardown path."""
+        try:
+            self._provider.shutdown()
+        except Exception:
+            logger.exception("Voice provider shutdown failed.")
+        if self._provider is not self._native:
+            self._native.stop()
 
-# ==========================================================
-# Text sanitizer
-# ==========================================================
 
 _EMOJI_RE = re.compile(
     "["

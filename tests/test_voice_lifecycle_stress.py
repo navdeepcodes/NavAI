@@ -228,7 +228,9 @@ def test_speech_can_be_interrupted_mid_utterance():
     speaker.stop()
 
     assert not speaker.is_speaking()
-    assert speaker._process is None, "the say process was left behind"
+    # The process now belongs to the provider rather than to Speaker. The
+    # guarantee is the same one, checked where the process actually lives.
+    assert speaker._native._process is None, "the say process was left behind"
 
 
 def test_a_new_utterance_replaces_the_one_in_progress():
@@ -239,10 +241,11 @@ def test_a_new_utterance_replaces_the_one_in_progress():
     speaker = Speaker()
     speaker.speak("The first sentence, which is quite long and will be cut off.")
     time.sleep(0.3)
-    first = speaker._process
+    first = speaker._native._process
+    assert first is not None
 
     speaker.speak("The second sentence.")
-    assert speaker._process is not first
+    assert speaker._native._process is not first
     assert first.poll() is not None, "the first utterance was left running"
     speaker.stop()
 
@@ -279,8 +282,8 @@ def test_twenty_speak_stop_cycles_leave_no_processes():
     processes = []
     for _ in range(20):
         speaker.speak("Testing one two three.")
-        if speaker._process:
-            processes.append(speaker._process)
+        if speaker._native._process:
+            processes.append(speaker._native._process)
         speaker.stop()
 
     assert not speaker.is_speaking()
