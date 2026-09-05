@@ -39,7 +39,23 @@ from voice.providers.base import VoiceProvider
 DEFAULT_PYTHON = Path.home() / ".mike-tts-bench" / "bin" / "python"
 DEFAULT_HF_HOME = Path.home() / ".mike-tts-bench" / "hf"
 
-MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit"
+MODEL = "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit"
+
+# The nine voices this model ships with, and what they actually sound like.
+# Recorded here rather than left to be rediscovered: the English-native ones
+# are the short list for Mike, and the rest are here so the choice is visible
+# rather than hidden in a model card.
+VOICES = {
+    "Ryan":     "dynamic male, strong rhythmic drive (English)",
+    "Aiden":    "sunny American male, clear midrange (English)",
+    "Serena":   "warm, gentle young female (Chinese-native)",
+    "Vivian":   "bright, slightly edgy young female (Chinese-native)",
+    "Uncle_Fu": "seasoned male, low mellow timbre (Chinese-native)",
+    "Dylan":    "youthful Beijing male, clear natural timbre (Chinese-native)",
+    "Eric":     "lively Chengdu male, husky brightness (Chinese-native)",
+    "Ono_Anna": "playful Japanese female, light nimble timbre (Japanese-native)",
+    "Sohee":    "warm Korean female, rich emotion (Korean-native)",
+}
 
 # Measured: the model loads in ~1.2 s alone, slower with the brain resident.
 STARTUP_TIMEOUT = 90.0
@@ -54,10 +70,18 @@ class QwenVoice(VoiceProvider):
     name = "qwen"
 
     def __init__(self, python: Path | None = None, model: str = MODEL,
-                 voice: str = "Chelsie", chunk_seconds: float = 0.5) -> None:
+                 voice: str | None = None, instruct: str | None = None,
+                 chunk_seconds: float = 0.5) -> None:
         self._python = Path(python or os.environ.get("MIKE_QWEN_PYTHON", DEFAULT_PYTHON))
         self._model = model
-        self._voice = voice
+        self._voice = voice or self._preference("voice_qwen_speaker", "Ryan")
+        # How Mike should sound, in words. Configurable because the right
+        # answer is a matter of taste rather than of engineering, and because
+        # a person should be able to change it without editing code.
+        self._instruct = (
+            instruct if instruct is not None
+            else self._preference("voice_qwen_instruct", "")
+        )
         self._chunk_seconds = chunk_seconds
 
         self._proc: subprocess.Popen | None = None
@@ -74,6 +98,16 @@ class QwenVoice(VoiceProvider):
         self._last_failure = ""
         self._last_truncation = ""
 
+    @staticmethod
+    def _preference(key: str, default: str) -> str:
+        try:
+            from config import preferences
+
+            return str(preferences.get(key, default) or default)
+        except Exception:
+            return default
+
+
     # ── availability ──────────────────────────────────────
 
     def available(self) -> tuple[bool, str]:
@@ -84,6 +118,9 @@ class QwenVoice(VoiceProvider):
         weights = DEFAULT_HF_HOME / "hub" / f"models--{self._model.replace('/', '--')}"
         if not weights.exists():
             return False, f"model weights are not downloaded ({self._model})"
+        if self._voice not in VOICES:
+            return False, (f"unknown voice {self._voice!r}; this model has: "
+                           + ", ".join(sorted(VOICES)))
         return True, f"Qwen3-TTS 4-bit ({self._voice})"
 
     # ── the worker ────────────────────────────────────────
@@ -102,6 +139,7 @@ class QwenVoice(VoiceProvider):
             env["HF_HOME"] = str(DEFAULT_HF_HOME)
             env["MIKE_QWEN_TTS_MODEL"] = self._model
             env["MIKE_QWEN_TTS_VOICE"] = self._voice
+            env["MIKE_QWEN_TTS_INSTRUCT"] = self._instruct
             env["MIKE_QWEN_TTS_CHUNK"] = str(self._chunk_seconds)
             worker = Path(__file__).parent / "qwen_worker.py"
 

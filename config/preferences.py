@@ -25,6 +25,25 @@ DEFAULTS: dict[str, Any] = {
     "voice_enabled": True,
     "voice_name": "Samantha",
     "voice_rate": 185,
+
+    # Which voice Mike speaks in. "native" is the macOS `say` voice above and
+    # is always available; "qwen" is the local neural voice, which is only
+    # used if its model and runtime are present and falls back here if not.
+    #
+    # These have to be declared to exist. set_value() silently drops anything
+    # not listed in this dict — deliberately, so a stale file cannot smuggle
+    # in settings — which meant the voice choice could be read but never
+    # saved, and every attempt to configure it looked like it had worked.
+    "voice_provider": "native",
+    "voice_qwen_speaker": "Ryan",
+
+    # How Mike should sound, in plain English, handed to the model as its
+    # `instruct` input. Chosen by listening: positive situational framing
+    # ("picking up a conversation") produced natural delivery where adjectives
+    # and negations ("do not perform") produced a slow, over-articulated
+    # reading of every word. Keep it short — instructions past roughly 60
+    # characters destabilised generation and truncated sentences mid-word.
+    "voice_qwen_instruct": "Picking up a conversation. Calm, grounded, matter-of-fact.",
     "wake_word_enabled": True,
     "edge_enabled": True,
     "reduced_motion": False,

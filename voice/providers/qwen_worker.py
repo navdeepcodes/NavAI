@@ -32,10 +32,21 @@ import time
 import wave
 
 MODEL = os.environ.get("MIKE_QWEN_TTS_MODEL",
-                       "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit")
-VOICE = os.environ.get("MIKE_QWEN_TTS_VOICE", "Chelsie")
+                       "mlx-community/Qwen3-TTS-12Hz-0.6B-CustomVoice-4bit")
+VOICE = os.environ.get("MIKE_QWEN_TTS_VOICE", "Ryan")
+
+# Natural-language delivery control. Empty means the voice's own default.
+# This is the model's `instruct` input: "speak warmly", "sound unhurried",
+# "brisk and matter-of-fact". It shapes tone and pace without changing which
+# voice is speaking, which is exactly the knob Mike wants — one assistant,
+# adjustable manner.
+INSTRUCT = os.environ.get("MIKE_QWEN_TTS_INSTRUCT", "").strip()
+
 CHUNK_SECONDS = float(os.environ.get("MIKE_QWEN_TTS_CHUNK", "0.5"))
 SAMPLE_RATE = 24000
+
+# Measured: the model emits roughly 100 codec tokens per second of audio.
+TOKENS_PER_SECOND = 100
 
 
 def emit(obj: dict) -> None:
@@ -80,7 +91,8 @@ def main() -> None:
         return
 
     workdir = tempfile.mkdtemp(prefix="mike-qwen-tts-")
-    emit({"event": "ready", "model": MODEL, "voice": VOICE, "workdir": workdir})
+    emit({"event": "ready", "model": MODEL, "voice": VOICE,
+          "instruct": INSTRUCT, "workdir": workdir})
 
     seq = 0
     for line in sys.stdin:
@@ -113,10 +125,20 @@ def main() -> None:
         stopped = None
 
         try:
-            for chunk in model.generate(
-                text=text, voice=VOICE, verbose=False,
-                stream=True, streaming_interval=CHUNK_SECONDS,
-            ):
+            # Two limits that must agree. The duration ceiling below stops a
+            # runaway; this stops generation hitting a token cap first and
+            # cutting a normal sentence off mid-word — measured at ~100
+            # tokens per second of audio, and the convenience wrapper's
+            # default of 1200 truncated roughly a quarter of Mike-length
+            # sentences at exactly 12.00 seconds. Derived from the same
+            # ceiling so the two can never drift apart.
+            options = {"text": text, "voice": VOICE, "verbose": False,
+                       "stream": True, "streaming_interval": CHUNK_SECONDS,
+                       "max_tokens": int(limit * TOKENS_PER_SECOND * 1.2)}
+            if INSTRUCT:
+                options["instruct"] = INSTRUCT
+
+            for chunk in model.generate(**options):
                 audio = getattr(chunk, "audio", chunk)
                 samples = np.asarray(mx.array(audio).astype(mx.float32))
                 samples = np.clip(samples.reshape(-1), -1.0, 1.0)

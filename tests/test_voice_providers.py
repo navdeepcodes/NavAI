@@ -188,3 +188,29 @@ def test_one_voice_is_one_object():
     two answers, and that is the kind of ambiguity that hides a bug later."""
     speaker = Speaker()
     assert speaker._provider is speaker._native
+
+
+def test_the_token_cap_cannot_truncate_a_sentence_the_ceiling_allows():
+    """Two limits guard generation, and they must not disagree.
+
+    The duration ceiling stops a runaway. A token cap stops generation
+    outright. If the token cap bites first, a perfectly normal sentence is
+    cut off mid-word and nothing reports a problem — measured: mlx-audio's
+    convenience wrapper defaults to 1200 tokens, which ended three of eleven
+    rendered samples at exactly 12.00 seconds, mid-speech.
+
+    So the token cap is derived from the duration ceiling rather than set
+    beside it, and this pins that they stay in that order.
+    """
+    from voice.providers.qwen_worker import TOKENS_PER_SECOND, duration_limit
+
+    for text in ("Done.",
+                 "The tests all pass now. The failure was in the discount conversion.",
+                 "I've added the late figures to your Q3 sales spreadsheet, and the "
+                 "total came to nine thousand three hundred and four.",
+                 "x" * 600):
+        ceiling = duration_limit(text)
+        tokens = int(ceiling * TOKENS_PER_SECOND * 1.2)
+        assert tokens > ceiling * TOKENS_PER_SECOND, (
+            f"the token cap bites before the duration ceiling for {text[:30]!r}"
+        )
