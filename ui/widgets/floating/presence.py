@@ -53,7 +53,6 @@ class PresenceIndicator(QWidget):
     glow = Property(float, _get_glow, _set_glow)
 
     def set_state(self, state: str) -> None:
-        prev = self._state
         self._state = state
 
         self._glow_anim.stop()

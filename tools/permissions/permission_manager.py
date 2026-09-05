@@ -3,7 +3,6 @@ from logs.logger import logger
 from tools.tool_permission import Permission
 
 from tools.permissions.policies import (
-    SAFE,
     CONFIRM,
     BLOCKED,
 )

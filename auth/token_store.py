@@ -1,4 +1,3 @@
-import json
 import os
 
 TOKEN_FILE = "storage/token.json"

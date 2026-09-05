@@ -10,8 +10,13 @@ Tests cover:
 """
 from __future__ import annotations
 
+import sys
 import unittest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from tests import _isolate  # noqa: F401,E402 — must run before any brain/config import
 
 from brain.core_tools import (
     DISPATCH,
@@ -58,26 +63,38 @@ class TestActionCardParsing(unittest.TestCase):
 
 class TestVisionAnalyzerLocal(unittest.TestCase):
 
-    @patch("vision.analyzer.ollama.Client")
-    def test_uses_local_ollama(self, mock_client_cls):
-        analyzer = VisionAnalyzer()
-        self.assertIsNotNone(analyzer._client)
-        mock_client_cls.assert_called_once()
+    # VisionAnalyzer no longer owns a model client — images go through the
+    # provider boundary like every other model call. These tests keep their
+    # original guarantees (vision stays local, and the image path actually
+    # reaches the model) and assert them against the new path.
 
-    @patch("vision.analyzer.ollama.Client")
-    def test_analyze_sends_image_path(self, mock_client_cls):
-        mock_client = MagicMock()
-        mock_client.chat.return_value = MagicMock(
-            message=MagicMock(content="A desktop with a browser open")
-        )
-        mock_client_cls.return_value = mock_client
-
+    def test_uses_a_local_provider(self):
         analyzer = VisionAnalyzer()
+        caps = analyzer._brain.capabilities()
+        self.assertEqual(caps.provider, "ollama", "vision must stay local")
+        self.assertTrue(caps.can("vision"), "the configured vision model must see")
+
+    def test_analyze_sends_image_path_to_the_model(self):
+        # A provider of this test's own, so mutating its client cannot leak
+        # into the shared cached provider other tests rely on.
+        from brain.providers.ollama_provider import OllamaProvider
+        from config.ollama import OLLAMA_HOST, OLLAMA_VISION_MODEL
+
+        provider = OllamaProvider(model=OLLAMA_VISION_MODEL, host=OLLAMA_HOST)
+
+        seen = {}
+
+        def fake_chat(**kwargs):
+            seen.update(kwargs)
+            return MagicMock(
+                message=MagicMock(content="A desktop with a browser open")
+            )
+
+        provider._client = MagicMock(chat=fake_chat)
+        analyzer = VisionAnalyzer(provider=provider)
         result = analyzer.analyze("/tmp/test.png", "Describe the screen")
 
-        call_args = mock_client.chat.call_args
-        msgs = call_args.kwargs.get("messages") or call_args[1].get("messages")
-        self.assertEqual(msgs[0]["images"], ["/tmp/test.png"])
+        self.assertEqual(seen["messages"][0]["images"], ["/tmp/test.png"])
         self.assertEqual(result, "A desktop with a browser open")
 
 
@@ -150,9 +167,34 @@ class TestNormalConversationNoVision(unittest.TestCase):
             t for t in OLLAMA_TOOLS
             if t["function"]["name"] == "see_screen"
         )
-        desc = tool["function"]["description"]
-        self.assertIn("explicitly", desc.lower())
-        self.assertNotIn("automatic", desc.lower())
+        desc = tool["function"]["description"].lower()
+        # The guarantee here changed deliberately with the computer-control
+        # work, and this test changed with it rather than being deleted.
+        #
+        # Before: screen capture happened only when the user asked for it.
+        # Now: vision is also the fallback for surfaces the accessibility tree
+        # cannot describe -- canvas, drawn content, apps that expose no tree --
+        # which necessarily means Mike may capture the screen on its own
+        # initiative during a computer-use task.
+        #
+        # What still must hold is that it is never the casual or default way
+        # to look at an application. see_ui reads the same window as text in
+        # ~0.04s against ~3-10s for vision, so the declaration has to steer
+        # the model there first and describe capture as a fallback. That is
+        # the property worth protecting, and it is what is asserted.
+        self.assertIn(
+            "the user asks", desc,
+            "a direct user request must remain a listed reason to look",
+        )
+        self.assertIn(
+            "see_ui", desc,
+            "the declaration must point at the cheaper semantic path first",
+        )
+        self.assertIn(
+            "fallback", desc,
+            "vision must be described as a fallback, not the default",
+        )
+        self.assertNotIn("automatic", desc)
 
 
 if __name__ == "__main__":

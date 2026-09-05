@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -8,7 +7,6 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import colors
-from ui.theme import typography
 from ui.widgets.floating.presence import PresenceIndicator
 
 

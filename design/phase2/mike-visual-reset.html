@@ -1,0 +1,503 @@
+<meta charset="utf-8">
+<title>Mike Visual Reset</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400..600&family=Big+Shoulders+Display:wght@600;800&family=Inter:wght@400;500;600;700&display=swap">
+
+<style>
+/* ============================================================
+   SHELL — this page's own identity (not any of the 3 concepts)
+   ============================================================ */
+:root{
+  --page-ground:#0B0C10;
+  --page-ink:#EDEFF4;
+  --page-dim:#9AA0B4;
+  --page-muted:#5C6178;
+  --page-line:#1C1F2A;
+  --page-accent:#7C6CF0;
+  --sans:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--page-ground);color:var(--page-ink);
+  font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+img{max-width:100%}
+.shell{max-width:1320px;margin:0 auto;padding:0 clamp(20px,4vw,56px) 160px}
+
+/* Masthead — deliberately short, visuals lead */
+.masthead{padding:clamp(56px,9vh,100px) 0 clamp(40px,6vh,64px);border-bottom:1px solid var(--page-line)}
+.eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--page-muted);margin:0 0 22px}
+h1{font-size:clamp(34px,5.4vw,60px);line-height:1.02;letter-spacing:-.025em;margin:0 0 20px;font-weight:700;max-width:15ch;text-wrap:balance}
+.standfirst{font-size:clamp(16px,1.8vw,19px);color:var(--page-dim);max-width:58ch;margin:0}
+
+/* Concept sections */
+.concept{padding:clamp(64px,10vh,110px) 0;border-bottom:1px solid var(--page-line)}
+.concept-head{display:flex;gap:20px;align-items:baseline;margin-bottom:10px}
+.concept-num{font-family:var(--mono);font-size:12px;color:var(--page-accent);letter-spacing:.1em}
+.concept h2{font-size:clamp(30px,4.2vw,46px);letter-spacing:-.02em;margin:0;font-weight:700}
+.concept-tag{font-family:var(--mono);font-size:12px;color:var(--page-muted);margin:0 0 30px;letter-spacing:.02em}
+.concept-thesis{font-size:17px;color:var(--page-dim);max-width:62ch;margin:0 0 44px}
+
+.plan{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin:0 0 48px;font-size:13px}
+.plan > div{border:1px solid var(--page-line);padding:16px 18px;border-radius:6px}
+.plan h4{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--page-muted);margin:0 0 10px;font-weight:500}
+.swatches{display:flex;gap:6px;margin-bottom:2px}
+.sw{width:22px;height:22px;border-radius:4px;border:1px solid rgba(255,255,255,.12);flex:none}
+.plan p{margin:8px 0 0;color:var(--page-dim);line-height:1.5}
+
+.specimens{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:26px;margin-bottom:26px}
+.specimens.wide{grid-template-columns:1fr}
+figure{margin:0}
+figure .frame{border-radius:10px;overflow:hidden;border:1px solid var(--page-line)}
+figcaption{font-family:var(--mono);font-size:11px;color:var(--page-muted);margin-top:12px;letter-spacing:.04em}
+figcaption b{color:var(--page-dim);font-weight:500}
+
+/* ============================================================
+   CONCEPT A — INSTRUMENT
+   Warm, machined, physical. Braun/Teenage-Engineering register.
+   ============================================================ */
+.inst-frame{
+  background:
+    radial-gradient(140% 100% at 30% -10%, #2A251E 0%, transparent 55%),
+    linear-gradient(155deg,#211D18,#17140F 70%);
+  position:relative;font-family:var(--sans);color:#EDE6D9;
+  min-height:260px;
+}
+.inst-frame::before{
+  content:'';position:absolute;inset:0;
+  background-image:repeating-linear-gradient(115deg, rgba(255,255,255,.012) 0 2px, transparent 2px 5px);
+  pointer-events:none;
+}
+.inst-rivet{position:absolute;width:5px;height:5px;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%, #6B6053, #221D17 75%);
+  box-shadow:0 1px 0 rgba(255,255,255,.06);
+}
+.inst-label{font-family:'Barlow Semi Condensed',sans-serif;font-weight:600;font-size:10.5px;
+  letter-spacing:.14em;text-transform:uppercase;color:#8A7F6E;}
+.inst-readout{font-family:var(--mono);font-size:12.5px;color:#EDE6D9;line-height:1.6}
+.inst-dial-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 20px 26px}
+.inst-groove{position:relative}
+.inst-groove::after{content:'';position:absolute;inset:-14px;border-radius:50%;
+  box-shadow:inset 0 2px 4px rgba(0,0,0,.55), inset 0 -1px 0 rgba(255,255,255,.04);}
+
+/* ============================================================
+   CONCEPT B — STUDIO
+   macOS-native glass + depth. Confident violet/coral.
+   ============================================================ */
+.studio-frame{
+  position:relative;min-height:260px;overflow:hidden;
+  background:#0E1016;
+  font-family:'Inter',sans-serif;
+}
+.studio-desk{
+  /* A pre-softened mesh via wide radial stops, not filter:blur — three of
+     these compositing side by side with backdrop-filter glass on top is
+     expensive enough to visibly stall a browser. Soft gradient stops read
+     as "blurred" without paying for a real blur pass. */
+  position:absolute;inset:0;
+  background:
+    radial-gradient(55% 70% at 20% 15%, rgba(108,79,224,.55) 0%, rgba(108,79,224,0) 70%),
+    radial-gradient(50% 65% at 88% 10%, rgba(47,184,166,.42) 0%, rgba(47,184,166,0) 68%),
+    radial-gradient(65% 75% at 55% 95%, rgba(255,122,89,.4) 0%, rgba(255,122,89,0) 65%),
+    linear-gradient(160deg,#181A22,#101218);
+  opacity:.85;
+}
+.studio-frame.studio-hero .studio-desk{
+  /* The one flagship shot keeps the real blur — it's a single instance. */
+  filter:blur(38px) saturate(115%);
+  inset:-20%;
+  opacity:.55;
+}
+.studio-desk .win{position:absolute;background:#1B1D26;border:1px solid rgba(255,255,255,.06);border-radius:8px}
+.glass{
+  position:relative;background:rgba(28,26,38,.62);
+  backdrop-filter:blur(22px) saturate(140%);-webkit-backdrop-filter:blur(22px) saturate(140%);
+  border:1px solid rgba(255,255,255,.10);
+  border-radius:18px;
+  box-shadow:0 24px 60px -12px rgba(0,0,0,.55), 0 2px 0 rgba(255,255,255,.05) inset;
+}
+.studio-frame .iris-dot{width:8px;height:8px;border-radius:50%;background:#7B61FF;box-shadow:0 0 14px 2px rgba(123,97,255,.65)}
+
+/* ============================================================
+   CONCEPT C — SIGNAL
+   Bold ink + flame. Editorial, graphic, confident.
+   ============================================================ */
+.signal-frame{
+  background:linear-gradient(165deg,#22111A,#160B12 75%);
+  position:relative;min-height:260px;font-family:var(--sans);color:#F5EAE3;
+}
+.signal-bracket{font-family:'Big Shoulders Display',sans-serif;font-weight:800;color:#FF5B35;line-height:.8}
+.signal-flame-block{background:#FF5B35;color:#1A0E12}
+.signal-headline{font-family:'Fraunces',serif;font-optical-sizing:auto;font-weight:500;letter-spacing:-.01em}
+
+/* ============================================================
+   COMPARISON + VERDICT
+   ============================================================ */
+.compare{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--page-line);border:1px solid var(--page-line);margin:0 0 40px}
+.compare > div{background:var(--page-ground);padding:24px 24px 28px}
+.compare h4{font-size:19px;margin:0 0 14px;font-weight:700}
+.compare p{font-size:14px;color:var(--page-dim);line-height:1.6;margin:0 0 14px}
+.compare p:last-child{margin-bottom:0}
+.compare b{color:var(--page-ink)}
+.compare code{font-family:var(--mono);font-size:.9em;color:#9d94c9}
+
+.verdict{border:1px solid var(--page-line);border-left:3px solid var(--page-accent);padding:30px 34px;border-radius:2px}
+.v-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--page-accent);margin:0 0 16px}
+.v-body{font-size:16.5px;line-height:1.65;color:var(--page-dim);max-width:74ch;margin:0 0 16px}
+.v-body:last-child{margin-bottom:0}
+.v-body b{color:var(--page-ink)}
+.v-body i{color:var(--page-ink);font-style:normal}
+@media(max-width:820px){.compare{grid-template-columns:1fr}}
+</style>
+
+<div class="shell">
+
+<header class="masthead">
+  <p class="eyebrow">Visual reset · exploration, not prescription</p>
+  <h1>Three ideas for what Mike could actually look like</h1>
+  <p class="standfirst">No shared design system between these — each is built as if it were the only answer. Judge them as products, not palettes.</p>
+</header>
+
+<!-- ══════════════════ CONCEPT A — INSTRUMENT ══════════════════ -->
+<section class="concept">
+  <div class="concept-head"><span class="concept-num">01</span><h2>Instrument</h2></div>
+  <p class="concept-tag">machined · warm · physical</p>
+  <p class="concept-thesis">Mike isn't software pretending to be intelligent — he's built like a well-made instrument. A dial, not an orb. Brushed metal and engraved labels instead of glow. The register is Braun, Teenage Engineering, a good amplifier: things you trust because they feel <em>made</em>, not rendered.</p>
+
+  <div class="plan">
+    <div>
+      <h4>Colour</h4>
+      <div class="swatches">
+        <div class="sw" style="background:#17140F"></div>
+        <div class="sw" style="background:#26221D"></div>
+        <div class="sw" style="background:#4A443C"></div>
+        <div class="sw" style="background:#E8935A"></div>
+        <div class="sw" style="background:#EDE6D9"></div>
+      </div>
+      <p>Warm near-black ground (never pure black), brushed-metal mid-tones, one copper-amber signal colour.</p>
+    </div>
+    <div>
+      <h4>Type</h4>
+      <p><b style="color:#DDD">Barlow Semi Condensed</b> for engraved panel labels · <b style="color:#DDD">IBM Plex Mono</b> for readouts · system sans for what Mike actually says.</p>
+    </div>
+    <div>
+      <h4>Layout</h4>
+      <p>A control-panel grid. Bezelled zones, inset grooves, rivets in the corners — real physical tells, not decoration.</p>
+    </div>
+  </div>
+
+  <div class="specimens">
+    <figure>
+      <div class="frame inst-frame" style="min-height:220px">
+        <div class="inst-rivet" style="top:12px;left:12px"></div>
+        <div class="inst-rivet" style="top:12px;right:12px"></div>
+        <div class="inst-rivet" style="bottom:12px;left:12px"></div>
+        <div class="inst-rivet" style="bottom:12px;right:12px"></div>
+        <div class="inst-dial-wrap">
+          <div class="inst-groove">
+            <svg width="88" height="88" viewBox="0 0 88 88">
+              <circle cx="44" cy="44" r="38" fill="none" stroke="#2E2820" stroke-width="1"/>
+              <circle cx="44" cy="44" r="30" fill="url(#metalA)" stroke="#0F0D0A" stroke-width="1"/>
+              <defs>
+                <radialGradient id="metalA" cx="35%" cy="30%" r="75%">
+                  <stop offset="0%" stop-color="#5B5347"/>
+                  <stop offset="70%" stop-color="#39332A"/>
+                  <stop offset="100%" stop-color="#221E18"/>
+                </radialGradient>
+              </defs>
+              <g stroke="#655B49" stroke-width="1">
+                <line x1="44" y1="10" x2="44" y2="15"/>
+                <line x1="44" y1="73" x2="44" y2="78" transform="rotate(180 44 44)"/>
+                <line x1="10" y1="44" x2="15" y2="44" transform="rotate(90 44 44)"/>
+                <line x1="10" y1="44" x2="15" y2="44" transform="rotate(-90 44 44)"/>
+              </g>
+              <line x1="44" y1="44" x2="44" y2="20" stroke="#E8935A" stroke-width="2" stroke-linecap="round" transform="rotate(-18 44 44)"/>
+              <circle cx="44" cy="44" r="3.5" fill="#E8935A"/>
+            </svg>
+          </div>
+          <div style="margin-top:16px" class="inst-label">standing by</div>
+        </div>
+      </div>
+      <figcaption><b>Idle.</b> The needle rests off-centre, never dead-zero — it reads as "on", not "off". No motion; a machine at rest still looks like a machine.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="frame inst-frame" style="min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div style="text-align:center">
+          <svg width="64" height="64" viewBox="0 0 64 64" style="margin-bottom:14px">
+            <circle cx="32" cy="32" r="26" fill="none" stroke="#3A322A" stroke-width="1"/>
+            <circle cx="32" cy="32" r="26" fill="none" stroke="#E8935A" stroke-width="2.5"
+              stroke-dasharray="163.4" stroke-dashoffset="41" stroke-linecap="round" transform="rotate(-90 32 32)"/>
+            <circle cx="32" cy="32" r="19" fill="#221E18"/>
+          </svg>
+          <div class="inst-label" style="color:#E8935A">listening</div>
+          <div class="inst-readout" style="margin-top:6px;color:#8A7F6E">— · — · — dB</div>
+        </div>
+      </div>
+      <figcaption><b>Invocation.</b> The dial becomes a level meter — the amber arc is the actual mic input, not a loop. Feels instrumented, not decorative.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="frame inst-frame" style="min-height:220px;padding:22px">
+        <div class="inst-label">active — 2 of ? readings</div>
+        <div style="display:flex;gap:16px;align-items:flex-start;margin-top:14px">
+          <svg width="46" height="46" viewBox="0 0 46 46" style="flex:none;margin-top:2px">
+            <circle cx="23" cy="23" r="19" fill="none" stroke="#3A322A" stroke-width="1"/>
+            <circle cx="23" cy="23" r="19" fill="none" stroke="#E8935A" stroke-width="2"
+              stroke-dasharray="119.4" stroke-dashoffset="30" stroke-linecap="round" transform="rotate(-90 23 23)"/>
+          </svg>
+          <div class="inst-readout">
+            <span style="color:#5F5749">read&nbsp; vite.config.js</span><br>
+            <span style="color:#5F5749">list&nbsp; public/</span><br>
+            <span style="color:#EDE6D9">run&nbsp;&nbsp; npm run dev</span>
+          </div>
+        </div>
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid #2E2820" class="inst-readout" style="color:#EDE6D9">
+          Watching src/ only — public/ is served statically.
+        </div>
+      </div>
+      <figcaption><b>Active.</b> The gauge sweeps per step; the readout window below is where Mike's own words appear — visually a different material (flush text, no gauge) from the machine log above it.</figcaption>
+    </figure>
+
+    <figure class="wide" style="grid-column:1/-1">
+      <div class="frame inst-frame" style="min-height:340px;padding:28px 32px;display:grid;grid-template-columns:150px 1fr;gap:34px">
+        <div class="inst-rivet" style="top:14px;left:14px"></div>
+        <div class="inst-rivet" style="top:14px;right:14px"></div>
+        <div class="inst-rivet" style="bottom:14px;left:14px"></div>
+        <div class="inst-rivet" style="bottom:14px;right:14px"></div>
+        <div style="display:flex;flex-direction:column;align-items:center;padding-top:18px">
+          <svg width="108" height="108" viewBox="0 0 108 108">
+            <circle cx="54" cy="54" r="46" fill="url(#metalHome)" stroke="#0F0D0A" stroke-width="1.5"/>
+            <defs>
+              <radialGradient id="metalHome" cx="35%" cy="28%" r="75%">
+                <stop offset="0%" stop-color="#5B5347"/><stop offset="70%" stop-color="#39332A"/><stop offset="100%" stop-color="#1D1913"/>
+              </radialGradient>
+            </defs>
+            <circle cx="54" cy="54" r="46" fill="none" stroke="#E8935A" stroke-width="2.5"
+              stroke-dasharray="289" stroke-dashoffset="70" stroke-linecap="round" transform="rotate(-90 54 54)"/>
+            <line x1="54" y1="54" x2="54" y2="24" stroke="#EDE6D9" stroke-width="1.5" transform="rotate(40 54 54)"/>
+          </svg>
+          <div class="inst-label" style="margin-top:14px">apostle · repo</div>
+          <div class="inst-readout" style="color:#6B6355;font-size:11px;margin-top:4px">6 readings today</div>
+        </div>
+        <div>
+          <div class="inst-label" style="margin-bottom:10px">panel — conversation</div>
+          <div style="border-top:1px solid #2E2820;padding-top:16px">
+            <div style="font-size:15.5px;line-height:1.6;color:#EDE6D9">Two tests were failing on the same assertion — <span style="color:#E8935A">compute()</span> was comparing a string to a number.</div>
+            <div class="inst-readout" style="margin-top:12px;color:#6B6355">
+              read&nbsp; test_compute.py<br>write&nbsp; compute.py&nbsp; +3 −1<br>run&nbsp;&nbsp;&nbsp; pytest&nbsp; <span style="color:#7FA87A">14 passed</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:22px;margin-top:26px;padding-top:16px;border-top:1px solid #2E2820" class="inst-label">
+            <span style="color:#E8935A;border-bottom:1.5px solid #E8935A;padding-bottom:6px">now</span>
+            <span>record</span><span>conduct</span>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>Home.</b> A control-panel composition — the dial as hero object, bezelled zones, an engraved label rail. Reads as a device you'd want on a desk, not a window you tolerate.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════════════ CONCEPT B — STUDIO ══════════════════ -->
+<section class="concept">
+  <div class="concept-head"><span class="concept-num">02</span><h2>Studio</h2></div>
+  <p class="concept-tag">glass · depth · macOS-native</p>
+  <p class="concept-thesis">Mike as real material, not a flat panel — vibrancy, blur, and layered depth the way macOS itself already speaks. The familiar command-bar pattern, executed with actual craft: true backdrop blur, coloured ambient shadow, generous radii. Confident violet against a warm coral for attention.</p>
+
+  <div class="plan">
+    <div>
+      <h4>Colour</h4>
+      <div class="swatches">
+        <div class="sw" style="background:#0E1016"></div>
+        <div class="sw" style="background:#1C1A26"></div>
+        <div class="sw" style="background:#7B61FF"></div>
+        <div class="sw" style="background:#2FB8A6"></div>
+        <div class="sw" style="background:#FF7A59"></div>
+      </div>
+      <p>Cool ink ground, glass panels tinted violet, iris-violet as identity, coral reserved for attention.</p>
+    </div>
+    <div>
+      <h4>Type</h4>
+      <p>System sans (Inter/SF) for all UI chrome · <b style="color:#DDD">Fraunces</b> — warm, characterful serif — for the one moment Mike's own words get to be the hero.</p>
+    </div>
+    <div>
+      <h4>Layout</h4>
+      <p>Floating glass over a visibly blurred desktop. Real depth via shadow layering, not flat cards with borders.</p>
+    </div>
+  </div>
+
+  <div class="specimens">
+    <figure>
+      <div class="frame studio-frame" style="min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div class="studio-desk"><div class="win" style="top:20%;left:10%;width:90px;height:60px"></div><div class="win" style="top:55%;left:60%;width:110px;height:70px"></div></div>
+        <div style="position:relative;display:flex;align-items:center;gap:8px;padding:9px 16px;border-radius:100px;background:rgba(20,18,28,.55);backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.08)">
+          <span class="iris-dot" style="box-shadow:none;opacity:.7"></span>
+          <span style="font-size:12px;color:rgba(237,235,244,.6)">Mike</span>
+        </div>
+      </div>
+      <figcaption><b>Idle.</b> A small pill in the menu-bar corner — barely there, translucent over whatever's behind it. Presence without a panel.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="frame studio-frame" style="min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div class="studio-desk"><div class="win" style="top:15%;left:8%;width:100px;height:65px"></div><div class="win" style="top:60%;left:65%;width:90px;height:55px"></div></div>
+        <div class="glass" style="position:relative;width:78%;padding:16px 20px;display:flex;align-items:center;gap:13px">
+          <span class="iris-dot"></span>
+          <span style="font-size:15px;color:#F0EEF8">Ask, or just talk</span>
+          <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:rgba(240,238,248,.4)">⌘⇧space</span>
+        </div>
+      </div>
+      <figcaption><b>Invocation.</b> True <code style="color:#9d94c9">backdrop-filter</code> blur — the desktop behind visibly distorts through the glass. Violet dot breathes; the bar itself doesn't glow.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="frame studio-frame" style="min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div class="studio-desk"><div class="win" style="top:12%;left:12%;width:95px;height:60px"></div></div>
+        <div class="glass" style="position:relative;width:80%;padding:18px 20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+            <span class="iris-dot" style="background:#FF7A59;box-shadow:0 0 14px 2px rgba(255,122,89,.6)"></span>
+            <span style="font-family:var(--mono);font-size:11px;color:rgba(240,238,248,.55)">run npm run dev</span>
+          </div>
+          <div style="height:1px;background:rgba(255,255,255,.08);margin:12px 0"></div>
+          <div style="font-family:'Fraunces',serif;font-size:16px;color:#F5F3F7;line-height:1.5">It's watching <i>src/</i> only — that's why editing <i>public/</i> never reloaded.</div>
+        </div>
+      </div>
+      <figcaption><b>Active → answered.</b> Coral marks work-in-progress; once Mike speaks, the glass panel switches register to the warm serif. Depth stays constant — only the content changes.</figcaption>
+    </figure>
+
+    <figure class="wide" style="grid-column:1/-1">
+      <div class="frame studio-frame studio-hero" style="min-height:360px;display:flex;align-items:center;justify-content:center;padding:26px">
+        <div class="studio-desk"><div class="win" style="top:8%;left:6%;width:120px;height:80px"></div><div class="win" style="top:65%;left:70%;width:100px;height:60px"></div></div>
+        <div class="glass" style="position:relative;width:100%;max-width:640px;padding:30px 34px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:22px">
+            <div style="display:flex;align-items:center;gap:9px"><span class="iris-dot"></span><span style="font-size:12px;color:rgba(240,238,248,.5)">VS Code · vite.config.js</span></div>
+            <div style="font-family:var(--mono);font-size:10px;color:rgba(240,238,248,.35)">14:22</div>
+          </div>
+          <div style="font-family:'Fraunces',serif;font-size:22px;line-height:1.4;color:#F5F3F7;margin-bottom:16px">It's watching <i>src/</i> only — I moved <i>app.js</i> into it and restarted the dev server.</div>
+          <div style="font-family:var(--mono);font-size:11px;color:rgba(240,238,248,.4);line-height:1.9;padding:14px 0;border-top:1px solid rgba(255,255,255,.08);border-bottom:1px solid rgba(255,255,255,.08)">
+            move&nbsp; public/app.js → src/app.js<br>run&nbsp;&nbsp;&nbsp; npm run dev &nbsp; <span style="color:#7FE0C4">ready in 340ms</span>
+          </div>
+          <div style="display:flex;gap:22px;margin-top:20px;font-size:12px;color:rgba(240,238,248,.45)">
+            <span style="color:#F0EEF8;border-bottom:1.5px solid #7B61FF;padding-bottom:5px">Now</span><span>Record</span><span>Conduct</span>
+          </div>
+        </div>
+      </div>
+      <figcaption><b>Home.</b> One glass card floating centred over a softly blurred desktop — real elevation via layered shadow, not a full-bleed window. Warm serif carries Mike's voice; mono carries fact.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════════════ CONCEPT C — SIGNAL ══════════════════ -->
+<section class="concept">
+  <div class="concept-head"><span class="concept-num">03</span><h2>Signal</h2></div>
+  <p class="concept-tag">bold · editorial · graphic</p>
+  <p class="concept-thesis">The risk-taking one. Mike as a confident graphic mark — a bracket that opens when he's present — rendered big, not restrained to a single pixel of colour. Deep ink ground, one flame accent used generously in full colour blocks. Home reads like a magazine spread, not a utility panel.</p>
+
+  <div class="plan">
+    <div>
+      <h4>Colour</h4>
+      <div class="swatches">
+        <div class="sw" style="background:#160B12"></div>
+        <div class="sw" style="background:#22111A"></div>
+        <div class="sw" style="background:#FF5B35"></div>
+        <div class="sw" style="background:#F5EAE3"></div>
+        <div class="sw" style="background:#8A7A78"></div>
+      </div>
+      <p>Deep ink-wine ground, one flame accent used boldly — full colour blocks, not a lone highlight.</p>
+    </div>
+    <div>
+      <h4>Type</h4>
+      <p><b style="color:#DDD">Big Shoulders Display</b> — tall, poster-weight — for the bracket mark and headlines · <b style="color:#DDD">Fraunces</b> for Mike's statements · mono for fact.</p>
+    </div>
+    <div>
+      <h4>Layout</h4>
+      <p>Colour-blocked, editorial. The bracket mark is the identity — it opens, holds, and closes as a real graphic event.</p>
+    </div>
+  </div>
+
+  <div class="specimens">
+    <figure>
+      <div class="frame signal-frame" style="min-height:220px;display:flex;align-items:center;justify-content:center">
+        <div class="signal-bracket" style="font-size:64px;opacity:.85">[</div>
+      </div>
+      <figcaption><b>Idle.</b> A single bracket, barely open, breathing at low opacity. Not a dot, not an orb — a mark with real typographic weight.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="frame signal-frame" style="min-height:220px;display:flex;align-items:center;justify-content:center;gap:2px">
+        <div class="signal-bracket" style="font-size:96px">[</div>
+        <div style="font-family:'Fraunces',serif;font-size:19px;color:#F5EAE3">listening</div>
+        <div class="signal-bracket" style="font-size:96px">]</div>
+      </div>
+      <figcaption><b>Invocation.</b> The bracket snaps fully open — a real graphic beat, ~200ms — and holds while Mike is present. Closes the instant he's not.</figcaption>
+    </figure>
+
+    <figure>
+      <div class="frame signal-frame" style="min-height:220px;padding:26px">
+        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:18px">
+          <span class="signal-bracket" style="font-size:34px">[</span>
+          <span style="font-family:var(--mono);font-size:11px;color:#C99C90;letter-spacing:.06em">RUN npm run dev</span>
+        </div>
+        <div class="signal-headline" style="font-size:21px;color:#F5EAE3">It's watching <i style="color:#FF5B35">src/</i> only.</div>
+        <div class="signal-flame-block" style="display:inline-block;margin-top:16px;padding:5px 12px;border-radius:3px;font-family:var(--mono);font-size:10.5px;font-weight:500">14 PASSED</div>
+      </div>
+      <figcaption><b>Active → done.</b> A completion gets an actual colour block, not a grey checkmark — earned, because it only ever appears on a real success.</figcaption>
+    </figure>
+
+    <figure class="wide" style="grid-column:1/-1">
+      <div class="frame signal-frame" style="min-height:380px;padding:0;display:grid;grid-template-columns:1fr 1.5fr">
+        <div class="signal-flame-block" style="padding:34px 28px;display:flex;flex-direction:column;justify-content:space-between">
+          <div class="signal-bracket" style="font-size:54px">[</div>
+          <div>
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;font-weight:600">Now</div>
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;margin-top:10px">Record</div>
+            <div style="font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;opacity:.6;margin-top:10px">Conduct</div>
+          </div>
+        </div>
+        <div style="padding:34px 32px">
+          <div style="font-family:var(--mono);font-size:10.5px;color:#C99C90;letter-spacing:.05em;margin-bottom:16px">VS CODE · VITE.CONFIG.JS · 14:22</div>
+          <div class="signal-headline" style="font-size:27px;color:#F5EAE3;line-height:1.35">It's watching <i style="color:#FF5B35">src/</i> only — I moved <i style="color:#FF5B35">app.js</i> in and restarted the server.</div>
+          <div style="font-family:var(--mono);font-size:11px;color:#8A7A78;line-height:1.9;margin-top:22px;padding-top:16px;border-top:1px solid #35202A">
+            move&nbsp; public/app.js → src/app.js<br>run&nbsp;&nbsp;&nbsp; npm run dev
+          </div>
+          <div class="signal-flame-block" style="display:inline-block;margin-top:18px;padding:5px 12px;border-radius:3px;font-family:var(--mono);font-size:10.5px;font-weight:500">READY IN 340MS</div>
+        </div>
+      </div>
+      <figcaption><b>Home.</b> Colour-blocked like a magazine spread — the flame panel carries navigation as a permanent graphic identity, not a thin text row at the bottom.</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════════════ COMPARISON ══════════════════ -->
+<section class="concept" style="border-bottom:none">
+  <div class="concept-head"><span class="concept-num">▸</span><h2 style="font-size:clamp(26px,3.6vw,36px)">Honestly, against each other</h2></div>
+
+  <div class="compare">
+    <div>
+      <h4 style="color:#E8935A">Instrument</h4>
+      <p><b>Strongest.</b> Completely unclaimed territory — nothing in this space looks like this. Cheap to render: SVG arcs and gradients, no blur, no glow. Solves ambient presence elegantly — a resting dial reads as "on" without being loud.</p>
+      <p><b>Risk.</b> The gauge is built for a glance, not a paragraph. A long conversation inside a control-panel metaphor hasn't been tested here — it may fight dense prose.</p>
+    </div>
+    <div>
+      <h4 style="color:#7B61FF">Studio</h4>
+      <p><b>Strongest.</b> The most immediately expensive-feeling — leverages vibrancy macOS users already trust. Fraunces carries long-form prose better than either other concept's type system.</p>
+      <p><b>Risk — found, not guessed.</b> Stacking real <code>backdrop-filter</code> blur across several frames actually hung this page's renderer while building it. Fixed here by keeping true blur to one hero surface and faking the rest with soft gradients — but it means: one glass panel on screen at a time, never several.</p>
+    </div>
+    <div>
+      <h4 style="color:#FF5B35">Signal</h4>
+      <p><b>Strongest.</b> The one someone screenshots. Real graphic identity, a mark nobody else owns, genuine confidence.</p>
+      <p><b>Risk.</b> The flame block is loud by design — that's the point once, or ten times a day. Whether it's still welcome the five-hundredth time is the real question, and it's the one thing a static mockup can't answer.</p>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <p class="v-eyebrow">My honest pick</p>
+    <p class="v-body">Not one of the three whole — a synthesis, because each is strongest at a different depth. <b>Instrument</b> for D0–D2: the dial <i>is</i> the ambient/edge/invocation identity, unclaimed and nearly free to render, exactly where Mike needs to be glanceable and quiet. <b>Studio</b> for D3 Home: once you're actually dwelling with Mike and reading real conversation, Fraunces-on-glass holds prose in a way a control panel doesn't, and Home only ever shows <i>one</i> glass surface — the exact condition where its rendering cost is a non-issue. <b>Signal</b> I'd hold in reserve — not because it's weaker, but because its confidence is better spent on a single moment (first launch, a genuine win) than worn as the everyday interface.</p>
+    <p class="v-body">That's my read. Tell me if you see it differently — these were built to be argued with, not defended.</p>
+  </div>
+</section>
+
+</div>

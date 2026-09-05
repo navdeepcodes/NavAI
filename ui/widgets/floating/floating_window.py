@@ -2,12 +2,10 @@
 from __future__ import annotations
 
 from PySide6.QtCore import (
-    Qt, Signal, QPoint, QTimer, QPropertyAnimation, QEasingCurve, QSize,
-)
-from PySide6.QtGui import QColor, QPainter, QBrush, QPen, QKeySequence
+    Qt, Signal, QPoint, QTimer, )
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton,
-    QFrame, QGraphicsOpacityEffect, QSizePolicy, QApplication,
+    QFrame, QSizePolicy, QApplication,
 )
 
 from ui.theme import colors, typography

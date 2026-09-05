@@ -10,6 +10,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tests import _isolate  # noqa: F401 — must run before any brain/config import
+
 from brain.core_runtime import CoreRuntime
 from config.ollama import OLLAMA_VISION_MODEL
 

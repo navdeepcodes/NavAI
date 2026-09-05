@@ -79,13 +79,29 @@ def test_missing_file():
 
 
 def test_empty_file():
+    """An unextractable file raises rather than returning an apology.
+
+    This previously asserted that read_document returns the *string*
+    "Could not extract text from this .txt file". That is the behaviour that
+    was wrong: the runtime passed it through as a successful read, so the
+    model received an apology in the slot where the document's contents
+    belong and no way to tell it apart from a file that genuinely says that.
+
+    The test changed with the behaviour rather than being deleted -- the
+    guarantee it protects is stronger now, not weaker.
+    """
+    from tools.filesystem.document_reader import DocumentUnreadable
+
     with tempfile.NamedTemporaryFile(suffix=".txt", delete=False, mode="w") as f:
         f.write("")
         f.flush()
-        result = read_document(f.name)
-        assert "Could not extract" in result
+        try:
+            read_document(f.name)
+            raise AssertionError("an empty file must not read as content")
+        except DocumentUnreadable as exc:
+            assert "No text could be extracted" in str(exc)
     os.unlink(f.name)
-    print("PASS: empty file")
+    print("PASS: an empty file raises instead of returning an apology")
 
 
 def test_read_python_file():

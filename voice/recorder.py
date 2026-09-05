@@ -17,11 +17,32 @@ CHANNELS = 1
 RECORDING_DIR = Path("audio/recordings")
 RECORDING_FILE = RECORDING_DIR / "voice_input.wav"
 
-SPEECH_RMS_THRESHOLD = 0.008
 SILENCE_DURATION = 1.2
 MIN_SPEECH_DURATION = 0.3
 MAX_RECORDING = 30
-RMS_WINDOW = 8
+
+# A fixed threshold can't work across rooms and microphones — measured on
+# this machine, ambient room noise (0.0064 RMS mean) sits only ~25% below
+# the old fixed 0.008 threshold, leaving almost no headroom before ordinary
+# background noise reads as "speech". Instead, the first CALIBRATION_BLOCKS
+# of every recording sample the real noise floor, and the speech threshold
+# is set relative to that — so it adapts to whatever room/mic is actually
+# in use instead of assuming one number fits everyone's hardware.
+CALIBRATION_SECONDS = 0.3
+THRESHOLD_MULTIPLIER = 2.5
+THRESHOLD_FLOOR = 0.004  # absolute minimum, for a near-silent calibration
+
+# Without an explicit blocksize, sounddevice's default 'high' latency mode
+# hands back ~400ms chunks on this hardware (measured) instead of the ~100ms
+# the timing constants above assume — so RMS_WINDOW was really smoothing over
+# up to 3.2s of stale audio, not the ~800ms it looked like. A fixed blocksize
+# makes the callback cadence, and therefore every duration above, actually
+# mean what it says.
+BLOCK_SIZE = 1600  # 100ms @ 16kHz
+BLOCK_SECONDS = BLOCK_SIZE / SAMPLE_RATE
+RMS_WINDOW = 3  # 300ms smoothing — enough to reject a single spike, still snappy
+MIN_SPEECH_BLOCKS = max(1, round(MIN_SPEECH_DURATION / BLOCK_SECONDS))
+CALIBRATION_BLOCKS = max(1, round(CALIBRATION_SECONDS / BLOCK_SECONDS))
 
 
 class PushToTalkRecorder:
@@ -34,9 +55,12 @@ class PushToTalkRecorder:
         self._lock = threading.Lock()
 
         self._speech_detected = False
+        self._speech_blocks = 0
         self._silence_start: float | None = None
         self._record_start: float | None = None
         self._should_auto_stop = False
+        self._calibration: list[float] = []
+        self._speech_threshold: float | None = None
         self._rms_history: collections.deque[float] = collections.deque(maxlen=RMS_WINDOW)
 
     @property
@@ -54,21 +78,29 @@ class PushToTalkRecorder:
 
             self._frames.clear()
             self._speech_detected = False
+            self._speech_blocks = 0
             self._silence_start = None
             self._record_start = time.monotonic()
             self._should_auto_stop = False
             self._rms_history.clear()
+            self._calibration.clear()
+            self._speech_threshold = None
 
             try:
                 self._stream = sd.InputStream(
                     samplerate=SAMPLE_RATE,
                     channels=CHANNELS,
                     dtype="float32",
+                    blocksize=BLOCK_SIZE,
+                    latency="low",
                     callback=self._audio_callback,
                 )
                 self._stream.start()
                 self._recording = True
-                logger.info("Recording started")
+                logger.info(
+                    "Recording started (blocksize=%d, ~%.0fms/callback)",
+                    BLOCK_SIZE, BLOCK_SECONDS * 1000,
+                )
                 return True
             except Exception as exc:
                 logger.exception("Failed to start recording: %s", exc)
@@ -117,20 +149,46 @@ class PushToTalkRecorder:
             return
 
         rms = float(np.sqrt(np.mean(indata ** 2)))
+
+        # First: measure the real noise floor of whatever room and
+        # microphone are actually in use, rather than assuming a single
+        # fixed RMS value works everywhere. No detection decisions are made
+        # on these opening blocks — they're audio for the recording either
+        # way, just not yet used to decide speech vs. silence.
+        if self._speech_threshold is None:
+            self._calibration.append(rms)
+            if len(self._calibration) < CALIBRATION_BLOCKS:
+                return
+            floor = sum(self._calibration) / len(self._calibration)
+            self._speech_threshold = max(floor * THRESHOLD_MULTIPLIER, THRESHOLD_FLOOR)
+            logger.info(
+                "Mic calibrated: noise floor=%.4f -> speech threshold=%.4f",
+                floor, self._speech_threshold,
+            )
+            return
+
         self._rms_history.append(rms)
         avg_rms = sum(self._rms_history) / len(self._rms_history)
         now = time.monotonic()
 
-        if avg_rms >= SPEECH_RMS_THRESHOLD:
-            self._speech_detected = True
+        if avg_rms >= self._speech_threshold:
             self._silence_start = None
-        elif self._speech_detected:
-            if self._silence_start is None:
-                self._silence_start = now
-            elif now - self._silence_start >= SILENCE_DURATION:
-                logger.info("Auto-stop: silence after speech (%.1fs quiet)", SILENCE_DURATION)
-                self._should_auto_stop = True
-                return
+            if not self._speech_detected:
+                # Require sustained level above threshold before treating this
+                # as real speech — a single pop or breath used to latch
+                # `_speech_detected` permanently, which meant the very next
+                # natural pause could look like the end of the sentence.
+                self._speech_blocks += 1
+                if self._speech_blocks >= MIN_SPEECH_BLOCKS:
+                    self._speech_detected = True
+        else:
+            self._speech_blocks = 0
+            if self._speech_detected:
+                if self._silence_start is None:
+                    self._silence_start = now
+                elif now - self._silence_start >= SILENCE_DURATION:
+                    logger.info("Auto-stop: silence after speech (%.1fs quiet)", SILENCE_DURATION)
+                    self._should_auto_stop = True
 
         elapsed = now - self._record_start if self._record_start else 0
         if elapsed >= MAX_RECORDING:

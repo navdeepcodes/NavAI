@@ -29,7 +29,7 @@ def main():
 
     assert email.validate(
 
-        "read_email"
+        "send_email"
 
     )
 

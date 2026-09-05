@@ -60,8 +60,6 @@ class EmailTool(BaseTool):
 
             "send_email": actions.send_email,
 
-            "read_email": actions.read_email,
-
         }
 
     # ---------------------------------------------------------
@@ -85,8 +83,6 @@ class EmailTool(BaseTool):
                 and kwargs.get("body") is not None
 
             ),
-
-            "read_email": lambda: True,
 
         }
 

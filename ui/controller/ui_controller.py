@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import QObject, QThread, QTimer
 
-from brain import activity_store
+from brain import activity_store, projects
 from brain.core_runtime import CoreRuntime
 from config import preferences
 from ui.controller.core_worker import CoreRuntimeWorker
-from ui.edge.edge_surface import EdgeSurface
-from ui.home.home_page import HomePage
-from ui.widgets.floating.floating_window import FloatingWindow
-from voice.speaker import Speaker, clean_for_speech
+from ui.instrument.edge import EdgeStrip
+from ui.instrument.home import HomeSurface
+from ui.instrument.invoke import InvokeLine
+from voice.speaker import Speaker
 from voice.voice_input import VoiceInputManager
 from voice.wake_word import WakeWordDetector
 from logs.logger import logger
@@ -20,9 +20,9 @@ class UIController(QObject):
     def __init__(
         self,
         runtime: CoreRuntime,
-        page: HomePage,
-        floating: FloatingWindow | None = None,
-        edge: EdgeSurface | None = None,
+        page: HomeSurface,
+        floating: InvokeLine | None = None,
+        edge: EdgeStrip | None = None,
     ) -> None:
 
         super().__init__()
@@ -38,6 +38,7 @@ class UIController(QObject):
         self._retired_by_worker: dict = {}
         self._stream_bubble = None
         self._action_card = None
+        self._activity_row: int | None = None
 
         self._voice = VoiceInputManager()
         self._speaker = Speaker()
@@ -168,7 +169,10 @@ class UIController(QObject):
 
         if self._stream_bubble is None:
             self._stream_bubble = self._page.begin_mike_stream()
-            self._wake.suppress()
+            # Deliberately not suppressing the wake word here — this is what
+            # lets "Hey Mike" interrupt him mid-sentence. Verified empirically
+            # against this machine's own TTS output (twice, saying the wake
+            # phrase itself) with zero false triggers before relying on it.
             self._page.input.voice.set_state("speaking")
             self._speech_pump_timer.start()
 
@@ -263,7 +267,10 @@ class UIController(QObject):
         )
 
         # Recorded when it starts, closed out with the tool's real result.
-        self._activity_row = activity_store.begin(description)
+        # Tagged with whatever project is attached right now (via the IDE
+        # workspace root), so this can be filtered per-project later without
+        # a second table — untagged rows just mean "no project was open".
+        self._activity_row = activity_store.begin(description, project_id=projects.current())
 
         if self._floating and self._floating.isVisible():
             self._floating.show_tool_status(description)
@@ -277,6 +284,19 @@ class UIController(QObject):
             or "denied" in status.lower()
         )
         activity_store.complete(self._activity_row, status, not is_failure)
+
+        # If this action was a write or delete, tools/filesystem/actions.py
+        # captured a before-state snapshot right before touching disk — link
+        # it to this row now that the row actually has an id. Only on real
+        # success: a snapshot from a failed write describes a change that
+        # never actually happened, so there's nothing to offer reverting.
+        if not is_failure and self._activity_row is not None:
+            try:
+                from brain import revert_store
+                revert_store.attach_to_activity(self._activity_row)
+            except Exception:
+                logger.exception("Could not attach revert snapshot.")
+
         self._activity_row = None
 
         if self._action_card is not None:
@@ -295,6 +315,30 @@ class UIController(QObject):
             if self._floating and self._floating.isVisible():
                 self._floating.show_tool_done(label or status[:40], success=not is_error)
 
+    def _finalize_retired_activity(self, row_id: int, status: str) -> None:
+        """
+        Same bookkeeping as _on_tool_end, for a tool_start that already fired
+        on a worker retired mid-turn (cancelled, or superseded by a new
+        message) before its tool_end arrived. Deliberately doesn't touch
+        stream/action-card/edge state — that all belongs to whatever turn is
+        current now, not to this one.
+        """
+
+        is_failure = (
+            "error" in status.lower()
+            or "failed" in status.lower()
+            or "cancelled" in status.lower()
+            or "denied" in status.lower()
+        )
+        activity_store.complete(row_id, status, not is_failure)
+
+        if not is_failure:
+            try:
+                from brain import revert_store
+                revert_store.attach_to_activity(row_id)
+            except Exception:
+                logger.exception("Could not attach revert snapshot.")
+
     def _on_finished(self) -> None:
 
         self._page.hide_thinking()
@@ -307,7 +351,7 @@ class UIController(QObject):
         if (self._speech_allowed()
                 and not self._speech_pump_timer.isActive()
                 and self._response_text.strip()):
-            self._wake.suppress()
+            # Same as _on_token: left un-suppressed on purpose, for barge-in.
             self._page.input.voice.set_state("speaking")
             self._speech_pump_timer.start()
 
@@ -466,7 +510,13 @@ class UIController(QObject):
         logger.info("Wake word activated")
 
         if self._speaker.is_speaking():
+            # Barge-in: the wake word firing mid-sentence means "stop talking,
+            # I'm saying something now." Stopping the pump timer here too,
+            # not just the speaker — otherwise its next tick (up to 100ms
+            # away) sees streaming_done and calls floating.finish(), which
+            # would stomp the "listening" state activate() is about to set.
             self._speaker.stop()
+            self._speech_pump_timer.stop()
             self._page.input.voice.set_state("idle")
 
         if self._floating:
@@ -518,10 +568,21 @@ class UIController(QObject):
         old_worker = self._worker
         old_thread = self._thread
 
+        # If a tool_start already fired for this worker, its matching
+        # tool_end hasn't arrived yet — that one event still needs to close
+        # out the activity row and claim any revert snapshot the tool
+        # captured before disk was touched. Losing it would strand the row
+        # at "in progress" forever and, for a write/delete, make its
+        # snapshot permanently unreachable (attach_to_activity is the only
+        # thing that ever links it to a row the UI can show). Route just
+        # that one pending row to a finalizer instead of the normal
+        # handler, which would also touch UI state that now belongs to
+        # whatever comes next.
+        pending_row = self._activity_row
+
         for signal, slot in (
             (old_worker.token, self._on_token),
             (old_worker.tool_start, self._on_tool_start),
-            (old_worker.tool_end, self._on_tool_end),
             (old_worker.finished, self._on_finished),
             (old_worker.error, self._on_error),
             (old_worker.confirmation_needed, self._show_confirmation),
@@ -532,6 +593,17 @@ class UIController(QObject):
                 signal.disconnect(slot)
             except (TypeError, RuntimeError):
                 pass
+
+        try:
+            old_worker.tool_end.disconnect(self._on_tool_end)
+        except (TypeError, RuntimeError):
+            pass
+
+        if pending_row is not None:
+            old_worker.tool_end.connect(
+                lambda status, row=pending_row: self._finalize_retired_activity(row, status)
+            )
+        self._activity_row = None
 
         # Tracked so shutdown can wait on it — a retired thread that's still
         # finishing when the app closes otherwise gets destroyed mid-run.
@@ -643,10 +715,25 @@ class UIController(QObject):
 def _humanize_error(error: str) -> str:
 
     if "connection" in error.lower() or "refused" in error.lower():
-        return (
-            "I couldn't reach the local model.\n\n"
-            "Make sure Ollama is running and try again."
-        )
+        # A generic "make sure it's running" makes the user go troubleshoot
+        # blind. A real check, run right now, tells them which of the two
+        # actual causes it is and gives the exact fix for that one.
+        try:
+            from brain.diagnostics import check_ollama
+            result = check_ollama()
+            if result["reachable"] and result["model_pulled"]:
+                # The check itself passed — this was a one-off hiccup, not
+                # Ollama actually being down. Say that, not "couldn't reach".
+                return (
+                    "That request didn't go through, but Ollama and the "
+                    "model both check out fine — try again."
+                )
+            return f"I couldn't reach the local model.\n\n{result['detail']}"
+        except Exception:
+            return (
+                "I couldn't reach the local model.\n\n"
+                "Make sure Ollama is running and try again."
+            )
 
     if "timeout" in error.lower():
         return "That took too long. Try again with a simpler request."

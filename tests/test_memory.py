@@ -7,6 +7,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tests import _isolate  # noqa: F401 — must run before any brain/config import
+
 
 def test_1_explicit_save():
     """Save a memory and verify it's in SQLite."""
@@ -144,12 +146,50 @@ def test_10_performance():
 
 
 def test_11_db_location():
-    """Database is in Application Support, not the source repo."""
+    """During tests the DB must resolve under the isolated MIKE_DATA_DIR
+    temp directory, never the real per-user Application Support path."""
     from brain.memory_store import db_path
+    from tests._isolate import DATA_DIR
+
     path = db_path()
-    assert "Application Support" in path or "Library" in path
-    assert "NavAI-v0" not in path
-    print(f"PASS: Test 11 — DB at {path}")
+    real_path = os.path.expanduser("~/Library/Application Support/Mike/memory.db")
+    assert DATA_DIR in path, f"expected test DB under {DATA_DIR}, got {path}"
+    assert path != real_path, "test DB must not be the real production database"
+    print(f"PASS: Test 11 — DB isolated at {path}")
+
+
+def _real_prod_snapshot() -> tuple[bool, int, float]:
+    """Reads the REAL production DB directly, bypassing MIKE_DATA_DIR — used
+    only to prove this suite never touches it, never to test behavior."""
+    import sqlite3
+
+    real_path = os.path.expanduser("~/Library/Application Support/Mike/memory.db")
+    if not os.path.exists(real_path):
+        return (False, 0, 0.0)
+    conn = sqlite3.connect(real_path)
+    try:
+        count = conn.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+    except sqlite3.OperationalError:
+        count = -1
+    finally:
+        conn.close()
+    return (True, count, os.path.getmtime(real_path))
+
+
+_PROD_SNAPSHOT_BEFORE = _real_prod_snapshot()
+
+
+def test_13_production_db_untouched():
+    """Regression proof: running this destructive suite (forget-everything,
+    clear-all, 50-row perf fill, ...) must never change the real production
+    database. This is the exact incident this isolation was built to
+    prevent — verified directly, not assumed."""
+    after = _real_prod_snapshot()
+    assert after == _PROD_SNAPSHOT_BEFORE, (
+        f"production memory.db changed during tests! "
+        f"before={_PROD_SNAPSHOT_BEFORE} after={after}"
+    )
+    print(f"PASS: Test 13 — production DB untouched ({after})")
 
 
 def test_12_tools_registered():
@@ -177,4 +217,5 @@ if __name__ == "__main__":
     test_10_performance()
     test_11_db_location()
     test_12_tools_registered()
+    test_13_production_db_untouched()
     print("\nAll Memory V1 tests passed.")

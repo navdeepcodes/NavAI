@@ -5,7 +5,7 @@ later feed: set_context("VS Code", "huddle") instead of the frontmost app.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from brain import environment

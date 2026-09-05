@@ -1,12 +1,17 @@
 """Mike's persistent memory — SQLite V1."""
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
-_DB_DIR = Path.home() / "Library" / "Application Support" / "Mike"
+# MIKE_DATA_DIR overrides the real per-user data directory — set by
+# tests/_isolate.py (or a pytest fixture) so tests can never touch the
+# production database. Unset in normal app runs.
+_DB_DIR = Path(os.environ["MIKE_DATA_DIR"]) if os.environ.get("MIKE_DATA_DIR") \
+    else Path.home() / "Library" / "Application Support" / "Mike"
 _DB_PATH = _DB_DIR / "memory.db"
 
 VALID_CATEGORIES = frozenset({
@@ -33,8 +38,16 @@ def _connect() -> sqlite3.Connection:
         CREATE INDEX IF NOT EXISTS idx_memories_category
         ON memories(category)
     """)
+    _migrate_project_scoped(conn)
     conn.commit()
     return conn
+
+
+def _migrate_project_scoped(conn: sqlite3.Connection) -> None:
+    """A plain nullable column — existing memories stay global (NULL)."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(memories)")]
+    if "project_id" not in cols:
+        conn.execute("ALTER TABLE memories ADD COLUMN project_id INTEGER")
 
 
 _conn: sqlite3.Connection | None = None
@@ -47,7 +60,9 @@ def _db() -> sqlite3.Connection:
     return _conn
 
 
-def remember(content: str, category: str = "fact") -> dict[str, Any]:
+def remember(
+    content: str, category: str = "fact", project_id: int | None = None
+) -> dict[str, Any]:
     if not content or not content.strip():
         return {"status": "error", "error": "Empty memory content."}
 
@@ -58,7 +73,9 @@ def remember(content: str, category: str = "fact") -> dict[str, Any]:
     content = content.strip()
     now = time.time()
 
-    existing = _find_similar(content, category)
+    # Scoped to the same project — a project-specific "you prefer X" and a
+    # different global "you prefer X" shouldn't silently overwrite each other.
+    existing = _find_similar(content, category, project_id)
     if existing:
         _db().execute(
             "UPDATE memories SET content = ?, updated_at = ? WHERE id = ?",
@@ -72,8 +89,9 @@ def remember(content: str, category: str = "fact") -> dict[str, Any]:
         }
 
     _db().execute(
-        "INSERT INTO memories (content, category, created_at, updated_at) VALUES (?, ?, ?, ?)",
-        (content, category, now, now),
+        "INSERT INTO memories (content, category, created_at, updated_at, project_id) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (content, category, now, now, project_id),
     )
     _db().commit()
     return {
@@ -83,7 +101,9 @@ def remember(content: str, category: str = "fact") -> dict[str, Any]:
     }
 
 
-def recall(query: str = "", category: str = "") -> dict[str, Any]:
+def recall(
+    query: str = "", category: str = "", project_id: int | None = None
+) -> dict[str, Any]:
     query = query.strip()
     category = category.strip().lower()
 
@@ -100,6 +120,19 @@ def recall(query: str = "", category: str = "") -> dict[str, Any]:
             conditions.append("content LIKE ?")
             params.append(f"%{kw}%")
 
+    # Always scoped, project_id=None included: "no project attached" means
+    # global-only, not "ignore scoping entirely" — otherwise a memory saved
+    # inside one project would leak into a completely unrelated context the
+    # moment no project happens to be open, which defeats the point of
+    # scoping it in the first place. Inclusive the other direction though —
+    # inside a real project, Mike still sees global facts (your hardware,
+    # your general preferences) alongside whatever's project-specific.
+    if project_id is not None:
+        conditions.append("(project_id = ? OR project_id IS NULL)")
+        params.append(project_id)
+    else:
+        conditions.append("project_id IS NULL")
+
     where = " AND ".join(conditions) if conditions else "1=1"
     sql = f"SELECT * FROM memories WHERE {where} ORDER BY updated_at DESC LIMIT 20"
 
@@ -114,39 +147,127 @@ def recall(query: str = "", category: str = "") -> dict[str, Any]:
         {"id": r["id"], "content": r["content"], "category": r["category"]}
         for r in rows
     ]
-    return {"status": "success", "memories": memories}
+    # Every other tool reports what happened under "result", and the runtime's
+    # activity log reads that key. Returning only "memories" meant a
+    # successful recall was logged as "Done" while the empty and no-match
+    # cases -- which do set "result" -- were described properly. The data
+    # still reached the model through the full tool payload, so this was a
+    # reporting inconsistency rather than a lost recall, but anything reading
+    # the documented key saw nothing.
+    summary = "; ".join(m["content"] for m in memories[:5])
+    if len(memories) > 5:
+        summary += f" (and {len(memories) - 5} more)"
+    return {
+        "status": "success",
+        "memories": memories,
+        "result": f"Recalled {len(memories)} memory(s): {summary}",
+    }
+
+
+class ForgetSelection:
+    """The exact set of memories a forget request names.
+
+    Confirmation and deletion both read this, so the list the user is shown
+    is built by the same code that decides what gets removed. A preview
+    computed by separate logic could describe one set and delete another,
+    which is the failure mode a confirmation exists to prevent.
+    """
+
+    __slots__ = ("where", "params", "scope", "error")
+
+    def __init__(self, where: str = "", params: list | None = None,
+                 scope: str = "", error: str = ""):
+        self.where = where
+        self.params = params or []
+        self.scope = scope
+        self.error = error
+
+    @property
+    def valid(self) -> bool:
+        return not self.error
+
+    def rows(self) -> list[dict[str, Any]]:
+        if not self.valid:
+            return []
+        return [
+            dict(r) for r in _db().execute(
+                f"SELECT id, content, category FROM memories WHERE {self.where} "
+                "ORDER BY updated_at DESC",
+                self.params,
+            ).fetchall()
+        ]
+
+
+def forget_selection(query: str = "", memory_id: int | None = None) -> ForgetSelection:
+    """Resolve a forget request to a selector, without touching anything."""
+    if memory_id is not None:
+        return ForgetSelection("id = ?", [memory_id], f"memory {memory_id}")
+
+    query = (query or "").strip()
+
+    if query.lower() in ("everything", "all", "all memories"):
+        return ForgetSelection("1=1", [], "every stored memory")
+
+    if not query:
+        return ForgetSelection(error="Provide a query or memory_id to forget.")
+
+    keywords = query.split()
+    where = " AND ".join("content LIKE ?" for _ in keywords)
+    return ForgetSelection(where, [f"%{kw}%" for kw in keywords],
+                           f"memories matching {query!r}")
+
+
+def preview_forget(query: str = "", memory_id: int | None = None) -> dict[str, Any]:
+    """What a forget call would remove. Reads only."""
+    selection = forget_selection(query, memory_id)
+    if not selection.valid:
+        return {"status": "error", "error": selection.error, "memories": []}
+    rows = selection.rows()
+    return {"status": "success", "scope": selection.scope, "memories": rows}
 
 
 def forget(query: str = "", memory_id: int | None = None) -> dict[str, Any]:
-    if memory_id is not None:
-        cur = _db().execute("DELETE FROM memories WHERE id = ?", (memory_id,))
-        _db().commit()
-        if cur.rowcount:
-            return {"status": "success", "result": f"Deleted memory {memory_id}."}
-        return {"status": "error", "error": f"No memory with id {memory_id}."}
+    selection = forget_selection(query, memory_id)
+    if not selection.valid:
+        return {"status": "error", "error": selection.error}
 
-    if query and query.strip().lower() in ("everything", "all", "all memories"):
-        cur = _db().execute("DELETE FROM memories")
-        _db().commit()
-        return {"status": "success", "result": f"Deleted all {cur.rowcount} memories."}
+    # Read the doomed rows before deleting them, so the result can name what
+    # went rather than only how many.
+    doomed = selection.rows()
 
-    if not query:
-        return {"status": "error", "error": "Provide a query or memory_id to forget."}
+    if not doomed:
+        if memory_id is not None:
+            return {"status": "error", "error": f"No memory with id {memory_id}."}
+        return {"status": "success", "result": "No matching memories to forget.",
+                "deleted": 0}
 
-    keywords = query.strip().split()
-    conditions = [f"content LIKE ?" for kw in keywords]
-    params = [f"%{kw}%" for kw in keywords]
-
-    where = " AND ".join(conditions)
-    cur = _db().execute(f"DELETE FROM memories WHERE {where}", params)
+    _db().execute(f"DELETE FROM memories WHERE {selection.where}", selection.params)
     _db().commit()
 
-    if cur.rowcount:
-        return {"status": "success", "result": f"Forgot {cur.rowcount} matching memory(s)."}
-    return {"status": "success", "result": "No matching memories to forget."}
+    # Independent verification: re-run the same selector against the database
+    # and require it to come back empty. rowcount is the driver's own report
+    # of its work; this reads the stored state instead.
+    survivors = selection.rows()
+    if survivors:
+        return {
+            "status": "error",
+            "error": (
+                f"Tried to forget {len(doomed)} memory(s) but {len(survivors)} "
+                "still exist afterwards. Nothing should be assumed deleted."
+            ),
+        }
+
+    gone = "; ".join(m["content"][:60] for m in doomed[:5])
+    if len(doomed) > 5:
+        gone += f" (and {len(doomed) - 5} more)"
+    return {
+        "status": "success",
+        "result": f"Forgot {len(doomed)} memory(s), verified gone: {gone}",
+        "deleted": len(doomed),
+    }
 
 
-def auto_recall(message: str) -> list[dict]:
+def auto_recall(message: str, project_id: int | None = None) -> list[dict]:
     """Fast keyword search for automatic context injection."""
     words = message.lower().split()
     stop = {"the", "a", "an", "is", "are", "was", "were", "what", "where",
@@ -159,9 +280,13 @@ def auto_recall(message: str) -> list[dict]:
     if not keywords:
         return []
 
-    conditions = [f"LOWER(content) LIKE ?" for kw in keywords]
-    params = [f"%{kw}%" for kw in keywords]
+    conditions = ["LOWER(content) LIKE ?" for _ in keywords]
+    params: list[Any] = [f"%{kw}%" for kw in keywords]
     where = " OR ".join(conditions)
+
+    if project_id is not None:
+        where = f"({where}) AND (project_id = ? OR project_id IS NULL)"
+        params.append(project_id)
 
     rows = _db().execute(
         f"SELECT DISTINCT content, category FROM memories WHERE {where} "
@@ -172,7 +297,9 @@ def auto_recall(message: str) -> list[dict]:
     return [{"content": r["content"], "category": r["category"]} for r in rows]
 
 
-def _find_similar(content: str, category: str) -> dict | None:
+def _find_similar(
+    content: str, category: str, project_id: int | None = None
+) -> dict | None:
     """Find an existing memory that's similar enough to update."""
     stop = {"the", "a", "an", "is", "are", "in", "on", "at", "to", "for",
             "of", "and", "or", "my", "i", "that", "this", "it", "with",
@@ -182,10 +309,18 @@ def _find_similar(content: str, category: str) -> dict | None:
     if not words:
         return None
 
-    rows = _db().execute(
-        "SELECT * FROM memories WHERE category = ? ORDER BY updated_at DESC",
-        (category,),
-    ).fetchall()
+    if project_id is None:
+        rows = _db().execute(
+            "SELECT * FROM memories WHERE category = ? AND project_id IS NULL "
+            "ORDER BY updated_at DESC",
+            (category,),
+        ).fetchall()
+    else:
+        rows = _db().execute(
+            "SELECT * FROM memories WHERE category = ? AND project_id = ? "
+            "ORDER BY updated_at DESC",
+            (category, project_id),
+        ).fetchall()
 
     for row in rows:
         row_words = set(row["content"].lower().split())
@@ -198,3 +333,18 @@ def _find_similar(content: str, category: str) -> dict | None:
 
 def db_path() -> str:
     return str(_DB_PATH)
+
+
+def all_memories(limit: int = 500) -> list[dict[str, Any]]:
+    """
+    Every memory, newest first — for a UI that shows the whole list rather
+    than a tool searching for something specific. recall() is capped at 20
+    and built for the model's own lookups; this is the same table, no cap
+    that matters in practice, meant for a person reading the full list.
+    """
+    rows = _db().execute(
+        "SELECT id, content, category, created_at, updated_at "
+        "FROM memories ORDER BY updated_at DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    return [dict(r) for r in rows]

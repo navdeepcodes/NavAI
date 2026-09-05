@@ -7,13 +7,18 @@ one JSON file next to the memory database.
 from __future__ import annotations
 
 import json
+import os
 import threading
 from pathlib import Path
 from typing import Any
 
 from logs.logger import logger
 
-_DIR = Path.home() / "Library" / "Application Support" / "Mike"
+# MIKE_DATA_DIR overrides the real per-user data directory — set by
+# tests/_isolate.py (or a pytest fixture) so tests can never touch the
+# real preferences file. Unset in normal app runs.
+_DIR = Path(os.environ["MIKE_DATA_DIR"]) if os.environ.get("MIKE_DATA_DIR") \
+    else Path.home() / "Library" / "Application Support" / "Mike"
 _PATH = _DIR / "preferences.json"
 
 DEFAULTS: dict[str, Any] = {
@@ -23,6 +28,7 @@ DEFAULTS: dict[str, Any] = {
     "wake_word_enabled": True,
     "edge_enabled": True,
     "reduced_motion": False,
+    "onboarding_complete": False,
 }
 
 _lock = threading.Lock()

@@ -1,7 +1,6 @@
 """Microphone button with voice interaction states."""
 from __future__ import annotations
 
-import math
 
 from PySide6.QtCore import Qt, Signal, QTimer, QRectF
 from PySide6.QtGui import QColor, QPainter, QPen

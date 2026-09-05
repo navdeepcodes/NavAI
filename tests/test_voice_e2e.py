@@ -7,6 +7,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tests import _isolate  # noqa: F401 — must run before any brain/config import
+
 
 def test_recorder():
     """Test push-to-talk recorder: start, wait, stop."""

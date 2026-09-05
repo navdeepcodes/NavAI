@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QFrame,
     QLabel,
     QVBoxLayout,
-    QWidget,
 )
 
 from ui.theme import colors, spacing

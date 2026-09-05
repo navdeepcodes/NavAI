@@ -53,8 +53,16 @@ def test_clean_inline_code():
 
 
 def test_clean_emojis():
-    assert clean_for_speech("Done! 🚀") == "Done!"
-    assert clean_for_speech("Great job! 😂👍") == "Great job!"
+    # clean_for_speech both strips emoji and inserts macOS `say` pause
+    # directives ([[slnc N]]) for natural delivery. The contract under test is
+    # that no emoji survives, so the assertion checks that rather than exact
+    # equality, which broke when breathing pauses were added.
+    spoken = clean_for_speech("Done! 🚀")
+    assert "🚀" not in spoken
+    assert spoken.startswith("Done!")
+    multi = clean_for_speech("Great job! 😂👍")
+    assert "😂" not in multi and "👍" not in multi
+    assert multi.startswith("Great job!")
     assert clean_for_speech("✅ Success") == "Success"
     assert clean_for_speech("❌ Failed") == "Failed"
     assert "rocket" not in clean_for_speech("Done! 🚀").lower()

@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 
+# Runtime logs — the file is needed on disk, not in history
+logs/*.log
+
 # Virtual Environment
 venv/
 
@@ -10,15 +13,35 @@ venv/
 .env.*
 !.env.example
 
-# Credentials — never track real OAuth/token files
+# Credentials — never track real OAuth/token files.
+# The wildcards matter: a retired client secret sat in the working tree as
+# credentials.json.old-navai, one careless `git add -A` from being published,
+# because the rule named only the exact filename.
 credentials.json
+credentials.json.*
 storage/token.json
+storage/token.json.*
 
 # macOS
 .DS_Store
 
 # VS Code
 .vscode/
+
+# Test and tooling caches
+.pytest_cache/
+
+# Raw output of real end-to-end runs: full tool trajectories, screenshots of
+# whatever was on screen, and the mailbox the run actually used. Useful on the
+# machine that produced them, not something to publish — this repository is
+# public. The conclusions drawn from them live in design/*.md, which carry no
+# personal data.
+design/evidence/
+design/*.json
+
+# Scratch directories real end-to-end runs leave behind
+.agency_narration_test/
+mike-*-task/
 
 # Logs
 *.log

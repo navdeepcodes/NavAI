@@ -75,14 +75,14 @@ try:
           f"{terminal_actions.DEFAULT_TIMEOUT}s")
 
     started = time.time()
-    try:
-        terminal_actions.run("sleep 5", timeout=2)
-        timed_out = False
-    except RuntimeError as exc:
-        timed_out = "still running" in str(exc)
+    timeout_result = terminal_actions.run("echo partial; sleep 5", timeout=2)
     elapsed = time.time() - started
     check("run_command stops a command that overruns its timeout",
-          timed_out and elapsed < 4, f"{elapsed:.1f}s")
+          timeout_result["timed_out"] and elapsed < 4, f"{elapsed:.1f}s")
+    # The contract that replaced the old raise: a stopped command still hands
+    # back whatever it printed, because that is the diagnosis for a hang.
+    check("a timed-out command still returns its partial output",
+          "partial" in timeout_result["stdout"])
 
     result = executor.execute(tool_name="terminal", action="run", command="echo hi")
     check("run_command still returns output", result.success and "hi" in str(result.data))
@@ -92,24 +92,29 @@ try:
     )
     check("run_command honours cwd", result.success and sandbox in str(result.data))
 
-    # ── run_background: long-running processes ───────────────
-    result = executor.execute(
-        tool_name="terminal",
-        action="run_background",
-        command="sleep 30",
-        cwd=sandbox,
-    )
-    check("run_background returns while the process keeps running",
-          result.success and "still running" in (str(result.data) + str(result.message)),
-          result.error or "")
+    # A non-zero exit is data, not an exception. This is the contract that
+    # makes failing tests and broken builds diagnosable at all.
+    failed = terminal_actions.run("echo to-stdout; echo to-stderr 1>&2; exit 7")
+    check("a failing command reports its exit code", failed["exit_code"] == 7)
+    check("a failing command still returns stdout", "to-stdout" in failed["stdout"])
+    check("a failing command still returns stderr", "to-stderr" in failed["stderr"])
 
-    result = executor.execute(
-        tool_name="terminal",
-        action="run_background",
-        command="exit 3",
-    )
+    # ── run_background: long-running processes ───────────────
+    bg = terminal_actions.run_background("sleep 30", cwd=sandbox)
+    check("run_background returns while the process keeps running",
+          bg["running"] is True and isinstance(bg["pid"], int))
+
+    listed = terminal_actions.list_processes()["processes"]
+    check("a background process is observable afterwards",
+          any(p["pid"] == bg["pid"] and p["running"] for p in listed))
+    check("a background process can be stopped",
+          terminal_actions.kill_process(bg["pid"]).get("running") is False)
+
+    dead = terminal_actions.run_background("echo boom 1>&2; exit 3")
     check("run_background reports a process that dies immediately",
-          not result.success, result.error or "")
+          dead["running"] is False and dead["exit_code"] == 3)
+    check("a process that dies immediately explains why",
+          "boom" in dead["output"])
 
     # ── open_application: generic, not app-specific ──────────
     check("open_application is dispatchable", "open_application" in DISPATCH)
@@ -133,8 +138,21 @@ finally:
     subprocess.run("pkill -f 'sleep 30'", shell=True, capture_output=True)
 
 print()
-if failures:
-    print(f"{len(failures)} FAILURE(S): {failures}")
-    sys.exit(1)
 
-print("ALL TOOL CONTRACT TESTS PASSED")
+
+def test_tool_contracts_all_pass():
+    """Exposes the module-level checks above as a real pytest test.
+
+    Previously a failure here called sys.exit(1) at import time, which aborts
+    pytest's whole collection run — one broken contract took the entire suite
+    down with it and reported no results at all. As a test, a failure is just
+    a failure.
+    """
+    assert not failures, f"{len(failures)} tool contract failure(s): {failures}"
+
+
+if __name__ == "__main__":
+    if failures:
+        print(f"{len(failures)} FAILURE(S): {failures}")
+        sys.exit(1)
+    print("ALL TOOL CONTRACT TESTS PASSED")

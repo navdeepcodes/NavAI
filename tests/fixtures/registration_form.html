@@ -1,0 +1,17 @@
+<!doctype html><meta charset="utf-8"><title>Mike Registration Form</title>
+<style>body{font:16px system-ui;max-width:640px;margin:40px auto}
+label{display:block;margin:14px 0 4px}input,select,textarea{width:100%;padding:8px}
+button{padding:10px 18px;margin-right:8px}</style>
+<h1>Registration</h1>
+<form id="f" onsubmit="return false">
+<label for="nm">Full name</label><input id="nm" type="text">
+<label for="em">Email address</label><input id="em" type="email" value="pre@filled.com">
+<label for="rl">Role</label>
+<select id="rl"><option>Engineer</option><option>Designer</option><option>Manager</option></select>
+<label for="bio">Bio</label><textarea id="bio" rows="3"></textarea>
+<label><input type="checkbox" id="tos"> I accept the terms</label>
+<label><input type="radio" name="plan" id="p1" checked> Free</label>
+<label><input type="radio" name="plan" id="p2"> Pro</label>
+<button type="button" id="save">Save draft</button>
+<button type="submit" id="send">Submit application</button>
+</form>

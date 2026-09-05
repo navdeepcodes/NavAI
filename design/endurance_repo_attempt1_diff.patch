@@ -1,0 +1,17 @@
+diff --git a/bottle.py b/bottle.py
+index 7ac5378..aa7f2bb 100755
+--- a/bottle.py
++++ b/bottle.py
+@@ -341,9 +341,9 @@ class Router:
+                 if mode == 'default': mode = self.default_filter
+                 mask, in_filter, out_filter = self.filters[mode](conf)
+                 if not key:
+-                    pattern += '(?:%s)' % mask
+-                    key = 'anon%d' % anons
+-                    anons += 1
++                    # Use capturing group for anonymous wildcards with filters so they appear in groupdict()
++                    pattern += '(?P<%s>%s)' % (key, mask)
++                    keys.append(key)
+                 else:
+                     pattern += '(?P<%s>%s)' % (key, mask)
+                     keys.append(key)

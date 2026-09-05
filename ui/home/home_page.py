@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, Signal, QTimer
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import (
     QFrame,

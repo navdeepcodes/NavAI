@@ -15,6 +15,31 @@ MAX_TEXT_CHARS = 12_000
 MAX_FILE_BYTES = 50_000_000
 
 
+class DocumentUnreadable(Exception):
+    """Raised when a file exists but no usable text could be taken from it.
+
+    Distinct from FileNotFoundError because the remedy differs: a missing file
+    means the path is wrong, an unreadable one means the format or the file
+    itself is the problem, and the caller should be told which.
+    """
+
+
+# Proportion of non-printable characters above which a "text" extraction is
+# really binary. Generous, so that documents with unusual glyphs still read.
+_BINARY_RATIO = 0.15
+
+
+def _looks_binary(text: str) -> bool:
+    sample = text[:4000]
+    if not sample:
+        return False
+    unprintable = sum(
+        1 for ch in sample
+        if ch not in "\n\r\t" and (ord(ch) < 32 or ord(ch) == 127)
+    )
+    return unprintable / len(sample) > _BINARY_RATIO
+
+
 def read_document(path: str) -> str:
     file = resolve_path(path)
 
@@ -49,13 +74,31 @@ def read_document(path: str) -> str:
     else:
         text = _try_text(file)
 
+    # Nothing extracted is a failure, not a document whose contents happen to
+    # be an apology. These used to be returned as ordinary text with a success
+    # status, so a model received "Could not extract text from this .csv file"
+    # in the slot where the file's contents belong -- and had no way to tell
+    # that apart from a document that really says that.
     if not text or not text.strip():
         if suffix == ".pdf":
-            return (
-                "This PDF appears to be image-based. "
-                "I can't reliably read scanned pages yet."
+            raise DocumentUnreadable(
+                f"{file.name} appears to be image-based or has no extractable "
+                "text layer. Scanned pages need OCR, which Mike cannot do yet. "
+                "If you can see the text on screen, see_screen may work."
             )
-        return f"Could not extract text from this {suffix} file."
+        raise DocumentUnreadable(
+            f"No text could be extracted from {file.name} ({suffix or 'no extension'})."
+        )
+
+    # Binary content dressed up as text is worse than no content: it gives the
+    # model something to pattern-match against. A PNG was being returned as a
+    # successful read whose body began with the literal bytes of the header.
+    if _looks_binary(text):
+        raise DocumentUnreadable(
+            f"{file.name} is not a text document — it looks like binary data "
+            f"({suffix or 'no extension'}). Mike can read PDF, DOCX, PPTX, CSV, "
+            "JSON and plain-text formats. For an image, use see_screen instead."
+        )
 
     if len(text) > MAX_TEXT_CHARS:
         truncated = text[:MAX_TEXT_CHARS]

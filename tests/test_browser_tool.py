@@ -1,14 +1,19 @@
 from tools.browser import BrowserTool
 from tools.tool_context import ToolContext
 
-tool = BrowserTool()
 
-result = tool.execute(
+def main():
+    tool = BrowserTool()
 
-    action="open_browser",
+    result = tool.execute(
+        action="open_browser",
+        context=ToolContext()
+    )
 
-    context=ToolContext()
+    print(result)
 
-)
 
-print(result)
+if __name__ == "__main__":
+    # Manual smoke test only — opens a real browser window. Guarded so
+    # pytest collection can't trigger it by just importing the file.
+    main()

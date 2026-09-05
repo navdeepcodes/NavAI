@@ -8,8 +8,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ui.theme import colors
-from ui.theme import typography
 
 
 class BubbleBase(QFrame):

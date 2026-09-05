@@ -8,22 +8,36 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tests import _isolate  # noqa: F401 — must run before any brain/config import
+
 import numpy as np
 
 
 def test_silence_detection_constants():
-    """Verify silence detection constants are sensible."""
+    """
+    Verify silence detection constants are sensible. Recorder switched from
+    a single fixed SPEECH_RMS_THRESHOLD to a per-recording calibrated
+    threshold (floor + multiplier over a measured noise floor) — this test
+    had gone stale against that change, still asserting on a constant that
+    no longer exists, so it always failed even though the real code was
+    fine. Updated to check the constants that replaced it.
+    """
     from voice.recorder import (
-        SPEECH_RMS_THRESHOLD,
+        CALIBRATION_SECONDS,
+        THRESHOLD_MULTIPLIER,
+        THRESHOLD_FLOOR,
         SILENCE_DURATION,
         MIN_SPEECH_DURATION,
         MAX_RECORDING,
     )
-    assert 0.002 < SPEECH_RMS_THRESHOLD < 0.05
+    assert 0.1 <= CALIBRATION_SECONDS <= 1.0
+    assert 1.5 <= THRESHOLD_MULTIPLIER <= 5.0
+    assert 0.001 < THRESHOLD_FLOOR < 0.02
     assert 0.5 <= SILENCE_DURATION <= 3.0
     assert 0.2 <= MIN_SPEECH_DURATION <= 1.0
     assert 15 <= MAX_RECORDING <= 120
-    print(f"PASS: silence constants (rms_thresh={SPEECH_RMS_THRESHOLD}, "
+    print(f"PASS: silence constants (calibration={CALIBRATION_SECONDS}s, "
+          f"multiplier={THRESHOLD_MULTIPLIER}, floor={THRESHOLD_FLOOR}, "
           f"dur={SILENCE_DURATION}s, min_speech={MIN_SPEECH_DURATION}s, "
           f"max={MAX_RECORDING}s)")
 
@@ -64,21 +78,35 @@ def test_voice_manager_auto_stop_signal():
 
 
 def test_voice_button_speaking_state():
-    """VoiceButton shows speaking state."""
+    """The live UI signals voice state through the Instrument dial, not an
+    emoji button.
+
+    This previously asserted `btn.text() == "🔊"` against
+    ui.widgets.input.VoiceButton, which the current app no longer uses — the
+    Instrument surfaces replaced it and nothing in ui/instrument, ui/app.py or
+    the controller references that widget. Rewritten against the surface the
+    controller actually drives, so it tests shipped behaviour rather than a
+    retired widget.
+    """
     from PySide6.QtWidgets import QApplication
-    app = QApplication.instance() or QApplication(sys.argv)
 
-    from ui.widgets.input.voice_button import VoiceButton
-    btn = VoiceButton()
+    app = QApplication.instance() or QApplication(sys.argv)  # noqa: F841
 
-    btn.set_state("speaking")
-    assert btn.isEnabled()
-    assert "speaking" in btn.toolTip().lower()
-    assert btn.text() == "\U0001f50a"
+    from ui.instrument.home import HomeSurface
 
-    btn.set_state("idle")
-    assert "Voice input" in btn.toolTip()
-    print("PASS: voice button speaking state")
+    page = HomeSurface({})
+
+    # These are the exact states UIController pushes through .input.voice.
+    page.input.voice.set_state("recording")
+    assert page.input.dial.state() == "listening"
+
+    page.input.voice.set_state("transcribing")
+    assert page.input.dial.state() == "thinking"
+
+    page.input.voice.set_state("speaking")
+    assert page.input.dial.state() == "responding"
+
+    print("PASS: voice state reaches the live dial")
 
 
 def test_wake_word_detector_import():

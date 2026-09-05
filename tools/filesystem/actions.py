@@ -12,8 +12,17 @@ def create_folder(path: str):
         path: Folder path.
     """
 
+    from tools.filesystem.path_utils import resolve_path
+
+    # Whether it already existed changes what the caller should conclude.
+    # Reporting "created successfully" for a folder that was already there
+    # reads as proof the call did something, and a model checking its own work
+    # would take it as evidence a fresh directory now exists.
+    existed = resolve_path(path).is_dir()
     folder = manager.create_folder(path)
 
+    if existed:
+        return f"{folder} already existed; nothing was created."
     return f"Folder created successfully at {folder}."
 
 
@@ -25,6 +34,27 @@ def create_file(path: str, content: str | None = None):
         path: File path.
         content: Text to write. Omit for an empty file.
     """
+
+    from tools.filesystem.path_utils import resolve_path
+
+    # "Create" must not mean "overwrite". This silently replaced the contents
+    # of an existing file and was not gated, while write_file -- which does
+    # exactly the same thing -- required confirmation. That is a hole, not an
+    # inconsistency: a model wanting to write without confirmation only had to
+    # pick the other tool, and a user's file was destroyed with no prompt.
+    #
+    # Gating every file creation would be the wrong fix: writing a genuinely
+    # new file destroys nothing, and confirming each one would make ordinary
+    # work impossible. So the gate stays where the consequence is, and
+    # creation refuses to become an overwrite.
+    existing = resolve_path(path)
+    if existing.exists():
+        return (
+            f"{existing} already exists and create_file will not overwrite it. "
+            "Use write_file to replace its contents, or edit_file to change "
+            "part of it — both ask the user first, because they destroy what "
+            "is there."
+        )
 
     file = manager.create_file(path, content)
 
@@ -56,6 +86,9 @@ def write_file(
         path: File path.
         content: Text to write.
     """
+
+    from brain import revert_store
+    revert_store.capture(path)
 
     manager.write_file(
         path,
@@ -103,6 +136,9 @@ def delete(path: str):
     Args:
         path: Target path.
     """
+
+    from brain import revert_store
+    revert_store.capture(path)
 
     manager.delete(path)
 

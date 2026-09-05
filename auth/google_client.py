@@ -7,10 +7,17 @@ from google.oauth2.credentials import Credentials
 from auth.token_store import TOKEN_FILE
 
 SCOPES = [
+    # Only what email actually needs. The previous list also asked for
+    # calendar and drive.file, which nothing here uses -- a consent screen
+    # should ask for the access the feature requires and nothing more, and a
+    # narrower request is a smaller thing to trust.
+    #
+    # gmail.send    to send.
+    # gmail.readonly to read the sent message back and confirm the recipient
+    #               and attachment actually went, which is the whole basis of
+    #               verifying rather than trusting the returned message id.
     "https://www.googleapis.com/auth/gmail.send",
     "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/drive.file",
 ]
 
 

@@ -4,8 +4,6 @@ import threading
 import time
 from typing import Any
 
-import ollama
-
 from brain import situation_store
 from logs.logger import logger
 
@@ -70,12 +68,40 @@ class MikeCore:
 
         self.tool_log: list[str] = []
 
-        self.situation_summary: str = situation_store.load()
+        # None = no project attached (the global scope). Resolved fresh each
+        # message via sync_project(), not cached indefinitely — the IDE
+        # workspace can change while Mike keeps running.
+        self.project_id: int | None = None
+        self.situation_summary: str = situation_store.load(project_id=None)
 
         self._last_vision: tuple[str, float] | None = None
 
         self._turns_since_summary = 0
         self._summarizing = False
+
+    # =====================================================
+    # Project scope
+    # =====================================================
+
+    def sync_project(self) -> None:
+        """
+        Call once per message. If the attached IDE workspace has changed
+        since last time — including going from "some project" to "none" —
+        swap in that project's own situation summary instead of the global
+        one, so continuity actually differs by what you're working on.
+        """
+        from brain import projects
+
+        try:
+            new_id = projects.current()
+        except Exception:
+            new_id = None
+
+        if new_id == self.project_id:
+            return
+
+        self.project_id = new_id
+        self.situation_summary = situation_store.load(project_id=new_id)
 
     # =====================================================
     # Conversation history
@@ -184,13 +210,14 @@ class MikeCore:
 
         turns_snapshot = list(self.history)
         old_summary = self.situation_summary
+        project_snapshot = self.project_id
 
         self._summarizing = True
         self._turns_since_summary = 0
 
         thread = threading.Thread(
             target=self._refresh_summary,
-            args=(old_summary, turns_snapshot),
+            args=(old_summary, turns_snapshot, project_snapshot),
             daemon=True,
         )
 
@@ -202,6 +229,7 @@ class MikeCore:
         self,
         old_summary: str,
         turns: list[dict],
+        project_id: int | None,
     ) -> None:
 
         try:
@@ -217,22 +245,30 @@ class MikeCore:
                 new_turns=transcript or "(none)",
             )
 
-            client = ollama.Client(host=self._host)
+            # Summarisation goes through the provider boundary like every
+            # other model call, so the summariser can be a different brain —
+            # or a different backend entirely — without changing this code.
+            from brain.providers import get_provider
 
-            response = client.chat(
-                model=self._summary_model,
-                messages=[{"role": "user", "content": prompt}],
-                think=False,
-                options={"temperature": 0.1, "num_predict": 200},
+            result = get_provider(model=self._summary_model).complete(
+                [{"role": "user", "content": prompt}]
             )
+            if result.error is not None:
+                logger.warning("Situation summary failed: %s", result.error.detail)
+                return
 
-            summary = (response.message.content or "").strip()
+            summary = (result.text or "").strip()
 
             if summary:
 
-                self.situation_summary = summary
+                situation_store.save(summary, project_id=project_id)
 
-                situation_store.save(summary)
+                # Only update the live summary if the project hasn't changed
+                # under us mid-refresh — otherwise this would clobber the
+                # summary for whatever project the user has since switched
+                # to, with a stale answer for the one they left.
+                if self.project_id == project_id:
+                    self.situation_summary = summary
 
         except Exception:
 
