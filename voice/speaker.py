@@ -14,8 +14,10 @@ silent because the good voice broke.
 from __future__ import annotations
 
 import re
+import time
 
 from logs.logger import logger
+from voice import diagnostics
 from voice.providers import VoiceProvider, get_provider
 from voice.providers.native import NativeVoice
 
@@ -36,6 +38,13 @@ class Speaker:
         self._native = NativeVoice()
         self._provider = provider or self._configured_provider(self._native)
         self._fell_back = False
+        # An accepted utterance can still fail, and by then the caller has
+        # moved on. The provider hands the words back here so the native
+        # voice can say them — the user hears one continuous reply and never
+        # learns which engine produced which sentence.
+        self._provider.on_failure = self._recover
+        self._consecutive_failures = 0
+        self._record: diagnostics.Utterance | None = None
 
     @staticmethod
     def _configured_provider(native: NativeVoice) -> VoiceProvider:
@@ -68,18 +77,57 @@ class Speaker:
         """True if the configured voice failed and the native one covered."""
         return self._fell_back
 
+    # After this many failures in a row the configured voice is left alone
+    # for the rest of the reply. Retrying a sick worker once per sentence
+    # turns one failure into a stutter of failures, each costing its own
+    # timeout before the native voice gets a turn.
+    _GIVE_UP_AFTER = 2
+
     def _say(self, text: str) -> None:
         """Speak through the configured provider, falling back if it cannot."""
-        if self._provider is not self._native:
+        self._record = diagnostics.begin(self._provider.name, text)
+        if self._provider is not self._native and self._usable():
             if self._provider.speak(text):
                 return
-            self._fell_back = True
-            logger.warning(
-                "Voice provider %r could not speak (%s); using the native voice.",
-                self._provider.name,
-                getattr(self._provider, "last_failure", "no reason given"),
-            )
+            self._note_failure(getattr(self._provider, "last_failure", "refused"))
+        if self._provider is not self._native:
+            self._record.fell_back_to = self._native.name
         self._native.speak(text)
+
+    def _usable(self) -> bool:
+        healthy = getattr(self._provider, "healthy", True)
+        return healthy and self._consecutive_failures < self._GIVE_UP_AFTER
+
+    def _note_failure(self, reason: str) -> None:
+        if self._record is not None:
+            self._record.failure = reason[:160]
+        self._fell_back = True
+        self._consecutive_failures += 1
+        logger.warning(
+            "Voice provider %r could not speak (%s); using the native voice"
+            " [%d in a row].",
+            self._provider.name, reason, self._consecutive_failures,
+        )
+
+    def _recover(self, text: str, reason: str) -> None:  # noqa: D401
+        """Finish an utterance the configured voice accepted and then dropped.
+
+        Called from the provider's own thread. Speaks rather than queues,
+        because this is a sentence the user is currently waiting to hear.
+        """
+        self._note_failure(reason)
+        if self._record is not None:
+            self._record.fell_back_to = self._native.name
+        self._native.speak(text)
+
+    def reset_health(self) -> None:
+        """Give the configured voice another chance.
+
+        Called at the start of a turn rather than continuously: one bad reply
+        should not disable the voice for the session, and a failing worker
+        should not be retried in the middle of the reply it is failing.
+        """
+        self._consecutive_failures = 0
 
     def speak(self, text: str) -> None:
         if not text or not text.strip():
@@ -97,8 +145,25 @@ class Speaker:
             return
         self._queue.append(clean)
         self._streaming = True
-        if not self.is_speaking():
+        # Hand it over immediately if the voice can hold a queue: that lets
+        # the next sentence generate while this one plays. Voices that cannot
+        # queue are paced by pump() instead, exactly as before.
+        if getattr(self._provider, "queues", False) and self._usable():
+            self._drain_to_provider()
+        elif not self.is_speaking():
             self._speak_next()
+
+    def _drain_to_provider(self) -> None:
+        while self._queue:
+            text = self._queue.pop(0)
+            self._record = diagnostics.begin(self._provider.name, text)
+            if not (self._usable() and self._provider.enqueue(text)):
+                self._note_failure(
+                    getattr(self._provider, "last_failure", "refused"))
+                self._record.fell_back_to = self._native.name
+                self._queue.insert(0, text)
+                self._speak_next()
+                return
 
     def finish_streaming(self) -> None:
         self._streaming = False
@@ -126,6 +191,17 @@ class Speaker:
         # Both, always. After a fallback the native voice may be the one
         # making noise even though the configured provider is the Qwen one,
         # and stopping only the configured provider would leave it talking.
+        if self._record is not None and self._record.finished_after_ms is None:
+            if self.is_speaking():
+                self._record.interrupted = True
+            self._record.finished_after_ms = round(
+                (time.time() - self._record.started_at) * 1000)
+            first = getattr(self._provider, "first_audio_ms", 0)
+            if first and self._record.first_audio_ms is None:
+                self._record.first_audio_ms = first
+            truncation = getattr(self._provider, "last_truncation", "")
+            if truncation:
+                self._record.truncated = truncation
         self._provider.stop()
         if self._provider is not self._native:
             self._native.stop()

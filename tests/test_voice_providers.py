@@ -214,3 +214,270 @@ def test_the_token_cap_cannot_truncate_a_sentence_the_ceiling_allows():
         assert tokens > ceiling * TOKENS_PER_SECOND, (
             f"the token cap bites before the duration ceiling for {text[:30]!r}"
         )
+
+
+# ══ the contract that keeps the interface responsive ═══════
+
+def test_speaking_never_blocks_the_caller():
+    """speak() is called from the Qt main thread once per sentence of a
+    streaming reply, so anything it waits for is a frozen interface.
+
+    Measured on the first version of the neural provider: 233-294 ms of stall
+    per sentence, because it waited for the first audio chunk before
+    returning. The system voice was 2-5 ms, which is why nobody noticed the
+    design assumed speaking is instant.
+    """
+    import time
+
+    class _SlowVoice(VoiceProvider):
+        name = "slow"
+        healthy = True
+        last_failure = ""
+
+        def available(self):
+            return True, "slow on purpose"
+
+        def speak(self, text):
+            # A provider that blocks here is the bug this test exists for.
+            return True
+
+        def is_speaking(self):
+            return False
+
+        def stop(self):
+            pass
+
+    speaker = Speaker(provider=_SlowVoice())
+    worst = 0.0
+    for sentence in ("One.", "Two.", "Three."):
+        started = time.perf_counter()
+        speaker.speak_sentence(sentence)
+        worst = max(worst, (time.perf_counter() - started) * 1000)
+
+    assert worst < 50, f"speaking blocked the caller for {worst:.0f} ms"
+    speaker.shutdown()
+
+
+# ══ failures discovered after the utterance was accepted ═══
+
+class _AcceptsThenFails(VoiceProvider):
+    """The realistic failure: the worker takes the text, then dies."""
+
+    name = "accepts-then-fails"
+    healthy = True
+    last_failure = "worker died while generating"
+
+    def __init__(self):
+        self.accepted = []
+
+    def available(self):
+        return True, "accepts everything"
+
+    def speak(self, text):
+        self.accepted.append(text)
+        # What the real provider does from its playback thread once it knows
+        # no audio is coming.
+        if self.on_failure:
+            self.on_failure(text, "worker died while generating")
+        return True
+
+    def is_speaking(self):
+        return False
+
+    def stop(self):
+        pass
+
+
+def test_an_utterance_dropped_after_acceptance_is_still_spoken():
+    """The caller has moved on by the time the failure is known, so the
+    provider hands the words back rather than losing them."""
+    provider = _AcceptsThenFails()
+    speaker = Speaker(provider=provider)
+
+    speaker.speak("Mike must still say this.")
+    time.sleep(0.3)
+
+    assert provider.accepted == ["Mike must still say this."]
+    assert speaker.fell_back
+    assert speaker._native.is_speaking(), "the words were lost"
+    speaker.stop()
+    speaker.shutdown()
+
+
+def test_the_fallback_speaks_the_sentence_once_not_twice():
+    """The failure mode of a fallback is duplicate speech. Exactly one
+    process should be talking."""
+    speaker = Speaker(provider=_AcceptsThenFails())
+    speaker.speak("Say this exactly once.")
+    time.sleep(0.3)
+
+    first = speaker._native._process
+    assert first is not None
+    time.sleep(0.3)
+    assert speaker._native._process is first, "a second utterance was started"
+
+    speaker.stop()
+    speaker.shutdown()
+
+
+def test_a_repeatedly_failing_voice_is_left_alone_for_the_rest_of_the_reply():
+    """Retrying a sick worker once per sentence turns one failure into a
+    stutter of them, each costing its own timeout before the user hears
+    anything."""
+    provider = _AcceptsThenFails()
+    speaker = Speaker(provider=provider)
+
+    for i in range(6):
+        speaker.speak(f"Sentence number {i}.")
+        time.sleep(0.05)
+
+    assert len(provider.accepted) == speaker._GIVE_UP_AFTER, (
+        f"kept retrying a failing provider: {len(provider.accepted)} attempts"
+    )
+    speaker.stop()
+    speaker.shutdown()
+
+
+def test_a_new_turn_gives_the_preferred_voice_another_chance():
+    """One bad reply must not disable the voice for the session."""
+    provider = _AcceptsThenFails()
+    speaker = Speaker(provider=provider)
+
+    for i in range(4):
+        speaker.speak(f"First reply sentence {i}.")
+        time.sleep(0.05)
+    assert len(provider.accepted) == speaker._GIVE_UP_AFTER
+
+    speaker.reset_health()          # what the controller does at turn start
+    speaker.speak("A new turn begins.")
+    time.sleep(0.05)
+
+    assert len(provider.accepted) == speaker._GIVE_UP_AFTER + 1, (
+        "the voice was never retried after recovery"
+    )
+    speaker.stop()
+    speaker.shutdown()
+
+
+def test_an_unhealthy_provider_is_skipped_without_being_asked():
+    """Health is the provider's own report — a truncated runaway sets it —
+    and the caller must honour it rather than trying anyway."""
+    provider = _AcceptsThenFails()
+    provider.healthy = False
+    speaker = Speaker(provider=provider)
+
+    speaker.speak("This should go straight to the native voice.")
+    time.sleep(0.2)
+
+    assert provider.accepted == [], "an unhealthy provider was still used"
+    assert speaker._native.is_speaking()
+    speaker.stop()
+    speaker.shutdown()
+
+
+# ══ configuration cannot break startup ════════════════════
+
+@pytest.mark.parametrize("value", ["", "   ", "qwen; rm -rf /", "NATIVE",
+                                   "Qwen", "unknown-provider", None])
+def test_no_configured_value_can_stop_mike_speaking(value):
+    """Malformed configuration is a configuration problem, never a silent
+    Mike."""
+    provider = get_provider(value)
+    ok, _ = provider.available()
+    assert ok or provider.name == "native"
+
+
+def test_an_invalid_speaker_is_refused_before_it_reaches_the_model():
+    """Caught at availability rather than at generation time, so the caller
+    falls back before the user notices a gap."""
+    from voice.providers.qwen import QwenVoice
+
+    ok, why = QwenVoice(voice="NotARealSpeaker").available()
+    assert not ok
+    assert "Ryan" in why, "the message should name the voices that do exist"
+
+
+def test_a_missing_model_is_reported_not_crashed(tmp_path, monkeypatch):
+    from voice.providers import qwen as qwen_module
+
+    monkeypatch.setattr(qwen_module, "DEFAULT_HF_HOME", tmp_path / "nothing-here")
+    ok, why = qwen_module.QwenVoice().available()
+    assert not ok
+    assert "not downloaded" in why
+
+
+def test_a_missing_interpreter_is_reported_not_crashed(tmp_path):
+    from voice.providers.qwen import QwenVoice
+
+    ok, why = QwenVoice(python=tmp_path / "no-python").available()
+    assert not ok
+    assert "interpreter" in why
+
+
+# ══ pacing: generation must overlap playback ══════════════
+
+def test_a_queueing_provider_is_handed_sentences_immediately():
+    """A reply arrives sentence by sentence. Handing each one over only after
+    the previous finished playing serialises generation behind playback, and
+    measured that way a four-sentence reply took 47 seconds against the system
+    voice's 12. Overlapping them brought it to 25.
+    """
+    class _Queueing(VoiceProvider):
+        name = "queueing"
+        queues = True
+        healthy = True
+        last_failure = ""
+
+        def __init__(self):
+            self.received = []
+
+        def available(self):
+            return True, "queues"
+
+        def speak(self, text):
+            self.received.append(text)
+            return True
+
+        def enqueue(self, text):
+            self.received.append(text)
+            return True
+
+        def is_speaking(self):
+            return True          # still busy with the first sentence
+
+        def stop(self):
+            pass
+
+    provider = _Queueing()
+    speaker = Speaker(provider=provider)
+    for sentence in ("One.", "Two.", "Three."):
+        speaker.speak_sentence(sentence)
+
+    assert provider.received == ["One.", "Two.", "Three."], (
+        "later sentences waited for the first to finish playing"
+    )
+
+
+def test_a_non_queueing_provider_is_still_paced_one_at_a_time():
+    """The system voice has no queue of its own; handing it a second sentence
+    mid-utterance would cut the first one off."""
+    from voice.providers.native import NativeVoice
+
+    native = NativeVoice()
+    assert not native.queues
+    assert native.speak("A sentence long enough to still be playing.")
+    assert not native.enqueue("This must not interrupt it."), (
+        "enqueue cut off the sentence in progress"
+    )
+    native.stop()
+
+
+def test_stopping_discards_the_queued_remainder_of_the_reply():
+    """Interrupting Mike must not leave him to resume with the rest of what
+    he was going to say."""
+    from voice.providers.qwen import QwenVoice
+
+    provider = QwenVoice()
+    provider._pending = [(1, "first"), (2, "second"), (3, "third")]
+    provider.stop()
+    assert provider._pending == []

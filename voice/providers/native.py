@@ -55,6 +55,13 @@ class NativeVoice(VoiceProvider):
             self._process = None
             return False
 
+    def enqueue(self, text: str) -> bool:
+        """`say` has no queue of its own; Speaker paces it. Replacing here
+        would cut off the sentence currently being spoken."""
+        if self.is_speaking():
+            return False
+        return self.speak(text)
+
     def is_speaking(self) -> bool:
         return self._process is not None and self._process.poll() is None
 

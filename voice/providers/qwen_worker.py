@@ -48,6 +48,19 @@ SAMPLE_RATE = 24000
 # Measured: the model emits roughly 100 codec tokens per second of audio.
 TOKENS_PER_SECOND = 100
 
+# The runaway guard, configurable rather than buried. Defaults come from
+# measurement — the slowest legitimate reading observed was 10.0 seconds for
+# 118 characters — but the numbers are exposed because the right ceiling
+# depends on the voice, the instruction and the machine, and a limit nobody
+# can adjust is a limit that eventually clips someone's normal speech.
+SECONDS_PER_CHARACTER = float(
+    os.environ.get("MIKE_QWEN_TTS_SECONDS_PER_CHAR", 10.0 / 118.0))
+CEILING_MULTIPLIER = float(os.environ.get("MIKE_QWEN_TTS_CEILING_FACTOR", "1.8"))
+MINIMUM_CEILING = float(os.environ.get("MIKE_QWEN_TTS_MIN_SECONDS", "4.0"))
+# An absolute cap regardless of text length. Nothing Mike says should run
+# past this, however long the sentence.
+ABSOLUTE_CEILING = float(os.environ.get("MIKE_QWEN_TTS_MAX_SECONDS", "60.0"))
+
 
 def emit(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -67,12 +80,8 @@ def duration_limit(text: str) -> float:
     measured case of 96 seconds of audio for a seven-second sentence — an
     order of magnitude out, not a fraction.
     """
-    slowest_observed = 10.0 / 118.0        # seconds per character, measured
-    # 1.8x the slowest run actually seen. Enough headroom that a normal but
-    # unusually slow reading is never clipped; tight enough that a run at
-    # twice the worst normal length is already stopped, rather than waiting
-    # for the 96-second case to prove itself.
-    return max(4.0, len(text) * slowest_observed * 1.8)
+    proportional = len(text) * SECONDS_PER_CHARACTER * CEILING_MULTIPLIER
+    return min(ABSOLUTE_CEILING, max(MINIMUM_CEILING, proportional))
 
 
 def main() -> None:

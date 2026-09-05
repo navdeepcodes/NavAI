@@ -133,6 +133,11 @@ class UIController(QObject):
         self._action_card = None
         self._response_text = ""
         self._speaker.stop()
+        # A new turn is the right moment to give the preferred voice another
+        # go. Retrying mid-reply turns one failure into a stutter of them;
+        # never retrying disables the voice for the session after a single
+        # bad utterance.
+        self._speaker.reset_health()
 
         if self._floating and self._floating.isVisible():
             self._floating.clear_response()

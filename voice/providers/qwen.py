@@ -68,6 +68,7 @@ FIRST_CHUNK_TIMEOUT = 12.0
 class QwenVoice(VoiceProvider):
 
     name = "qwen"
+    queues = True
 
     def __init__(self, python: Path | None = None, model: str = MODEL,
                  voice: str | None = None, instruct: str | None = None,
@@ -97,6 +98,16 @@ class QwenVoice(VoiceProvider):
         self._request = 0
         self._last_failure = ""
         self._last_truncation = ""
+        self._first_audio_ms = 0
+        self._pending: list[tuple[int, str]] = []
+        self._queue_lock = threading.Lock()
+        self._mailboxes: dict[int, queue.Queue] = {}
+        self._mailbox_lock = threading.Lock()
+        # Set false by a failure, true again by a clean utterance. The caller
+        # reads it to decide whether to try this voice again — a provider
+        # that failed once should not be abandoned for the session, and one
+        # that is failing repeatedly should not be retried every sentence.
+        self._healthy = True
 
     @staticmethod
     def _preference(key: str, default: str) -> str:
@@ -183,6 +194,16 @@ class QwenVoice(VoiceProvider):
             return False
 
     def _read_events(self) -> None:
+        """Sort worker events into a mailbox per request.
+
+        The first version put everything in one queue and had the playback
+        loop skip anything not addressed to the utterance it was playing.
+        That works only while generation never runs ahead of playback — and
+        the whole point of queueing is that it does. Chunks for the next
+        sentence arrived mid-playback, matched nothing, and were dropped;
+        the next sentence then waited for audio that had already been thrown
+        away. Nothing errored. It just took three times longer than it should.
+        """
         proc = self._proc
         if proc is None or proc.stdout is None:
             return
@@ -191,9 +212,34 @@ class QwenVoice(VoiceProvider):
             if not line:
                 continue
             try:
-                self._events.put(json.loads(line))
+                event = json.loads(line)
             except json.JSONDecodeError:
                 continue
+            self._deliver(event)
+
+    def _deliver(self, event: dict) -> None:
+        request_id = event.get("id")
+        if request_id is None:
+            self._events.put(event)          # startup events: ready, fatal
+            return
+        with self._mailbox_lock:
+            box = self._mailboxes.get(request_id)
+            if box is None:
+                box = queue.Queue()
+                self._mailboxes[request_id] = box
+        box.put(event)
+
+    def _mailbox(self, request_id: int) -> queue.Queue:
+        with self._mailbox_lock:
+            box = self._mailboxes.get(request_id)
+            if box is None:
+                box = queue.Queue()
+                self._mailboxes[request_id] = box
+            return box
+
+    def _close_mailbox(self, request_id: int) -> None:
+        with self._mailbox_lock:
+            self._mailboxes.pop(request_id, None)
 
     def _kill_worker(self) -> None:
         if self._proc is None:
@@ -212,17 +258,44 @@ class QwenVoice(VoiceProvider):
     # ── speaking ──────────────────────────────────────────
 
     def speak(self, text: str) -> bool:
+        """Hand the utterance to the worker and return immediately.
+
+        Nothing is waited for here. Generating the first chunk takes about
+        240 ms, and this is called from the UI thread once per sentence of a
+        streaming reply, so waiting froze the interface for a quarter second
+        every sentence. The wait now happens on the playback thread, where
+        it costs nobody anything.
+        """
         if not text or not text.strip():
             return False
         self.stop()
         if not self._ensure_worker():
             return False
 
-        self._request += 1
-        request_id = self._request
         self._stop_flag.clear()
         self._last_truncation = ""
+        return self._submit(text)
 
+    def enqueue(self, text: str) -> bool:
+        """Add an utterance without cutting off the one being spoken.
+
+        This is what makes a multi-sentence reply flow. The worker generates
+        the next sentence while the parent is still playing the previous one,
+        so generation and playback overlap instead of taking turns. Without
+        it a five-sentence reply pays the generation cost of every sentence
+        in series, which measured three times slower end to end than the
+        system voice even though the speech itself is only 40% longer.
+        """
+        if not text or not text.strip():
+            return False
+        if not self._ensure_worker():
+            return False
+        self._stop_flag.clear()
+        return self._submit(text)
+
+    def _submit(self, text: str) -> bool:
+        self._request += 1
+        request_id = self._request
         try:
             assert self._proc is not None and self._proc.stdin is not None
             self._proc.stdin.write(
@@ -233,69 +306,173 @@ class QwenVoice(VoiceProvider):
             logger.warning("Qwen TTS %s", self._last_failure)
             self._kill_worker()
             return False
+        with self._queue_lock:
+            self._pending.append((request_id, text))
+        self._ensure_playback_thread()
+        return True
 
-        # Wait only for the first chunk. Returning here is what keeps the
-        # agent loop free: everything after this plays on its own thread.
+    def _ensure_playback_thread(self) -> None:
+        with self._queue_lock:
+            alive = self._playback is not None and self._playback.is_alive()
+            if alive:
+                return
+            self._playback = threading.Thread(target=self._drain, daemon=True)
+            self._playback.start()
+
+    def _drain(self) -> None:
+        """Play queued utterances in order until the queue empties."""
+        while not self._stop_flag.is_set():
+            with self._queue_lock:
+                if not self._pending:
+                    return
+                request_id, text = self._pending.pop(0)
+            self._await_and_play(request_id, text)
+
+    def _await_and_play(self, request_id: int, text: str) -> None:
+        """Wait for the first chunk, then play the rest as it arrives.
+
+        Runs off the caller's thread. If no audio ever arrives, the utterance
+        is handed back through on_failure so another voice can say it — the
+        caller is long gone by then and cannot be told any other way.
+        """
+        started = time.monotonic()
         first: dict | None = None
-        deadline = time.monotonic() + FIRST_CHUNK_TIMEOUT
-        while time.monotonic() < deadline:
+        box = self._mailbox(request_id)
+
+        while time.monotonic() - started < FIRST_CHUNK_TIMEOUT:
+            if self._stop_flag.is_set():
+                self._close_mailbox(request_id)
+                return
             try:
-                event = self._events.get(timeout=0.2)
+                event = box.get(timeout=0.2)
             except queue.Empty:
                 if self._proc is None or self._proc.poll() is not None:
-                    self._last_failure = "worker died while generating"
-                    return False
+                    self._fail(text, "the worker died while generating")
+                    self._close_mailbox(request_id)
+                    return
                 continue
             kind = event.get("event")
             if kind == "audio":
                 first = event
                 break
             if kind in ("error", "fatal"):
-                self._last_failure = str(event.get("error"))[:200]
-                logger.warning("Qwen TTS error: %s", self._last_failure)
-                return False
+                self._fail(text, str(event.get("error"))[:200])
+                self._close_mailbox(request_id)
+                return
             if kind in ("done", "truncated", "timeout"):
-                # Produced nothing audible at all.
-                self._last_failure = f"worker returned {kind} with no audio"
-                return False
+                self._fail(text, f"the worker returned {kind} with no audio")
+                self._close_mailbox(request_id)
+                return
 
         if first is None:
-            self._last_failure = "no audio within the first-chunk timeout"
-            logger.warning("Qwen TTS %s", self._last_failure)
-            return False
+            self._fail(text, "no audio within the first-chunk timeout")
+            self._close_mailbox(request_id)
+            return
 
-        self._playback = threading.Thread(
-            target=self._play_stream, args=(request_id, first), daemon=True)
-        self._playback.start()
-        return True
+        self._first_audio_ms = round((time.monotonic() - started) * 1000)
+        self._play_stream(request_id, first)
+
+    def _fail(self, text: str, reason: str) -> None:
+        """Record a failure and hand the words to whoever can say them."""
+        self._last_failure = reason
+        self._healthy = False
+        logger.warning("Qwen TTS could not speak (%s)", reason)
+        handler = self.on_failure
+        if handler and not self._stop_flag.is_set():
+            try:
+                handler(text, reason)
+            except Exception:
+                logger.exception("Voice fallback failed.")
 
     def _play_stream(self, request_id: int, first: dict) -> None:
-        """Play chunks as they arrive, stopping the moment stop() is called."""
+        """Play the utterance, coalescing chunks into as few files as possible.
+
+        The obvious implementation — one `afplay` per chunk as it arrives —
+        is measurably wrong. At half-second chunks a four-second sentence
+        becomes eight process spawns, and the gap at every seam turned four
+        seconds of speech into thirteen seconds of stuttering delivery.
+
+        So the first chunk plays immediately, because that is what makes Mike
+        start talking quickly, and everything generated while it plays is
+        concatenated into a single file and played as one. Generation runs
+        faster than real time, so in practice a sentence is two files: the
+        opening half-second, and the rest.
+        """
+        box = self._mailbox(request_id)
+        buffered: list[str] = []
+        finished = False
+
         self._play_file(first.get("path"))
+
         while not self._stop_flag.is_set():
-            try:
-                event = self._events.get(timeout=0.3)
-            except queue.Empty:
-                if self._proc is None or self._proc.poll() is not None:
-                    return
+            # Drain whatever the worker has produced so far without waiting.
+            while True:
+                try:
+                    event = box.get_nowait()
+                except queue.Empty:
+                    break
+                kind = event.get("event")
+                if kind == "audio":
+                    buffered.append(event.get("path"))
+                elif kind in ("truncated", "timeout"):
+                    self._last_truncation = (
+                        f"{kind} at {event.get('seconds')}s "
+                        f"(ceiling {event.get('limit')}s)"
+                    )
+                    self._healthy = False
+                    logger.warning("Qwen TTS %s — runaway generation stopped",
+                                   self._last_truncation)
+                    finished = True
+                elif kind == "done":
+                    self._healthy = True
+                    finished = True
+                elif kind == "error":
+                    self._healthy = False
+                    finished = True
+
+            if buffered:
+                self._play_file(self._join(buffered))
+                buffered = []
                 continue
-            kind = event.get("event")
-            if event.get("id") != request_id:
-                continue
-            if kind == "audio":
-                self._play_file(event.get("path"))
-            elif kind in ("truncated", "timeout"):
-                self._last_truncation = (
-                    f"{kind} at {event.get('seconds')}s "
-                    f"(ceiling {event.get('limit')}s)"
-                )
-                logger.warning("Qwen TTS %s — runaway generation stopped",
-                               self._last_truncation)
-                return
-            elif kind in ("done", "error"):
-                return
+            if finished:
+                break
+            if self._proc is None or self._proc.poll() is not None:
+                break
+            time.sleep(0.02)
+
+        self._close_mailbox(request_id)
+
+    @staticmethod
+    def _join(paths: list[str]) -> str | None:
+        """Concatenate consecutive chunks into one playable file."""
+        paths = [p for p in paths if p and os.path.exists(p)]
+        if not paths:
+            return None
+        if len(paths) == 1:
+            return paths[0]
+
+        import wave
+
+        target = paths[0] + ".joined.wav"
+        try:
+            with wave.open(paths[0]) as first:
+                params = first.getparams()
+            with wave.open(target, "wb") as out:
+                out.setparams(params)
+                for path in paths:
+                    with wave.open(path) as part:
+                        out.writeframes(part.readframes(part.getnframes()))
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+            return target
+        except Exception as exc:
+            logger.warning("Qwen TTS could not join audio chunks: %s", exc)
+            return paths[0]
 
     def _play_file(self, path: str | None) -> None:
+        """Play one file, watching for a stop the whole time it plays."""
         if not path or self._stop_flag.is_set():
             return
         try:
@@ -322,10 +499,20 @@ class QwenVoice(VoiceProvider):
             return False
         if self._player is not None and self._player.poll() is None:
             return True
+        with self._queue_lock:
+            if self._pending:
+                return True
         return bool(self._playback is not None and self._playback.is_alive())
 
     def stop(self) -> None:
         self._stop_flag.set()
+        # Anything queued behind the current utterance is part of the reply
+        # the user just interrupted, so it goes with it. Leaving it would
+        # have Mike resume talking after being told to stop.
+        with self._queue_lock:
+            self._pending.clear()
+        with self._mailbox_lock:
+            self._mailboxes.clear()
         player = self._player
         if player is not None:
             try:
@@ -358,6 +545,15 @@ class QwenVoice(VoiceProvider):
         self._kill_worker()
 
     # ── reporting ─────────────────────────────────────────
+
+    @property
+    def healthy(self) -> bool:
+        return self._healthy
+
+    @property
+    def first_audio_ms(self) -> int:
+        """How long the last utterance took to become audible."""
+        return self._first_audio_ms
 
     @property
     def last_failure(self) -> str:
