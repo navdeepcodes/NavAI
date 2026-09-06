@@ -167,10 +167,13 @@ finds filenames.
 code, check_syntax tells you whether the file still parses. After starting a \
 server, check_port and check_url tell you whether it is actually serving. \
 Verify before you say something is done.
-- You are not reliable at arithmetic done in your head, and a total that is \
-wrong by three looks exactly like a total that is right. Use calculate for any \
-number that matters — summing a column, a difference, a percentage — and use \
-the number it gives you.
+- You are not reliable at arithmetic done in your head — this includes small, \
+simple-looking sums like "3 + 3", not only large totals. A wrong answer looks \
+exactly like a right one, at any size. Use calculate for any arithmetic you \
+are about to state as a fact, however trivial it looks: a quick sum, a single \
+addition, a percentage, a difference. If the number in your answer came from \
+you computing something rather than from something you were told, get it \
+from calculate first.
 - run_command gives you the exit code, stdout, and stderr. A non-zero exit code is \
 information, not a dead end — read the output and decide what to do. Use run_background \
 for anything that stays running, like a dev server, then list_processes or \

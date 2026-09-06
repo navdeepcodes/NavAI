@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,8 +54,13 @@ TRIALS = 2
 
 def _connect() -> sqlite3.Connection:
     _DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH), timeout=5, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    # A shared connection reached from several threads (the UI thread,
+    # a worker thread, a cancelled turn's cleanup) needs its statements
+    # serialized -- a bare sqlite3.Connection has no lock of its own, and
+    # concurrent execute()/commit() calls on one raced into "database is
+    # locked" or, once, a hang. See brain/_local_db.py.
+    from brain._local_db import connect as _locked_connect
+    conn = _locked_connect(str(_DB_PATH))
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS capability_observations (
@@ -76,12 +82,20 @@ def _connect() -> sqlite3.Connection:
 
 
 _conn: sqlite3.Connection | None = None
+# Guards the check-then-set below. Two threads calling _db() at the same
+# moment could otherwise both see _conn as None, both open a connection,
+# and both run CREATE TABLE against the same file at once -- measured:
+# that race is what "database is locked" actually came from under real
+# concurrency, not the execute/commit calls that ran afterwards.
+_conn_lock = threading.Lock()
 
 
 def _db() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        _conn = _connect()
+        with _conn_lock:
+            if _conn is None:
+                _conn = _connect()
     return _conn
 
 

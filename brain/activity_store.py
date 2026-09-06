@@ -8,9 +8,12 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 import time
 from pathlib import Path
 from typing import Any
+
+from logs.logger import logger
 
 # MIKE_DATA_DIR overrides the real per-user data directory — set by
 # tests/_isolate.py (or a pytest fixture) so tests can never touch the
@@ -24,8 +27,13 @@ MAX_ROWS = 500
 
 def _connect() -> sqlite3.Connection:
     _DB_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(_DB_PATH), timeout=5, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    # A shared connection reached from several threads (the UI thread,
+    # a worker thread, a cancelled turn's cleanup) needs its statements
+    # serialized -- a bare sqlite3.Connection has no lock of its own, and
+    # concurrent execute()/commit() calls on one raced into "database is
+    # locked" or, once, a hang. See brain/_local_db.py.
+    from brain._local_db import connect as _locked_connect
+    conn = _locked_connect(str(_DB_PATH))
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS activity (
@@ -49,12 +57,20 @@ def _migrate_project_scoped(conn: sqlite3.Connection) -> None:
 
 
 _conn: sqlite3.Connection | None = None
+# Guards the check-then-set below. Two threads calling _db() at the same
+# moment could otherwise both see _conn as None, both open a connection,
+# and both run CREATE TABLE against the same file at once -- measured:
+# that race is what "database is locked" actually came from under real
+# concurrency, not the execute/commit calls that ran afterwards.
+_conn_lock = threading.Lock()
 
 
 def _db() -> sqlite3.Connection:
     global _conn
     if _conn is None:
-        _conn = _connect()
+        with _conn_lock:
+            if _conn is None:
+                _conn = _connect()
     return _conn
 
 
@@ -71,6 +87,7 @@ def begin(action: str, project_id: int | None = None) -> int | None:
         _db().commit()
         return cur.lastrowid
     except Exception:
+        logger.exception("Could not record activity start for %r.", action)
         return None
 
 
@@ -87,7 +104,7 @@ def complete(row_id: int | None, outcome: str, succeeded: bool = True) -> None:
         _db().commit()
         _trim()
     except Exception:
-        pass
+        logger.exception("Could not record the outcome of activity %r.", row_id)
 
 
 def get(row_id: int | None) -> dict[str, Any] | None:
@@ -112,6 +129,7 @@ def get(row_id: int | None) -> dict[str, Any] | None:
         ).fetchone()
         return dict(row) if row else None
     except Exception:
+        logger.exception("Could not look up activity %r.", row_id)
         return None
 
 
@@ -127,6 +145,7 @@ def recent(limit: int = 60) -> list[dict[str, Any]]:
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
+        logger.exception("Could not list recent activity.")
         return []
 
 
@@ -135,7 +154,7 @@ def clear() -> None:
         _db().execute("DELETE FROM activity")
         _db().commit()
     except Exception:
-        pass
+        logger.exception("Could not clear activity history.")
 
 
 def _trim() -> None:
