@@ -109,6 +109,20 @@ while the irreversible step still waits. Confirmations are built by reading
 real state (the cells that will change, the memories that will go, the file
 that will be attached), never by restating the model's own description.
 
+The gate fails closed: if a destructive action needs confirmation and there
+is no way to ask for it, the action does not run. It is not enough for the
+caller to remember to provide a confirmation callback — an omitted one is
+treated the same as a denial, not as approval.
+
+## Local storage
+
+Memory, activity, and situation state live in one SQLite database, reached
+from more than one thread at once (the UI thread, a worker thread, a
+cancelled turn's own cleanup). Every store's connection goes through
+`brain/_local_db.py`, which serializes statement execution and cursor
+reads through a lock — a bare `sqlite3.Connection` has no lock of its own,
+and concurrent use of one produced real lock errors and, once, a hang.
+
 ## Status
 
 Early / actively developed. Expect breaking changes.
