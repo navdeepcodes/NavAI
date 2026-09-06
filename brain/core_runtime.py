@@ -473,20 +473,30 @@ class CoreRuntime:
             yield ("tool_start", friendly_tool_name(name, args))
 
             if needs_confirmation(name, args):
-                if confirm_callback:
-                    desc = describe_action(name, args)
-                    if not confirm_callback(desc):
-                        self._core.history.append({
-                            "role": "tool",
-                            "tool_call_id": tc.call_id,
-                            "content": json.dumps({
-                                "status": "cancelled",
-                                "message": "User denied this action.",
-                            }),
-                        })
-                        self._core.add_tool_result("Cancelled by user.")
-                        yield ("tool_end", "Cancelled by user.")
-                        continue
+                # Fail closed. If there is no way to ask, the action does not
+                # run -- a confirm_callback is an authoritative gate, not an
+                # optional extra that a caller can silently omit to skip it.
+                # A caller of process_streaming that forgets to wire up
+                # confirmation must get "nothing happened", never "everything
+                # happened, unasked."
+                approved = confirm_callback(describe_action(name, args)) if confirm_callback else False
+                if not approved:
+                    reason = (
+                        "User denied this action." if confirm_callback else
+                        "This action needs confirmation, and none was available, "
+                        "so it did not run."
+                    )
+                    self._core.history.append({
+                        "role": "tool",
+                        "tool_call_id": tc.call_id,
+                        "content": json.dumps({
+                            "status": "cancelled",
+                            "message": reason,
+                        }),
+                    })
+                    self._core.add_tool_result(reason)
+                    yield ("tool_end", reason)
+                    continue
 
             result = self._execute_tool(name, args)
 
@@ -612,17 +622,23 @@ class CoreRuntime:
             logger.info("Tool call: %s(%s)", name, args)
 
             if needs_confirmation(name, args):
-                if confirm_callback:
-                    desc = describe_action(name, args)
-                    if not confirm_callback(desc):
-                        self._core.history.append({
-                            "role": "tool",
-                            "content": json.dumps({
-                                "status": "cancelled",
-                                "message": "User denied this action.",
-                            }),
-                        })
-                        continue
+                # Same fail-closed rule as the streaming path: no callback
+                # means no execution, not silent approval.
+                approved = confirm_callback(describe_action(name, args)) if confirm_callback else False
+                if not approved:
+                    reason = (
+                        "User denied this action." if confirm_callback else
+                        "This action needs confirmation, and none was available, "
+                        "so it did not run."
+                    )
+                    self._core.history.append({
+                        "role": "tool",
+                        "content": json.dumps({
+                            "status": "cancelled",
+                            "message": reason,
+                        }),
+                    })
+                    continue
 
             result = self._execute_tool(name, args)
 
