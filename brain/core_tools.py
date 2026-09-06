@@ -1255,7 +1255,14 @@ def _coerces(value, want: str) -> bool:
     if want == "object":
         return isinstance(value, dict)
     if want == "string":
-        return not isinstance(value, (list, dict))
+        # Not "anything that isn't a list or dict" -- that accepted a bare
+        # int, float, or bool as a valid string. Nothing downstream expects
+        # that: path.strip(), content concatenation, and every other string
+        # operation on a tool argument assumes an actual str, and an int
+        # slipping through here surfaces as a raw, unhelpful Python
+        # exception (`'int' object has no attribute 'strip'`) instead of
+        # the clear, actionable message this function exists to produce.
+        return isinstance(value, str)
     return True
 
 

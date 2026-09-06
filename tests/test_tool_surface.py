@@ -59,7 +59,29 @@ def test_no_tool_accepts_an_unknown_parameter():
 
 
 def test_no_tool_accepts_a_value_of_the_wrong_type():
+    """Every declared type gets checked here, including "string".
+
+    An earlier version of this test skipped string parameters entirely
+    (`if want not in ("integer", "number", "array"): continue`) on the
+    apparent assumption that a string parameter is too permissive to get
+    wrong. It let a real bug through: check_arguments' string check was
+    `not isinstance(value, (list, dict))`, which accepted a bare int, float,
+    or bool as "a valid string" — a call like write_file(path=123, ...)
+    passed validation clean, then crashed downstream with a raw
+    `'int' object has no attribute 'strip'` instead of the clear message
+    this function exists to produce. Fixed in core_tools._coerces; this
+    loop now covers every JSON-schema type a tool can declare.
+    """
     from brain.core_tools import check_arguments
+
+    bad_value_for = {
+        "integer": "definitely-not-that-type",
+        "number": "definitely-not-that-type",
+        "array": "definitely-not-that-type",
+        "string": 123,        # the exact shape of the bug found live
+        "boolean": "definitely-not-that-type",
+        "object": "definitely-not-that-type",
+    }
 
     offenders = []
     for fn in _declared():
@@ -67,14 +89,28 @@ def test_no_tool_accepts_a_value_of_the_wrong_type():
         required = schema.get("required") or []
         for name, spec in (schema.get("properties") or {}).items():
             want = spec.get("type")
-            if want not in ("integer", "number", "array"):
+            if want not in bad_value_for:
                 continue
             args = {r: "x" for r in required}
-            args[name] = "definitely-not-that-type"
+            args[name] = bad_value_for[want]
             if check_arguments(fn["name"], args) is None:
                 offenders.append(f"{fn['name']}.{name} ({want})")
     assert not offenders, f"wrong types accepted: {offenders}"
-    print("PASS: declared types are enforced")
+    print("PASS: declared types are enforced, including strings")
+
+
+def test_an_integer_is_refused_where_a_string_is_wanted():
+    """The exact case witnessed live: Mike answered a real user message
+    normally, but a bare int slipping through as a path or command argument
+    would surface as a raw Python AttributeError instead of a clean,
+    actionable tool error."""
+    from brain.core_tools import check_arguments
+
+    problem = check_arguments("write_file", {"path": 123, "content": "hi"})
+    assert problem is not None, "an int path was accepted as a string"
+    assert "string" in problem and "123" in problem
+
+    assert check_arguments("write_file", {"path": "real/path.txt", "content": "hi"}) is None
 
 
 def test_every_required_parameter_is_actually_required():
