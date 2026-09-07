@@ -295,6 +295,174 @@ class _ActivityFacade(QObject):
     stop_requested = Signal()
 
 
+# ══ settings / memory / personalisation ═══════════════════
+
+class _Swatch(QPushButton):
+    def __init__(self, name: str, colour: str, on_pick) -> None:
+        super().__init__()
+        self._name = name
+        self._colour = colour
+        self._on_pick = on_pick
+        self.setFixedSize(24, 24)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(name.capitalize())
+        self.clicked.connect(lambda: on_pick(name))
+        self._selected = False
+
+    def set_selected(self, on: bool) -> None:
+        self._selected = on
+        self.update()
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setPen(Qt.NoPen)
+        p.setBrush(QColor(self._colour))
+        p.drawEllipse(4, 4, 16, 16)
+        if self._selected:
+            from PySide6.QtGui import QPen
+            pen = QPen(QColor(style.INK)); pen.setWidthF(1.5)
+            p.setPen(pen); p.setBrush(Qt.NoBrush)
+            p.drawEllipse(1, 1, 22, 22)
+
+
+class _SettingsView(QScrollArea):
+    closed = Signal()
+    accent_changed = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("settings")
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.NoFrame)
+        body = QWidget()
+        body.setStyleSheet("background:transparent;")
+        self._col = QVBoxLayout(body)
+        self._col.setContentsMargins(20, 8, 20, 16)
+        self._col.setSpacing(4)
+        self.setWidget(body)
+        self._swatches: list[_Swatch] = []
+
+    def reload(self) -> None:
+        while self._col.count():
+            item = self._col.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+        self._swatches.clear()
+
+        top = QHBoxLayout()
+        title = QLabel("MIKE")
+        title.setFont(style.label(11))
+        title.setStyleSheet(f"color:{style.INK_MUTE};letter-spacing:2px;background:transparent;")
+        top.addWidget(title)
+        top.addStretch(1)
+        done = QPushButton("Done")
+        done.setObjectName("deny")
+        done.setCursor(Qt.PointingHandCursor)
+        done.clicked.connect(self.closed.emit)
+        top.addWidget(done)
+        self._col.addLayout(top)
+        self._col.addSpacing(6)
+
+        self._section("APPEARANCE", "Mike's colour")
+        row = QHBoxLayout(); row.setSpacing(10); row.setContentsMargins(0, 2, 0, 0)
+        current = self._current_accent_name()
+        for name, colour in style.accent_presets().items():
+            sw = _Swatch(name, colour, self._pick_accent)
+            sw.set_selected(name == current)
+            self._swatches.append(sw)
+            row.addWidget(sw)
+        row.addStretch(1)
+        holder = QWidget(); holder.setStyleSheet("background:transparent;"); holder.setLayout(row)
+        self._col.addWidget(holder)
+        self._col.addSpacing(14)
+
+        self._section("VOICE", self._voice_line())
+        self._col.addSpacing(14)
+        self._section("MODEL", self._model_line())
+        self._col.addSpacing(14)
+        self._section("MEMORY", self._memory_line(), action=("Forget all", self._forget_all))
+        self._col.addSpacing(14)
+        self._section("PRIVACY", "Everything Mike does stays on this Mac. "
+                      "No account, no cloud, nothing sent anywhere.")
+        self._col.addStretch(1)
+
+    def _section(self, label: str, detail: str, action=None) -> None:
+        lbl = QLabel(label)
+        lbl.setFont(style.label(9.5))
+        lbl.setStyleSheet(f"color:{style.INK_FAINT};letter-spacing:1.5px;background:transparent;")
+        self._col.addWidget(lbl)
+        roww = QHBoxLayout(); roww.setContentsMargins(0, 2, 0, 0)
+        text = QLabel(detail)
+        text.setWordWrap(True)
+        text.setFont(style.voice(13))
+        text.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
+        roww.addWidget(text, 1)
+        if action:
+            btn = QPushButton(action[0])
+            btn.setObjectName("deny")
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.clicked.connect(action[1])
+            roww.addWidget(btn, 0, Qt.AlignTop)
+        holder = QWidget(); holder.setStyleSheet("background:transparent;"); holder.setLayout(roww)
+        self._col.addWidget(holder)
+
+    # data
+    def _current_accent_name(self) -> str:
+        try:
+            from config import preferences
+            return str(preferences.get("accent", "amber") or "amber").lower()
+        except Exception:
+            return "amber"
+
+    def _pick_accent(self, name: str) -> None:
+        try:
+            from config import preferences
+            preferences.set_value("accent", name)
+        except Exception:
+            pass
+        for sw in self._swatches:
+            sw.set_selected(sw._name == name)
+        self.accent_changed.emit()
+
+    def _voice_line(self) -> str:
+        try:
+            from config import preferences
+            p = str(preferences.get("voice_provider", "native")).lower()
+            if p == "qwen":
+                speaker = str(preferences.get("voice_qwen_speaker", "Ryan"))
+                return f"{speaker} — a natural neural voice, running locally."
+        except Exception:
+            pass
+        return "Samantha — the built-in system voice. Always available."
+
+    def _model_line(self) -> str:
+        try:
+            from config.ollama import OLLAMA_CHAT_MODEL
+            return f"Recommended for this Mac. Running {OLLAMA_CHAT_MODEL}, entirely on-device."
+        except Exception:
+            return "Running a local model, entirely on-device."
+
+    def _memory_line(self) -> str:
+        try:
+            from brain import memory_store
+            n = len(memory_store.all_memories(limit=500))
+            if n == 0:
+                return "Nothing kept yet. Mike remembers only what's worth keeping."
+            return f"{n} thing{'s' if n != 1 else ''} kept — only what's worth remembering."
+        except Exception:
+            return "Mike remembers only what's worth keeping, and you control it."
+
+    def _forget_all(self) -> None:
+        try:
+            from brain import memory_store
+            memory_store.forget(query="everything")
+        except Exception:
+            pass
+        self.reload()
+
+
 # ══ the panel ══════════════════════════════════════════════
 
 class MikePanel(QWidget):
@@ -334,6 +502,13 @@ class MikePanel(QWidget):
         self.activity = _ActivityFacade()
         self._stop.clicked.connect(self.activity.stop_requested.emit)
         hb.addWidget(self._stop, 0, Qt.AlignVCenter)
+
+        self._menu_btn = QPushButton("⋯")
+        self._menu_btn.setObjectName("menu")
+        self._menu_btn.setCursor(Qt.PointingHandCursor)
+        self._menu_btn.setFixedSize(28, 24)
+        self._menu_btn.clicked.connect(self._toggle_settings)
+        hb.addWidget(self._menu_btn, 0, Qt.AlignVCenter)
         outer.addWidget(header)
 
         # stage: the scrollable conversation + activity. Height follows content
@@ -356,6 +531,15 @@ class MikePanel(QWidget):
         self._scroll.setWidget(stage)
         outer.addWidget(self._scroll, 1)
 
+        # the settings / memory / personalisation surface, summoned over the
+        # stage rather than living as a separate window — everything about Mike
+        # is reached from Mike, not from a menu bar.
+        self._settings_view = _SettingsView()
+        self._settings_view.closed.connect(self.close_overlays)
+        self._settings_view.accent_changed.connect(self._restyle)
+        self._settings_view.hide()
+        outer.addWidget(self._settings_view, 1)
+
         self.conversation = _ConversationFacade(self._scroll)
 
         # confirmation slot (inline, above the input)
@@ -373,14 +557,35 @@ class MikePanel(QWidget):
         pad.addWidget(self.input)
         outer.addLayout(pad)
 
-        self.setStyleSheet(_STYLESHEET)
+        self.setStyleSheet(_build_stylesheet())
         self._show_resting()
 
+    def _restyle(self) -> None:
+        """Re-apply styles so a changed accent flows through the whole panel
+        live — the presence mark already reads the accent on every paint."""
+        self.setStyleSheet(_build_stylesheet())
+        self.mark.update()
+        self.input.voice.update()
+
     # ── resting composition ───────────────────────────────
+    _INTRO = (
+        "I'm Mike. I live on this Mac — not in a browser tab — and I stay here "
+        "in the background. I can read and write files, run commands, use your "
+        "browser and see your screen when you ask; anything that changes "
+        "something, I check with you first. Nothing leaves this machine.\n\n"
+        "Ask me anything below, or press ⌘⇧Space to talk from anywhere."
+    )
+
     def _show_resting(self) -> None:
-        self._resting = _Turn(self._greeting(), "mike")
+        from config import preferences
+
+        first_run = not bool(preferences.get("onboarding_complete", False))
+        text = self._INTRO if first_run else self._greeting()
+        self._resting = _Turn(text, "mike")
         self._resting.setStyleSheet("padding-top:2px;")
         self._insert(self._resting)
+        if first_run:
+            preferences.set_value("onboarding_complete", True)
 
     def _greeting(self) -> str:
         from datetime import datetime
@@ -512,12 +717,31 @@ class MikePanel(QWidget):
     def window(self):  # noqa: A003
         return super().window()
 
-    # overlays (settings / history / memory) — secondary, summoned
+    # overlays (settings / memory / personalisation) — secondary, summoned
+    def _toggle_settings(self) -> None:
+        if self.showing_overlay():
+            self.close_overlays()
+        else:
+            self._open_settings()
+
+    def _open_settings(self) -> None:
+        self._overlay_open = True
+        self._settings_view.reload()
+        self._scroll.hide()
+        self.confirm.hide()
+        self._settings_view.show()
+        win = self.window()
+        if win is not None and win is not self:
+            win.setFixedHeight(self.CAP_HEIGHT)
+
     def showing_overlay(self) -> bool:
-        return False
+        return getattr(self, "_overlay_open", False)
 
     def close_overlays(self) -> None:
-        pass
+        self._overlay_open = False
+        self._settings_view.hide()
+        self._scroll.show()
+        QTimer.singleShot(0, self._fit)
 
     def clear(self) -> None:
         while self._stage.count() > 1:
@@ -545,8 +769,14 @@ class MikePanel(QWidget):
         p.drawPath(path)
 
 
-_STYLESHEET = f"""
-QScrollArea#stage {{ background: transparent; border: none; }}
+def _build_stylesheet() -> str:
+    return f"""
+QScrollArea#stage, QScrollArea#settings {{ background: transparent; border: none; }}
+QPushButton#menu {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 16px; padding: 0 2px;
+}}
+QPushButton#menu:hover {{ color: {style.INK}; }}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 2px; }}
 QScrollBar::handle:vertical {{
     background: {style.INK_FAINT}; border-radius: 4px; min-height: 28px;
