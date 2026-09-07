@@ -281,20 +281,34 @@ class _Confirm(QFrame):
         self.setObjectName("confirm")
         self.hide()
         col = QVBoxLayout(self)
-        col.setContentsMargins(16, 14, 16, 14)
-        col.setSpacing(12)
+        col.setContentsMargins(17, 15, 17, 15)
+        col.setSpacing(11)
 
-        self._head = QLabel()
+        head = QHBoxLayout(); head.setSpacing(9)
+        self._dot = QLabel("●")
+        self._dot.setStyleSheet(f"color:{style.WARN};background:transparent;font-size:9px;")
+        head.addWidget(self._dot, 0, Qt.AlignVCenter)
+        self._head = QLabel("MIKE WANTS TO")
         self._head.setFont(style.label(10))
         self._head.setStyleSheet(
-            f"color:{style.WARN};background:transparent;letter-spacing:1.5px;")
-        col.addWidget(self._head)
+            f"color:{style.WARN};background:transparent;letter-spacing:1.6px;")
+        head.addWidget(self._head, 1, Qt.AlignVCenter)
+        col.addLayout(head)
 
         self._body = QLabel()
         self._body.setWordWrap(True)
-        self._body.setFont(style.voice(14))
+        self._body.setFont(style.voice(15))
         self._body.setStyleSheet(f"color:{style.INK};background:transparent;")
         col.addWidget(self._body)
+
+        # a distinct consequence line — shown only when the action is
+        # irreversible, so "you can't take this back" is impossible to miss.
+        self._consequence = QLabel()
+        self._consequence.setWordWrap(True)
+        self._consequence.setFont(style.label(11, __import__("PySide6").QtGui.QFont.Weight.Normal))
+        self._consequence.setStyleSheet(f"color:{style.STOP};background:transparent;")
+        self._consequence.hide()
+        col.addWidget(self._consequence)
 
         buttons = QHBoxLayout()
         buttons.setSpacing(8)
@@ -311,9 +325,52 @@ class _Confirm(QFrame):
         buttons.addWidget(self._allow)
         col.addLayout(buttons)
 
+    # keywords that make an action irreversible / weightier — used ONLY to
+    # shape how clearly the panel warns, never to decide anything. The real
+    # gate is in the engine; this just makes sure a delete never looks like a
+    # casual amber button.
+    _DESTRUCTIVE = ("delete", "remove", "erase", "overwrite", "permanent",
+                    "can't be undone", "cannot be undone", "irreversible")
+    _VERB = {"delete": "Delete", "remove": "Remove", "send": "Send",
+             "email": "Send", "overwrite": "Overwrite", "move": "Move"}
+
     def ask(self, description: str) -> None:
-        self._head.setText("MIKE NEEDS YOU")
-        self._body.setText(description)
+        lower = description.lower()
+        destructive = any(k in lower for k in self._DESTRUCTIVE)
+
+        verb = "Go ahead"
+        for key, label in self._VERB.items():
+            if key in lower:
+                verb = label
+                break
+
+        # the irreversibility clause moves to its own red line, so strip it
+        # from the body rather than saying it twice.
+        body = description
+        for clause in ("This can't be undone.", "This cannot be undone.",
+                       "This can't be undone", "This cannot be undone",
+                       "This is permanent.", "This is permanent"):
+            body = body.replace(clause, "").replace("  ", " ").strip(" —-.")
+        if body and not body.endswith((".", "?", "!")):
+            body += "."
+
+        self._head.setText("MIKE WANTS TO" if verb != "Go ahead" else "MIKE NEEDS YOU")
+        self._body.setText(body)
+        self._allow.setText(verb)
+        # destructive → the affirmative is red and deliberate, not inviting.
+        self._allow.setObjectName("allow_danger" if destructive else "allow")
+        self._allow.style().unpolish(self._allow); self._allow.style().polish(self._allow)
+
+        if destructive:
+            self._consequence.setText("This can't be undone.")
+            self._consequence.show()
+        else:
+            self._consequence.hide()
+
+        # a matching accent on the block's edge
+        self.setProperty("danger", destructive)
+        self.style().unpolish(self); self.style().polish(self)
+
         self.show()
         self.visibility_changed.emit()
 
@@ -883,6 +940,17 @@ QFrame#confirm {{
     background: {style.GROUND_RAISED};
     border: 1px solid {style.WARN};
     border-radius: 12px;
+}}
+QFrame#confirm[danger="true"] {{
+    border: 1px solid {style.STOP};
+}}
+QPushButton#allow_danger {{
+    background: transparent; color: {style.STOP};
+    border: 1px solid {style.STOP}; border-radius: 8px;
+    padding: 7px 18px; font-size: 13px; font-weight: 600;
+}}
+QPushButton#allow_danger:hover {{
+    background: {style.STOP}; color: #17140F;
 }}
 QPushButton#stop {{
     background: transparent; color: {style.INK_MUTE};
