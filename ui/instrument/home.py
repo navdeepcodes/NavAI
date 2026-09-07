@@ -35,7 +35,6 @@ from ui.instrument import tokens
 from ui.instrument.dial import Dial
 from ui.instrument.widgets import (
     Byline,
-    Counter,
     EngravedLabel,
     Ink,
     InkFact,
@@ -84,6 +83,87 @@ class _Voice(QObject):
 
 # ══ A run of tool calls, in the machine register ═══════════
 
+# What each runtime state reads as, in one glanceable word, and which of the
+# three signal colours it carries. The words are the user's language, not the
+# runtime's: "responding" rather than "streaming", "needs you" rather than
+# "awaiting_confirmation". The colour matches the dial, so the word and the
+# needle never disagree.
+_STATE_READOUT = {
+    "idle":        ("Resting",   tokens.MUTED),
+    "listening":   ("Listening", tokens.AMBER),
+    "thinking":    ("Thinking",  tokens.AMBER),
+    "working":     ("Working",   tokens.AMBER),
+    "responding":  ("Responding", tokens.AMBER),
+    "speaking":    ("Speaking",  tokens.AMBER),
+    "needs_user":  ("Needs you", tokens.RED),
+    "error":       ("Stopped",   tokens.RED),
+    "done":        ("Done",      tokens.GREEN),
+}
+
+
+class HeaderLine(QLabel):
+    """The one line at the top of the conversation. Mike, first.
+
+    Establishes whose surface this is before anything else, then carries the
+    ambient context -- the app you're working in, the time -- as a quiet
+    trailing note. The name is the anchor; everything after it is subordinate,
+    both in colour and in weight, so the header can never again read as though
+    Mike had taken on the identity of whatever app happened to be frontmost.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setTextFormat(Qt.RichText)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.set_context("", datetime.now().strftime("%H:%M"))
+
+    def set_context(self, where: str, clock: str) -> None:
+        from html import escape as _esc
+
+        name = (
+            f'<span style="color:{tokens.TEXT}; font-family:{tokens.label_family()}; '
+            f'font-size:11px; letter-spacing:2px;">MIKE</span>'
+        )
+        tail = ""
+        if where:
+            tail += (
+                f'<span style="color:{tokens.FAINT};"> &nbsp;·&nbsp; </span>'
+                f'<span style="color:{tokens.MUTED}; font-family:{tokens.label_family()}; '
+                f'font-size:10px; letter-spacing:1px;">IN {_esc(where).upper()}</span>'
+            )
+        tail += (
+            f'<span style="color:{tokens.FAINT};"> &nbsp;·&nbsp; </span>'
+            f'<span style="color:{tokens.MUTED}; font-family:{tokens.label_family()}; '
+            f'font-size:10px; letter-spacing:1px;">{_esc(clock)}</span>'
+        )
+        self.setText(name + tail)
+
+
+class StateReadout(QLabel):
+    """One word under the dial: what Mike is doing, in the user's language.
+
+    Tied to the same set_state() that drives the needle, so the two are always
+    telling the same story. Deliberately quiet at rest -- "Resting" in muted
+    grey -- and only picks up colour when Mike is actually doing something or
+    needs the user, so a glance costs nothing when nothing is happening.
+    """
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFont(tokens.label(11))
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet("background: transparent; border: none;")
+        self.set_state("idle")
+
+    def set_state(self, state: str) -> None:
+        word, colour = _STATE_READOUT.get(state, _STATE_READOUT["idle"])
+        self.setText(word.upper())
+        self.setStyleSheet(
+            f"background: transparent; border: none; color: {colour};"
+            "letter-spacing: 1.5px;"
+        )
+
+
 class MachineBlock(QFrame):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -104,19 +184,40 @@ class MachineBlock(QFrame):
             self._rows[index] = (self._rows[index][0], status)
             self._render()
 
+    # A leading mark per row, so "Mike is working" reads as progress you can
+    # trust at a glance rather than a wall of identical lines. A filling amber
+    # ring is the step in flight; a green tick is done; a red bar is a real
+    # failure. The mark carries the state, so the text is free to be plain
+    # human language ("Reading Q3 sales") instead of a raw tool call.
+    _MARK = {
+        "running": (tokens.AMBER,   "◐"),
+        "done":    (tokens.GREEN,   "✓"),
+        "failed":  (tokens.RED,     "▍"),
+    }
+
     def _render(self) -> None:
         from html import escape as _esc
 
-        tone = {"running": tokens.INK, "done": tokens.INK_DIM, "failed": tokens.RED}
-        lines = [
-            f'<span style="color:{tone.get(status, tokens.INK_DIM)}">{_esc(text)}</span>'
-            for text, status in self._rows
-        ]
+        text_tone = {"running": tokens.INK, "done": tokens.INK_DIM, "failed": tokens.INK}
+        rows_html = []
+        for text, status in self._rows:
+            mark_colour, glyph = self._MARK.get(status, self._MARK["running"])
+            rows_html.append(
+                '<tr>'
+                f'<td style="color:{mark_colour}; font-size:12px; '
+                'padding:2px 10px 2px 0; vertical-align:top;">'
+                f'{glyph}</td>'
+                f'<td style="color:{text_tone.get(status, tokens.INK_DIM)}; '
+                f'font-family:{tokens.label_family()}; font-size:13px; '
+                'line-height:150%; padding:1px 0;">'
+                f'{_esc(text)}</td>'
+                '</tr>'
+            )
         self._body.setTextFormat(Qt.RichText)
         self._body.setText(
-            f'<div style="line-height:160%; color:{tokens.INK_DIM}; '
-            f'font-family:{tokens.mono_family()}; font-size:11.5px;">'
-            f'{"<br>".join(lines)}</div>'
+            '<table style="border-collapse:collapse; border-spacing:0;">'
+            + "".join(rows_html)
+            + '</table>'
         )
 
 
@@ -298,21 +399,17 @@ class HomeSurface(QWidget):
 
         self.dial = Dial(104)
         col.addWidget(self.dial, 0, Qt.AlignHCenter)
-        col.addSpacing(16)
+        col.addSpacing(14)
 
-        self.counter = Counter(0)
-        col.addWidget(self.counter, 0, Qt.AlignHCenter)
-        col.addSpacing(7)
-
-        readings_lbl = EngravedLabel("readings today", size=9.5)
-        col.addWidget(readings_lbl, 0, Qt.AlignHCenter)
+        # The one signal worth glancing at: what Mike is doing right now, in a
+        # single word, tied to the same real state that drives the dial. A
+        # "readings today" trip counter lived here before -- honest, but it
+        # answered a question nobody asks. This answers the question everyone
+        # asks of an agent: is it listening, thinking, acting, or waiting on me?
+        self.state_word = StateReadout()
+        col.addWidget(self.state_word, 0, Qt.AlignHCenter)
 
         col.addStretch(1)
-
-        self._context_lbl = EngravedLabel("", colour=tokens.MUTED, size=9.5)
-        self._context_lbl.setWordWrap(True)
-        col.addWidget(self._context_lbl)
-        col.addSpacing(14)
 
         self._room_labels: dict[str, QLabel] = {}
         for name in self.ROOMS:
@@ -334,7 +431,7 @@ class HomeSurface(QWidget):
         outer.setContentsMargins(28, 22, 28, 20)
         outer.setSpacing(0)
 
-        self._context_top = EngravedLabel("", colour=tokens.MUTED, size=10)
+        self._context_top = HeaderLine()
         outer.addWidget(self._context_top)
         outer.addSpacing(16)
 
@@ -437,12 +534,44 @@ class HomeSurface(QWidget):
             hint = InkFact("⌘⇧space — from anywhere, any time")
             col.addWidget(hint)
             preferences.set_value("onboarding_complete", True)
+        else:
+            # After onboarding, a resting page is still a page, not a void. A
+            # quiet greeting in Mike's own hand and a single line about how to
+            # reach him means idle reads as "ready and waiting" rather than
+            # "empty chat window" -- which for a background-first assistant is
+            # the whole difference. Restrained on purpose: one greeting, one
+            # line, nothing that asks to be looked at.
+            col.addSpacing(20)
+            greet = Ink(self._resting_greeting(), size=17)
+            col.addWidget(greet)
+            col.addSpacing(10)
+            ready = InkFact("Resting. Ask me anything, or press ⌘⇧space to talk.")
+            col.addWidget(ready)
 
         self._thread.insertWidget(0, block)
         self._resting = block
 
+    @staticmethod
+    def _resting_greeting() -> str:
+        hour = datetime.now().hour
+        if hour < 5:
+            return "Still here."
+        if hour < 12:
+            return "Good morning."
+        if hour < 17:
+            return "Good afternoon."
+        if hour < 22:
+            return "Good evening."
+        return "Still here."
+
     def _drop_resting(self) -> None:
         if self._resting is not None:
+            # hide() before deleteLater(): removeWidget only unmanages the
+            # widget from the layout, and deleteLater is deferred to the event
+            # loop, so between the two the resting page would keep painting at
+            # its old position -- on top of the first real message. Hiding it
+            # now makes the transition clean the instant a message arrives.
+            self._resting.hide()
             self._thread.removeWidget(self._resting)
             self._resting.deleteLater()
             self._resting = None
@@ -845,17 +974,21 @@ class HomeSurface(QWidget):
 
     def _refresh_counters(self) -> None:
         try:
+            # Mike names himself first. The frontmost app is genuinely useful
+            # -- it is what Mike is coexisting with -- but it was the single
+            # most prominent string in the whole window, in caps, top-left,
+            # so the UI read as if Mike *were* whatever app you had open
+            # ("CHATGPT ·  19:43"). Now the header leads with Mike and the
+            # ambient context follows as a quiet "· in Safari", framed as
+            # where you are rather than who Mike is.
             clock = datetime.now().strftime("%H:%M")
-            midnight = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-            rows = activity_store.recent(300)
-            count = sum(1 for r in rows if (r.get("started_at") or 0) >= midnight)
-            self.counter.set_value(count)
-
             where = self._where()
-            self._context_lbl.set_text(where)
-            self._context_top.set_text(f"{where}  ·  {clock}")
+            if where and where not in (datetime.now().strftime("%A"),):
+                self._context_top.set_context(where, clock)
+            else:
+                self._context_top.set_context("", clock)
         except Exception:
-            logger.exception("Instrument rail refresh failed.")
+            logger.exception("Instrument header refresh failed.")
 
     def _where(self) -> str:
         try:
@@ -968,6 +1101,7 @@ class HomeSurface(QWidget):
     def set_state(self, state: str) -> None:
         self._state = state
         self.dial.set_state(state)
+        self.state_word.set_state(state)
         self.input.dial.set_state(state if state != "idle" else "responding")
 
     def state(self) -> str:

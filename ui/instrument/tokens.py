@@ -90,6 +90,12 @@ def serif_family() -> str:
 LABEL_SANS = ".AppleSystemUIFont"
 
 
+def label_family() -> str:
+    """The instrument's engraved-label typeface, for rich-text spans that need
+    to name it explicitly rather than take it from a QFont."""
+    return "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+
+
 def label(size: int = 11, weight: int = QFont.Weight.DemiBold) -> QFont:
     """Engraved panel labels — small, spaced, uppercase by convention."""
     font = QFont(LABEL_SANS, size)

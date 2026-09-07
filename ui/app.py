@@ -15,8 +15,7 @@ from ui.controller.ui_controller import UIController
 from ui.instrument import tokens
 from ui.instrument.edge import EdgeStrip
 from ui.system.global_hotkey import GlobalHotkey
-from ui.instrument.home import HomeSurface
-from ui.theme import colors
+from ui.panel.mike_panel import MikePanel
 from ui.theme.stylesheet import GLOBAL_STYLESHEET
 from ui.instrument.invoke import InvokeLine
 
@@ -71,7 +70,7 @@ class MikeWindow(QMainWindow):
         # The settings surface edits real engines, so it is handed the
         # controller's own switches rather than its own copies of state.
         self._settings_hooks = {}
-        self.page = HomeSurface(self._settings_hooks)
+        self.page = MikePanel(self._settings_hooks)
 
         self.floating = InvokeLine()
 
@@ -149,17 +148,28 @@ class MikeWindow(QMainWindow):
         self._quitting = True
         QApplication.instance().quit()
 
+    PANEL_WIDTH = 620
+
     def _configure_window(self):
-
+        # A summoned presence, not a window you live in: frameless, floating,
+        # translucent so the panel's own rounded surface reads as a system
+        # layer over whatever you were doing. Tool-window so it stays out of
+        # the dock and app switcher -- Mike is reached by the hotkey, not by
+        # hunting for a window. Height follows the panel's content; width is
+        # fixed at a comfortable reading measure.
         self.setWindowTitle("Mike")
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setStyleSheet("QMainWindow { background: transparent; }")
 
-        self.resize(1120, 760)
+        self.setFixedWidth(self.PANEL_WIDTH)
+        self.setFixedHeight(self.page.desired_height())
 
-        self.setMinimumSize(860, 620)
-
-        self.setStyleSheet(
-            f"QMainWindow {{ background: {colors.HOME_GROUND}; }}"
-        )
+        try:
+            screen = QApplication.primaryScreen().availableGeometry()
+            self.move(screen.center().x() - self.PANEL_WIDTH // 2, screen.top() + 130)
+        except Exception:
+            pass
 
     def _configure_shortcuts(self):
 
