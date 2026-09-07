@@ -186,13 +186,19 @@ def test_global_invocation_still_works_after_the_window_is_closed():
     window = _fresh_window()
     window.show()
     window.close()
+    assert not window.isVisible()
 
-    # This is what the Carbon hotkey callback invokes.
+    # This is what the Carbon hotkey callback invokes. In the redesigned
+    # interaction model the panel *is* the summoned presence, so the hotkey
+    # brings the panel itself forward rather than a separate quick-line.
     window._summon()
 
-    assert window.floating.isVisible(), "global invocation must work with the window closed"
+    assert window.isVisible(), "global invocation must bring Mike forward with the window closed"
 
-    window.floating.dismiss()
+    # And it toggles: pressing it again while Mike is up puts him away.
+    window._summon()
+    assert not window.isVisible(), "summoning again should dismiss the panel"
+
     window._teardown()
     print("PASS: global invocation still works with the main window closed")
 

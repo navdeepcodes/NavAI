@@ -221,17 +221,24 @@ class MikeWindow(QMainWindow):
                 self.edge.sleep()
 
     def _summon(self) -> None:
-        """Global invocation: bring Mike forward wherever the user is."""
+        """Global invocation: bring Mike forward, or put him away again.
 
+        The panel *is* the summoned presence -- a compact floating surface that
+        the hotkey shows directly, rather than a separate quick-line that then
+        expands into a heavier window. One coherent surface, summoned and
+        dismissed by the same key, wherever the user is. The ambient edge
+        strip remains Mike's "still here" mark while he's away.
+        """
         self.edge.dismiss()
 
-        if self.floating.isVisible():
-            self.floating.dismiss()
+        if self.isVisible() and not self.isMinimized():
+            self.hide()
             return
 
-        self.floating.activate()
-        self.floating.raise_()
-        self.floating.activateWindow()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.page.input.focus()
 
     def _expand_from_floating(self) -> None:
         self.floating.dismiss()
