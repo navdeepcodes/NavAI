@@ -195,8 +195,17 @@ def test_global_invocation_still_works_after_the_window_is_closed():
 
     assert window.isVisible(), "global invocation must bring Mike forward with the window closed"
 
-    # And it toggles: pressing it again while Mike is up puts him away.
+    # And it toggles: pressing it again while Mike is up puts him away. The
+    # dismiss fades out first, so it completes on the event loop — pump it.
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
     window._summon()
+    deadline = time.time() + 1.5
+    while window.isVisible() and time.time() < deadline:
+        QApplication.instance().processEvents()
+        time.sleep(0.01)
     assert not window.isVisible(), "summoning again should dismiss the panel"
 
     window._teardown()

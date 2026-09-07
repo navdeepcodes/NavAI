@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import sys
 
-from PySide6.QtCore import Qt, QEvent
+from PySide6.QtCore import Qt, QEvent, QPropertyAnimation, QEasingCurve, QPoint
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon
 
@@ -232,13 +232,57 @@ class MikeWindow(QMainWindow):
         self.edge.dismiss()
 
         if self.isVisible() and not self.isMinimized():
-            self.hide()
+            self._animate_out()
             return
 
+        self._animate_in()
+
+    def _animate_in(self) -> None:
+        """Mike appears — a fast fade and a small rise into place, so it reads
+        as a presence arriving rather than a window opening. Short enough
+        (~150ms) that it never feels like waiting."""
+        try:
+            screen = QApplication.primaryScreen().availableGeometry()
+            rest_x = screen.center().x() - self.PANEL_WIDTH // 2
+            rest_y = screen.top() + 130
+        except Exception:
+            rest_x, rest_y = self.x(), self.y()
+
+        self.setWindowOpacity(0.0)
+        self.move(rest_x, rest_y + 10)
         self.show()
         self.raise_()
         self.activateWindow()
         self.page.input.focus()
+
+        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fade.setDuration(150)
+        self._fade.setStartValue(0.0)
+        self._fade.setEndValue(1.0)
+        self._fade.setEasingCurve(QEasingCurve.OutCubic)
+
+        self._rise = QPropertyAnimation(self, b"pos", self)
+        self._rise.setDuration(180)
+        self._rise.setStartValue(QPoint(rest_x, rest_y + 10))
+        self._rise.setEndValue(QPoint(rest_x, rest_y))
+        self._rise.setEasingCurve(QEasingCurve.OutCubic)
+
+        self._fade.start()
+        self._rise.start()
+
+    def _animate_out(self) -> None:
+        """Mike steps back — a quick fade, then actually hidden."""
+        self._fadeout = QPropertyAnimation(self, b"windowOpacity", self)
+        self._fadeout.setDuration(110)
+        self._fadeout.setStartValue(self.windowOpacity())
+        self._fadeout.setEndValue(0.0)
+        self._fadeout.setEasingCurve(QEasingCurve.InCubic)
+        self._fadeout.finished.connect(self._finish_hide)
+        self._fadeout.start()
+
+    def _finish_hide(self) -> None:
+        self.hide()
+        self.setWindowOpacity(1.0)
 
     def _expand_from_floating(self) -> None:
         self.floating.dismiss()
@@ -272,6 +316,17 @@ class MikeWindow(QMainWindow):
         if getattr(self, "_torn_down", False):
             return
         self._torn_down = True
+
+        # Stop any in-flight summon/dismiss animations before the window goes,
+        # so a property animation can never fire a frame against a window that
+        # is being destroyed.
+        for name in ("_fade", "_rise", "_fadeout"):
+            anim = getattr(self, name, None)
+            if anim is not None:
+                try:
+                    anim.stop()
+                except Exception:
+                    pass
 
         self.controller.shutdown()
 

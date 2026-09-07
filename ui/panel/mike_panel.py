@@ -142,15 +142,19 @@ class _Turn(QLabel):
         self._render()
 
     def _render(self) -> None:
-        colour = style.INK if self._who == "mike" else style.INK_SOFT
-        size = 15 if self._who == "mike" else 14
-        prefix = ""
-        if self._who == "you":
-            prefix = (f'<span style="color:{style.accent()};">›</span>&nbsp;&nbsp;')
+        # Mike's speech is the hero: larger, warm-bright, generous line. Your
+        # prompt is the quiet context that produced it — smaller, muted, marked
+        # with a single accent tick. The contrast is the hierarchy; you scan
+        # Mike's answers and the questions recede.
+        if self._who == "mike":
+            colour, size, lh, prefix = style.INK, 16, 164, ""
+        else:
+            colour, size, lh = style.INK_MUTE, 13, 150
+            prefix = f'<span style="color:{style.accent()};">›</span>&nbsp;&nbsp;'
         self.setTextFormat(Qt.RichText)
         self.setText(
             f'<div style="color:{colour};font-family:{style.ui_family()};'
-            f'font-size:{size}px;line-height:158%;">{prefix}'
+            f'font-size:{size}px;line-height:{lh}%;letter-spacing:0.1px;">{prefix}'
             f'{escape(self._raw).replace(chr(10), "<br>")}</div>'
         )
 
@@ -162,43 +166,84 @@ class _Turn(QLabel):
 # ══ activity ledger ════════════════════════════════════════
 
 class _Ledger(QFrame):
-    """What Mike is doing, as a short list with honest status marks."""
+    """What Mike is doing, as a short list with honest, living status marks.
 
-    _MARK = {"running": (style.WARN, "●"), "done": (style.GOOD, "✓"),
-             "failed": (style.STOP, "✕")}
+    The step in flight isn't a static bullet — its mark breathes, so the panel
+    reads as "Mike is doing something" rather than "a list that stopped
+    updating." Completed steps settle to a quiet tick; a failure is a clear
+    mark, not a colour the user has to decode. The pulse animates only while a
+    step is actually running, and stops the moment the work is done.
+    """
+
+    _DONE = style.GOOD
+    _FAILED = style.STOP
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("ledger")
         col = QVBoxLayout(self)
-        col.setContentsMargins(14, 12, 14, 12)
+        col.setContentsMargins(15, 13, 15, 13)
         col.setSpacing(0)
         self._body = QLabel()
         self._body.setWordWrap(True)
         col.addWidget(self._body)
         self._rows: list[tuple[str, str]] = []
+        self._pulse = 0.0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._beat)
 
     def add_row(self, text: str) -> int:
         self._rows.append((text, "running"))
+        self._sync_timer()
         self._render()
         return len(self._rows) - 1
 
     def set_status(self, index: int, status: str) -> None:
         if 0 <= index < len(self._rows):
             self._rows[index] = (self._rows[index][0], status)
+            self._sync_timer()
             self._render()
 
+    def _sync_timer(self) -> None:
+        running = any(s == "running" for _, s in self._rows)
+        if running and not self._timer.isActive():
+            self._timer.start(1000 // 20)
+        elif not running and self._timer.isActive():
+            self._timer.stop()
+
+    def _beat(self) -> None:
+        import math
+        self._pulse = 0.5 + 0.5 * math.sin(self._pulse_t())
+        self._render()
+
+    def _pulse_t(self) -> float:
+        self._phase = getattr(self, "_phase", 0.0) + 0.16
+        return self._phase * 3.0
+
+    def _running_alpha(self) -> int:
+        return int(150 + 105 * self._pulse)
+
     def _render(self) -> None:
+        acc = style.qaccent()
         rows = []
         for text, status in self._rows:
-            colour, glyph = self._MARK.get(status, self._MARK["running"])
-            text_colour = style.INK if status == "running" else style.INK_SOFT
+            if status == "done":
+                mark = f'<span style="color:{self._DONE};">✓</span>'
+                tcol = style.INK_SOFT
+            elif status == "failed":
+                mark = f'<span style="color:{self._FAILED};">✕</span>'
+                tcol = style.INK_SOFT
+            else:
+                a = self._running_alpha()
+                mark = (f'<span style="color:rgba({acc.red()},{acc.green()},'
+                        f'{acc.blue()},{a/255:.2f});">●</span>')
+                tcol = style.INK
             rows.append(
                 '<tr>'
-                f'<td style="color:{colour};font-size:11px;padding:2px 11px 2px 0;'
-                'vertical-align:top;">' + glyph + '</td>'
-                f'<td style="color:{text_colour};font-family:{style.ui_family()};'
-                'font-size:13.5px;line-height:150%;padding:1px 0;">'
+                '<td style="font-size:11px;padding:3px 12px 3px 0;'
+                'vertical-align:top;">' + mark + '</td>'
+                f'<td style="color:{tcol};font-family:{style.ui_family()};'
+                'font-size:13.5px;line-height:152%;padding:2px 0;">'
                 + escape(text) + '</td></tr>'
             )
         self._body.setTextFormat(Qt.RichText)
@@ -477,18 +522,27 @@ class MikePanel(QWidget):
         self.set_state("idle")
 
     # ── construction ──────────────────────────────────────
+    SHADOW = 20   # room around the body for its drop shadow
+
     def _build(self) -> None:
         self.setAttribute(Qt.WA_StyledBackground, False)
+        # translucent so only what the panel paints (shadow + body) shows; the
+        # window behind it is translucent too, so the shadow composites over
+        # the real desktop rather than a widget fill.
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(0, 0, 0, 0)
+        # margins leave room for the painted shadow so the panel lifts off the
+        # desktop instead of sitting flat on it — lighter at the top edge
+        # because the light comes from above.
+        outer.setContentsMargins(self.SHADOW, self.SHADOW - 6, self.SHADOW, self.SHADOW)
         outer.setSpacing(0)
 
         # header: presence + state word, only as tall as it needs
         header = QWidget()
         hb = QHBoxLayout(header)
-        hb.setContentsMargins(18, 14, 14, 8)
-        hb.setSpacing(11)
-        self.mark = PresenceMark(30)
+        hb.setContentsMargins(20, 15, 15, 9)
+        hb.setSpacing(12)
+        self.mark = PresenceMark(32)
         hb.addWidget(self.mark, 0, Qt.AlignVCenter)
         self._state_lbl = QLabel("")
         self._state_lbl.setFont(style.label(11))
@@ -626,7 +680,7 @@ class MikePanel(QWidget):
         lay = stage.layout()
         margins = lay.contentsMargins()
         panel_w = self.width() if self.width() > 100 else 620
-        width = panel_w - self.STAGE_H_MARGIN - self.SCROLLBAR_ALLOW
+        width = panel_w - 2 * self.SHADOW - self.STAGE_H_MARGIN - self.SCROLLBAR_ALLOW
         total = margins.top() + margins.bottom()
         counted = 0
         for i in range(lay.count()):
@@ -646,9 +700,10 @@ class MikePanel(QWidget):
         conf = 0
         if self.confirm.isVisible():
             conf = self.confirm.sizeHint().height() + 12
-        stage_room = self.CAP_HEIGHT - self.HEADER_H - self.INPUT_H - conf
+        chrome = (self.SHADOW - 6) + self.SHADOW   # top + bottom shadow room
+        stage_room = self.CAP_HEIGHT - self.HEADER_H - self.INPUT_H - conf - chrome
         content = self._content_height()
-        return (self.HEADER_H + min(content, max(56, stage_room))
+        return (chrome + self.HEADER_H + min(content, max(56, stage_room))
                 + conf + self.INPUT_H)
 
     def _fit(self) -> None:
@@ -755,18 +810,48 @@ class MikePanel(QWidget):
         self._show_resting()
         self.set_state("idle")
 
-    # ── the rounded, warm-dark surface ────────────────────
+    # ── the floating, warm-dark material ──────────────────
     def paintEvent(self, _e) -> None:
+        from PySide6.QtGui import QLinearGradient, QPen
+
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        path = QPainterPath()
-        path.addRoundedRect(0.5, 0.5, self.width() - 1, self.height() - 1, 16, 16)
-        p.fillPath(path, QColor(style.GROUND))
-        pen = p.pen()
-        from PySide6.QtGui import QPen
-        pen = QPen(QColor(style.HAIRLINE)); pen.setWidthF(1.0)
-        p.setPen(pen); p.setBrush(Qt.NoBrush)
-        p.drawPath(path)
+        m = self.SHADOW
+        radius = 18.0
+        bx, by = m, m - 6
+        bw, bh = self.width() - 2 * m, self.height() - (m - 6) - m
+
+        # soft drop shadow — several expanding rounded rects, fading out and
+        # offset downward, an inexpensive blur that makes the panel float.
+        for i in range(m, 0, -2):
+            a = int(4 + 40 * (1 - i / m) ** 2.2)
+            sh = QPainterPath()
+            sh.addRoundedRect(bx - i, by - i + 5, bw + 2 * i, bh + 2 * i,
+                              radius + i, radius + i)
+            p.fillPath(sh, QColor(0, 0, 0, a))
+
+        body = QPainterPath()
+        body.addRoundedRect(bx, by, bw, bh, radius, radius)
+
+        # lit from above: a barely-there vertical gradient, top a touch lighter
+        grad = QLinearGradient(0, by, 0, by + bh)
+        top = QColor(style.GROUND_RAISED)
+        grad.setColorAt(0.0, top)
+        grad.setColorAt(0.16, QColor(style.GROUND))
+        grad.setColorAt(1.0, QColor(style.GROUND_SUNK))
+        p.fillPath(body, grad)
+
+        # a 1px highlight along the very top edge — the lit rim
+        p.setClipPath(body)
+        hi = QPen(QColor(255, 255, 255, 16)); hi.setWidthF(1.2)
+        p.setPen(hi); p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(bx + 0.6, by + 0.6, bw - 1.2, bh - 1.2, radius, radius)
+        p.setClipping(False)
+
+        # the outer hairline, keeping the edge crisp against any desktop
+        border = QPen(QColor(style.HAIRLINE)); border.setWidthF(1.0)
+        p.setPen(border); p.setBrush(Qt.NoBrush)
+        p.drawPath(body)
 
 
 def _build_stylesheet() -> str:
