@@ -108,7 +108,32 @@ class MikeWindow(QMainWindow):
         self._torn_down = False
         self._quitting = False
 
+        # Ambient signal: when something happens while the panel is hidden,
+        # the tray icon alone isn't enough. A native notification is the
+        # macOS-native, unmistakable way to say "Mike needs you" or "Mike
+        # finished" without stealing focus from what you were doing.
+        self.page.state_changed.connect(self._ambient_signal)
+
         self.controller.startup()
+
+    _AMBIENT = {
+        "needs_user": ("Mike needs you", "There's a decision waiting."),
+        "error": ("Mike stopped", "Something needs a look."),
+        "done": ("Mike finished", "The task is done."),
+    }
+
+    def _ambient_signal(self, state: str) -> None:
+        # Only when Mike is out of sight — if the panel is up, the state is
+        # already visible on it.
+        if state not in self._AMBIENT:
+            return
+        if self.isVisible() and not self.isMinimized():
+            return
+        title, body = self._AMBIENT[state]
+        try:
+            self.tray.showMessage(title, body, _tray_icon(), 4000)
+        except Exception:
+            logger.debug("Could not post ambient notification.", exc_info=True)
 
     def _build_tray(self) -> None:
         """

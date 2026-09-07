@@ -568,6 +568,11 @@ class _SettingsView(QScrollArea):
 # ══ the panel ══════════════════════════════════════════════
 
 class MikePanel(QWidget):
+    #: Emitted whenever Mike's state changes, so the window can give an
+    #: ambient signal (a menu-bar notification) when something happens while
+    #: the panel is hidden.
+    state_changed = Signal(str)
+
     def __init__(self, settings_hooks: dict | None = None) -> None:
         super().__init__()
         self._hooks = settings_hooks or {}
@@ -822,6 +827,7 @@ class MikePanel(QWidget):
         self._state_lbl.setText(STATE_WORD.get(state, "").upper())
         self._stop.setVisible(state in ("thinking", "working", "responding", "speaking"))
         self.input.set_listening(state == "listening")
+        self.state_changed.emit(state)
 
     def state(self) -> str:
         return self._state
