@@ -138,6 +138,11 @@ saving it — don't phrase the two the same way.
 - If you're not confident what the user means, say so and ask a short clarifying question, \
 or explain what's missing. Never send back an empty or blank reply — always say something, \
 even if it's just admitting you're unsure.
+- People refer back to things in shorthand — "it", "that one", "the other one", "the same \
+thing", "there". Work out what they mean from the conversation above; usually it's the \
+thing most recently discussed. If two things genuinely fit and picking wrong would matter, \
+ask which one instead of guessing. A one-line question is much better than confidently \
+acting on the wrong thing.
 - Keep responses short. Don't over-explain. One or two sentences is usually enough \
 for conversation. A bit more is fine when the user asks a real question.
 - Your responses are spoken aloud, so write naturally. \
@@ -278,7 +283,7 @@ class CoreRuntime:
 
         logger.info("Processing: %s", message)
 
-        self._core.history.append({"role": "user", "content": message})
+        self._record_user_turn(message)
 
         self._core.trim_history()
 
@@ -318,7 +323,7 @@ class CoreRuntime:
         # and swap in that project's own situation summary if it's changed.
         self._core.sync_project()
 
-        self._core.history.append({"role": "user", "content": message})
+        self._record_user_turn(message)
         self._core.trim_history()
 
         try:
@@ -1216,40 +1221,74 @@ class CoreRuntime:
     # =====================================================
 
     def _build_messages(self) -> list[dict]:
-        last_user = ""
-        for msg in reversed(self._core.history):
-            if msg.get("role") == "user":
-                last_user = msg.get("content", "")
-                break
-
-        memories = (
-            memory_store.auto_recall(last_user, project_id=self._core.project_id)
-            if last_user else []
-        )
-
+        # The system message holds only what does not change from turn to turn.
+        #
+        # This is a latency decision, and a large one. Ollama reuses its KV
+        # cache only for a request that strictly extends the previous one, and
+        # Mike's prefix is expensive: the instructions plus 44 tool schemas
+        # come to ~7,500 tokens. Volatile facts — the frontmost app, the
+        # situation summary, what a tool just did, recalled memories — used to
+        # be appended to this message, at position zero, so any of them
+        # changing threw the whole prefix away and the entire prompt was
+        # re-evaluated every turn. They are recorded into history as the turn
+        # happens instead; see _record_user_turn for the measurements.
         prompt = SYSTEM_PROMPT.replace(
             "{date}", datetime.now().strftime("%A, %B %-d, %Y")
         )
 
-        env_line = environment.describe_environment()
+        return [{"role": "system", "content": prompt}, *self._core.history]
 
+    def _record_user_turn(self, message: str) -> None:
+        """Append what the user said, with the context that was true when they
+        said it.
+
+        The context is written *into* history rather than injected in front of
+        it on every request, and that is the whole point. Ollama reuses its KV
+        cache only when a request strictly extends the previous one; anything
+        that changes earlier in the sequence throws the entire ~7,500-token
+        prefix away. Rebuilding a volatile block at the front — or in the
+        middle — guarantees that every turn. Recording it once, in order,
+        keeps history append-only and the cache usable. Measured across a
+        growing conversation:
+
+            volatile block rebuilt each turn   3.5s, 3.9s, 3.8s, 3.8s ...
+            recorded into history              2.9s, then 0.62s per turn
+
+        It is also the more truthful representation: what was on screen during
+        an earlier turn is a fact about that turn, not about this one.
+        """
+        snapshot = self._volatile_context(message)
+        if snapshot:
+            self._core.history.append({"role": "system", "content": snapshot})
+        self._core.history.append({"role": "user", "content": message})
+
+    def _volatile_context(self, message: str) -> str:
+        """The changing facts that surround one turn: where the user is, what
+        is going on, what Mike just did, and anything remembered that bears on
+        what they asked."""
+        parts: list[str] = []
+
+        env_line = environment.describe_environment()
         if env_line:
-            prompt += f"\n\n{env_line}"
+            parts.append(env_line)
 
         context_block = self._core.to_prompt_context()
-
         if context_block:
-            prompt += f"\n\n{context_block}"
+            parts.append(context_block)
 
+        memories = (
+            memory_store.auto_recall(message, project_id=self._core.project_id)
+            if message else []
+        )
         if memories:
             mem_lines = [f"- [{m['category']}] {m['content']}" for m in memories]
-            prompt += (
-                "\n\nRelevant memories about this user:\n"
+            parts.append(
+                "Relevant memories about this user:\n"
                 + "\n".join(mem_lines)
                 + "\nUse these naturally if relevant to the conversation."
             )
 
-        return [{"role": "system", "content": prompt}, *self._core.history]
+        return "\n\n".join(parts)
 
     def _execute_spreadsheet(self, name: str, args: dict) -> dict:
         """Cell-level spreadsheet work.
