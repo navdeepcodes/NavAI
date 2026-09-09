@@ -215,6 +215,13 @@ class UIController(QObject):
             self._page.input.voice.set_state("idle")
             self._wake.resume()
 
+            # Speech finishing is the real end of the turn, so this is where
+            # Mike goes quiet — not when the *text* finished generating. Only
+            # from "speaking", because by now a new turn may already own the
+            # panel and this tick must not drag it back to idle.
+            if self._page.state() == "speaking":
+                self._page.set_state("idle")
+
             if self._floating and self._floating.isVisible():
                 self._floating.finish()
 
@@ -374,7 +381,17 @@ class UIController(QObject):
         self._response_text = ""
         self._spoken_up_to = 0
 
-        self._page.set_state("idle")
+        # Generating the text is not the same as being finished, and saying so
+        # was a small lie the interface told constantly: Mike went visibly idle
+        # the instant the last token arrived while he was still several
+        # seconds into speaking the answer aloud. So the panel stays in
+        # "speaking" for as long as there is actually a voice, and _pump_speech
+        # returns it to idle when the sound stops.
+        still_speaking = (
+            self._speech_allowed()
+            and (self._speech_pump_timer.isActive() or self._speaker.is_speaking())
+        )
+        self._page.set_state("speaking" if still_speaking else "idle")
 
         # The edge carries the answer only when the Home isn't already
         # showing it — otherwise the same text would appear twice.
