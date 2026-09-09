@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
-import signal
 import subprocess
 import threading
 import time
 
+from hostplatform import processes
 from logs.logger import logger
 
 # Commands that finish are expected to finish reasonably quickly. Anything
@@ -164,14 +164,15 @@ def run_background(command: str, cwd: str | None = None) -> dict:
     workdir = cwd or os.getcwd()
     logger.info("Starting background command: %s (cwd=%s)", command, workdir)
 
-    process = subprocess.Popen(
+    # spawn_detached groups the process (its own session on POSIX, its own
+    # process group on Windows) so kill_process can stop the whole tree
+    # later, not just this shell.
+    process = processes.spawn_detached(
         command,
-        shell=True,
+        cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
-        cwd=cwd,
-        start_new_session=True,
     )
 
     with _processes_lock:
@@ -307,23 +308,13 @@ def kill_process(pid: int) -> dict:
         return {"pid": pid, "running": False, "result": "It had already exited."}
 
     try:
-        # The process was started with start_new_session=True, so it leads its
-        # own group — killing the group also stops children a shell spawned
-        # (a dev server's actual node process, for instance).
-        os.killpg(os.getpgid(pid), signal.SIGTERM)
-    except Exception:
-        try:
-            process.terminate()
-        except Exception as exc:
-            return {"error": f"Could not stop pid {pid}: {exc}"}
-
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except Exception:
-            process.kill()
+        # process was started with spawn_detached, so it leads its own
+        # group/session — terminate_tree stops that whole group, which is
+        # what actually reaches children a shell spawned (a dev server's
+        # real node process, for instance), on both POSIX and Windows.
+        processes.terminate_tree(process, timeout=5)
+    except Exception as exc:
+        return {"error": f"Could not stop pid {pid}: {exc}"}
 
     return {"pid": pid, "running": False, "result": f"Stopped pid {pid}."}
 
