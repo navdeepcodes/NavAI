@@ -6,38 +6,11 @@ visible stops ticking entirely.
 """
 from __future__ import annotations
 
-import subprocess
+from hostplatform.desktop import reduced_motion
 
 # Frame intervals in milliseconds.
 ACTIVE_INTERVAL = 33   # ~30fps, used while Mike is doing something
 IDLE_INTERVAL = 83     # ~12fps, enough for a slow breathe
-
-_reduced: bool | None = None
-
-
-def reduced_motion() -> bool:
-    """
-    True when macOS accessibility asks for reduced motion. Cached — the setting
-    doesn't change often enough to justify shelling out on every frame.
-    """
-
-    global _reduced
-
-    if _reduced is not None:
-        return _reduced
-
-    try:
-        result = subprocess.run(
-            ["defaults", "read", "com.apple.universalaccess", "reduceMotion"],
-            capture_output=True,
-            text=True,
-            timeout=1,
-        )
-        _reduced = result.stdout.strip() == "1"
-    except Exception:
-        _reduced = False
-
-    return _reduced
 
 
 def ease_in_out(t: float) -> float:

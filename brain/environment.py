@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import subprocess
 import time
 from datetime import datetime
 
@@ -12,6 +11,18 @@ _cached_at: float = 0.0
 
 
 def _frontmost_app() -> str | None:
+    """Which application the user is actually looking at, for ambient context.
+
+    Used to shell out to `osascript` and ask System Events directly — a
+    second, independent implementation of a question computer/ already
+    answers, and a worse one: asking System Events for the frontmost
+    process is Automation-gated in TCC and prompts for a permission this
+    purely-informational feature has no need to ask for, where
+    computer.macos's CGWindowList-based answer needs none. Reusing it also
+    means this line of context gains Windows support the moment
+    computer/windows.py implements frontmost_app(), instead of needing a
+    second platform branch of its own.
+    """
 
     global _cached_app, _cached_at
 
@@ -21,22 +32,14 @@ def _frontmost_app() -> str | None:
         return _cached_app
 
     try:
+        from computer.base import get_controller
 
-        result = subprocess.run(
-            [
-                "osascript",
-                "-e",
-                'tell application "System Events" to get name of first application process whose frontmost is true',
-            ],
-            capture_output=True,
-            text=True,
-            timeout=1,
-        )
-
-        _cached_app = result.stdout.strip() or None
+        _cached_app = get_controller().frontmost_app()
 
     except Exception:
-
+        # No adapter for this OS yet, or the query itself failed -- either
+        # way this is ambient flavour text, not something worth surfacing
+        # as an error.
         _cached_app = None
 
     _cached_at = now
