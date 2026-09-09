@@ -32,6 +32,7 @@ import threading
 import time
 from pathlib import Path
 
+from hostplatform import storage
 from logs.logger import logger
 from voice.providers.base import VoiceProvider
 
@@ -44,15 +45,10 @@ from voice.providers.base import VoiceProvider
 # called ".mike-tts-bench", and production code ended up depending on it —
 # so Mike's voice quietly rested on a folder whose name says it is
 # disposable, with nothing to install it and nothing to say it was needed.
-# The supported location is under Mike's own application-support directory;
-# the benchmark path is still honoured so an existing setup keeps working.
-def _voice_home_candidates() -> list[Path]:
-    override = os.environ.get("MIKE_VOICE_HOME", "").strip()
-    candidates = [Path(override)] if override else []
-    candidates.append(
-        Path.home() / "Library" / "Application Support" / "Mike" / "voice")
-    candidates.append(Path.home() / ".mike-tts-bench")
-    return candidates
+# The candidate list itself now lives in hostplatform.storage, alongside
+# every other persistent-location decision Mike makes, rather than being a
+# second copy of that logic here.
+_voice_home_candidates = storage.voice_home_candidates
 
 
 def voice_home() -> Path | None:

@@ -4,17 +4,20 @@ from __future__ import annotations
 import collections
 import threading
 import time
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
+from hostplatform import storage
 from logs.logger import logger
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
-RECORDING_DIR = Path("audio/recordings")
+# Used to be Path("audio/recordings"), relative to the working directory —
+# the same class of bug as the log file and the OAuth token; see
+# hostplatform/storage.py.
+RECORDING_DIR = storage.recordings_dir()
 RECORDING_FILE = RECORDING_DIR / "voice_input.wav"
 
 SILENCE_DURATION = 1.2

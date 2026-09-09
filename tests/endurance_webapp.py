@@ -96,7 +96,9 @@ class LogWatcher:
     """Reads Mike's own log for events the runtime records but does not return."""
 
     def __init__(self) -> None:
-        self.path = Path("logs/mike.log")
+        from hostplatform import storage
+
+        self.path = storage.log_path()
         self.start = self.path.stat().st_size if self.path.exists() else 0
 
     def since(self) -> str:

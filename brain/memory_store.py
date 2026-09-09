@@ -1,18 +1,17 @@
 """Mike's persistent memory — SQLite V1."""
 from __future__ import annotations
 
-import os
 import sqlite3
 import threading
 import time
-from pathlib import Path
 from typing import Any
+
+from hostplatform import storage
 
 # MIKE_DATA_DIR overrides the real per-user data directory — set by
 # tests/_isolate.py (or a pytest fixture) so tests can never touch the
 # production database. Unset in normal app runs.
-_DB_DIR = Path(os.environ["MIKE_DATA_DIR"]) if os.environ.get("MIKE_DATA_DIR") \
-    else Path.home() / "Library" / "Application Support" / "Mike"
+_DB_DIR = storage.data_dir()
 _DB_PATH = _DB_DIR / "memory.db"
 
 VALID_CATEGORIES = frozenset({
