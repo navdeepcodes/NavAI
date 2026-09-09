@@ -8,7 +8,20 @@ from brain import situation_store
 from logs.logger import logger
 
 
-MAX_HISTORY = 40
+# Two different things used to share this one number, and the loud one won.
+#
+# Every agent step appends an assistant message plus one `tool` message per
+# call, so a single ordinary task adds dozens of entries. Measured: after two
+# twelve-step tasks a 40-message window held 20 assistant, 18 tool and *two*
+# user messages — the conversation had been evicted by its own tool traffic,
+# and "call the project Apollo" was gone before the user said "change its name
+# to Nova". That is the reference failure, and it is structural: the working
+# notes of a finished task were outranking what the user actually said.
+#
+# So the window is bigger (the token budget in context_budget.py is the real
+# ceiling, and it has room to spare), and trimming now distinguishes the
+# conversation from the tool trace instead of treating them as one stream.
+MAX_HISTORY = 80
 MAX_TOOL_LOG = 10
 SUMMARY_TRIGGER_TURNS = 6
 VISION_FRESHNESS_SECONDS = 120
@@ -38,6 +51,39 @@ Rules:
 
 Return only the new summary text, nothing else.\
 """
+
+
+def _segment_history(history: list[dict]) -> list[tuple[str, list[dict]]]:
+    """Split history into conversation and tool exchanges, in order.
+
+    A "tool" segment is one assistant message carrying tool calls plus the
+    tool results that answer it. They are grouped because they are only
+    meaningful together: a result whose call has been dropped is an orphan
+    that no model can interpret and some providers reject outright.
+    """
+    segments: list[tuple[str, list[dict]]] = []
+    index = 0
+    count = len(history)
+
+    while index < count:
+        message = history[index]
+        if message.get("role") == "assistant" and message.get("tool_calls"):
+            group = [message]
+            index += 1
+            while index < count and history[index].get("role") == "tool":
+                group.append(history[index])
+                index += 1
+            segments.append(("tool", group))
+        elif message.get("role") == "tool":
+            # An orphan already — keep it grouped as tool traffic so it is
+            # given up before conversation is.
+            segments.append(("tool", [message]))
+            index += 1
+        else:
+            segments.append(("talk", [message]))
+            index += 1
+
+    return segments
 
 
 class MikeCore:
@@ -108,9 +154,57 @@ class MikeCore:
     # =====================================================
 
     def trim_history(self) -> None:
+        """Make room without throwing away what the next sentence depends on.
 
-        if len(self.history) > MAX_HISTORY:
-            self.history = self.history[-MAX_HISTORY:]
+        Dropping the oldest messages is the obvious rule and the wrong one: a
+        tool-heavy task is mostly tool messages, so "oldest first" deletes the
+        conversation and keeps the bookkeeping. What survives has to be chosen
+        by *kind*, not by age alone.
+
+        The order things are given up in:
+
+          1. tool exchanges from turns that are already finished — their
+             outcome is already carried by the tool log and the situation
+             summary, so the step-by-step trace is the cheapest thing to lose
+          2. only then, the oldest conversation
+
+        The tool exchanges of the *current* turn are never dropped: Mike is
+        still working through them, and losing them makes him repeat work he
+        has already done. Groups move as a unit, so a tool result is never
+        separated from the call that produced it.
+        """
+        if len(self.history) <= MAX_HISTORY:
+            return
+
+        segments = _segment_history(self.history)
+
+        # The current turn starts at the last thing the user said; everything
+        # after it is live working state, not history.
+        live_from = 0
+        for index, (kind, _group) in enumerate(segments):
+            if kind == "talk" and _group[0].get("role") == "user":
+                live_from = index
+
+        total = len(self.history)
+        keep: list[tuple[str, list[dict]] | None] = list(segments)
+
+        for index, (kind, group) in enumerate(segments):
+            if total <= MAX_HISTORY:
+                break
+            if kind == "tool" and index < live_from:
+                keep[index] = None
+                total -= len(group)
+
+        surviving = [item for item in keep if item is not None]
+
+        # Still over: the conversation itself is longer than the window, so
+        # the oldest of it goes — the ordinary rule, reached last rather than
+        # first.
+        while total > MAX_HISTORY and surviving:
+            _kind, group = surviving.pop(0)
+            total -= len(group)
+
+        self.history = [msg for _kind, group in surviving for msg in group]
 
     # -----------------------------------------------------
 
@@ -234,10 +328,14 @@ class MikeCore:
 
         try:
 
+            # The per-turn context snapshots the runtime records (what app was
+            # focused, what a tool just did) are notes to the model, not things
+            # anyone said. Summarising them back produces a "summary" of Mike's
+            # own bookkeeping instead of the conversation.
             transcript = "\n".join(
                 f"{turn.get('role', '?')}: {turn.get('content', '')}"
                 for turn in turns
-                if turn.get("content")
+                if turn.get("content") and turn.get("role") != "system"
             )
 
             prompt = SUMMARY_PROMPT.format(
