@@ -18,7 +18,6 @@ import argparse
 import json
 import os
 import re
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -115,7 +114,9 @@ def snapshot(root: Path, label: str) -> dict:
     shots.mkdir(parents=True, exist_ok=True)
     image = shots / f"{label}.png"
     try:
-        subprocess.run(["screencapture", "-x", str(image)], check=True, timeout=30)
+        from hostplatform import capture as platform_capture
+
+        platform_capture.capture_to_file(str(image), timeout=30)
         captured = image.exists()
     except Exception:
         captured = False

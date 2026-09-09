@@ -1,17 +1,17 @@
-import subprocess
+import os
 import tempfile
 
 from PIL import Image
 
 from config.ollama import VISION_RESOLUTION
+from hostplatform import capture
 from logs.logger import logger
 
 
 class Screenshot:
 
     def capture(self) -> str:
-        raw = tempfile.mktemp(suffix="_raw.png")
-        subprocess.run(["screencapture", "-x", raw], check=True)
+        raw = capture.capture_to_tempfile()
 
         img = Image.open(raw)
         ratio = VISION_RESOLUTION / max(img.size)
@@ -24,7 +24,6 @@ class Screenshot:
         img.save(out)
         logger.info("Screenshot: %dx%d → %s", img.width, img.height, out)
 
-        import os
         try:
             os.unlink(raw)
         except OSError:
