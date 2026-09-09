@@ -81,9 +81,15 @@ class VoiceInputManager(QObject):
         self._state = "transcribing"
         self.state_changed.emit("transcribing")
 
-        from voice.transcriber import transcribe_async
+        from voice.recognizer import RecognizerUnavailable, get_recognizer
 
-        transcribe_async(
+        try:
+            recognizer = get_recognizer()
+        except RecognizerUnavailable as exc:
+            self._on_transcription_error(str(exc))
+            return
+
+        recognizer.transcribe_async(
             audio_path,
             on_done=self._on_transcription_done,
             on_error=self._on_transcription_error,
