@@ -534,3 +534,140 @@ def test_worker_scratch_directories_do_not_accumulate(tmp_path, monkeypatch):
     QwenVoice._sweep_workspaces()
 
     assert not any(p.exists() for p in orphans), "scratch directories survived"
+
+
+# ── what each voice is actually handed ────────────────────
+
+def test_the_shared_cleaner_emits_no_engine_specific_markup():
+    """`[[slnc N]]` is a macOS `say` directive, not text.
+
+    It used to be appended inside clean_for_speech, which every provider's
+    text passes through — so the neural voice was handed literal "[[slnc 180]]"
+    in the middle of every sentence and tried to pronounce it. Nothing failed;
+    Mike just sounded wrong on every reply. The cleaner is provider-neutral
+    now, and pauses are rendered by the one provider that understands them.
+    """
+    from voice.speaker import clean_for_speech
+
+    spoken = clean_for_speech(
+        "Hello there. I found three files: one, two, and three. Done!")
+    assert "[[" not in spoken and "slnc" not in spoken, (
+        f"engine-specific markup leaked into shared text: {spoken!r}")
+
+
+def test_the_native_voice_still_gets_its_pauses():
+    """Moving the markup must not cost the system voice its delivery."""
+    from voice.providers.native import _add_conversational_pauses
+
+    rendered = _add_conversational_pauses("Hello there. Nice to meet you.")
+    assert "[[slnc" in rendered, "native lost its breathing pauses"
+
+
+def test_the_neural_voice_is_never_handed_say_markup():
+    """The end-to-end version of the rule, through the real Speaker path."""
+    from voice.providers.base import VoiceProvider
+    from voice.speaker import Speaker
+
+    seen: list[str] = []
+
+    class _Recorder(VoiceProvider):
+        name = "recorder"
+        queues = True
+
+        def available(self):
+            return True, "recording"
+
+        def speak(self, text):
+            seen.append(text)
+            return True
+
+        def enqueue(self, text):
+            seen.append(text)
+            return True
+
+        def is_speaking(self):
+            return False
+
+        def stop(self):
+            pass
+
+    speaker = Speaker(provider=_Recorder())
+    speaker.speak_sentence("Hello there. How are you, friend?")
+    speaker.speak("I have finished: the file is saved.")
+
+    assert seen, "the provider was never given anything to say"
+    for text in seen:
+        assert "[[" not in text and "slnc" not in text, (
+            f"say-only markup reached a non-native voice: {text!r}")
+
+
+# ── the jitter buffer ─────────────────────────────────────
+
+def test_playback_starts_at_once_when_generation_outruns_it():
+    """The fast start is the whole reason Mike feels responsive, and it must
+    survive: measured idle, the worker produces 0.5 s of audio in 0.18 s."""
+    from voice.providers.qwen import QwenVoice
+
+    assert QwenVoice._preroll_target(0.5, 0.18) == 0.0
+
+
+def test_playback_banks_a_lead_when_generation_falls_behind():
+    """Measured with the brain generating, the same chunk takes 0.52 s — below
+    real time. Starting immediately there drains the buffer mid-sentence and
+    the listener hears the reply break up (15 gaps in a long reply, measured).
+    """
+    from voice.providers.qwen import PREROLL_SECONDS, QwenVoice
+
+    assert QwenVoice._preroll_target(0.5, 0.52) == PREROLL_SECONDS
+    # A worker that reports nothing useful must not divide by zero, and must
+    # err toward buffering rather than toward stuttering.
+    assert QwenVoice._preroll_target(0.5, 0.0) == PREROLL_SECONDS
+
+
+def test_a_refused_sentence_does_not_cut_off_the_one_being_spoken():
+    """A mid-reply refusal must not clip the sentence the user is hearing.
+
+    The fallback used to re-enter _say(), which speaks through the provider's
+    own speak() — and speak() replaces whatever is playing. So one refused
+    sentence (a worker that died mid-reply) truncated the previous sentence
+    mid-word. The refused text now waits for silence and pump() delivers it.
+    """
+    from voice.providers.base import VoiceProvider
+    from voice.speaker import Speaker
+
+    class _RefusesButIsAudible(VoiceProvider):
+        name = "refuser"
+        queues = True
+
+        def __init__(self):
+            self.replaced = False
+            self.speaking = True
+
+        def available(self):
+            return True, "ok"
+
+        def speak(self, _text):
+            self.replaced = True      # speak() replaces what is playing
+            return True
+
+        def enqueue(self, _text):
+            return False              # refuse everything
+
+        def is_speaking(self):
+            return self.speaking
+
+        def stop(self):
+            pass
+
+    provider = _RefusesButIsAudible()
+    speaker = Speaker(provider=provider)
+    speaker.speak_sentence("The sentence the user is currently hearing.")
+
+    assert not provider.replaced, (
+        "a refused sentence interrupted the audio already playing")
+    assert speaker._queue, "the refused sentence was dropped instead of queued"
+
+    # Once Mike falls silent, the queued sentence is delivered.
+    provider.speaking = False
+    speaker.pump()
+    assert not speaker._queue, "pump() never delivered the deferred sentence"

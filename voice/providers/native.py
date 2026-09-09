@@ -12,6 +12,7 @@ speak at all.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 
 from logs.logger import logger
@@ -19,6 +20,23 @@ from voice.providers.base import VoiceProvider
 
 VOICE = "Samantha"
 RATE = 185
+
+
+def _add_conversational_pauses(text: str) -> str:
+    """Insert natural breathing pauses using macOS `say` inline commands.
+
+    `[[slnc N]]` is a `say`-only directive — it belongs to *this* provider's
+    rendering, not to the shared text every voice receives. It used to live in
+    `clean_for_speech`, which meant the neural voice was handed literal
+    "[[slnc 180]]" markup and tried to pronounce it, muddying every sentence.
+    Pauses are rendered here, at the one place that speaks to `say`.
+    """
+    text = re.sub(r'([.!?])\s+', r'\1 [[slnc 180]] ', text)   # sentence breaks
+    text = re.sub(r',\s+', r', [[slnc 80]] ', text)           # commas
+    text = re.sub(r'([;:])\s+', r'\1 [[slnc 120]] ', text)    # colons/semicolons
+    text = re.sub(r'\s+—\s+', ' [[slnc 100]] ', text)         # em-dash breaks
+    text = re.sub(r'\s+--\s+', ' [[slnc 100]] ', text)
+    return text
 
 
 class NativeVoice(VoiceProvider):
@@ -43,9 +61,10 @@ class NativeVoice(VoiceProvider):
         if not text or not text.strip():
             return False
         self.stop()
+        spoken = _add_conversational_pauses(text)
         try:
             self._process = subprocess.Popen(
-                ["say", "-v", self._voice, "-r", str(self._rate), text],
+                ["say", "-v", self._voice, "-r", str(self._rate), spoken],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )

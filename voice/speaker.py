@@ -162,7 +162,15 @@ class Speaker:
                     getattr(self._provider, "last_failure", "refused"))
                 self._record.fell_back_to = self._native.name
                 self._queue.insert(0, text)
-                self._speak_next()
+                # Hand it over now only if Mike is silent. Speaking it while an
+                # earlier sentence is still playing is how a single refused
+                # sentence used to cut the reply off mid-word: _say() falls
+                # back through the provider's own speak(), which *replaces*
+                # what is playing. When something is audible the sentence stays
+                # queued and pump() delivers it the moment that finishes, so
+                # the reply is continuous instead of clipped or doubled.
+                if not self.is_speaking():
+                    self._speak_next()
                 return
 
     def finish_streaming(self) -> None:
@@ -350,24 +358,4 @@ def clean_for_speech(text: str) -> str:
     t = re.sub(r'\s{2,}', ' ', t)
     t = re.sub(r'^\s*[.,]\s*', '', t)
 
-    t = _add_conversational_pauses(t)
-
     return t.strip()
-
-
-def _add_conversational_pauses(text: str) -> str:
-    """Insert natural breathing pauses using macOS say inline commands."""
-    # Pause after sentence-ending punctuation
-    text = re.sub(r'([.!?])\s+', r'\1 [[slnc 180]] ', text)
-
-    # Shorter pause after commas
-    text = re.sub(r',\s+', r', [[slnc 80]] ', text)
-
-    # Pause after colons and semicolons
-    text = re.sub(r'([;:])\s+', r'\1 [[slnc 120]] ', text)
-
-    # Pause after dashes used as breaks
-    text = re.sub(r'\s+—\s+', ' [[slnc 100]] ', text)
-    text = re.sub(r'\s+--\s+', ' [[slnc 100]] ', text)
-
-    return text
