@@ -31,10 +31,16 @@ def _clean(fragment: str) -> str:
 
 
 def _fetch(url: str, timeout: int = 9) -> str:
+    # Real web pages are UTF-8 and routinely carry non-ASCII punctuation
+    # (curly quotes, em dashes). text=True alone decodes with the platform's
+    # locale encoding — cp1252 on Windows — which raises on the first such
+    # byte. Every real search would eventually hit one.
     result = subprocess.run(
         ["curl", "-s", "-L", "--max-time", str(timeout), "-A", _USER_AGENT, url],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=timeout + 3,
     )
     return result.stdout if result.returncode == 0 else ""

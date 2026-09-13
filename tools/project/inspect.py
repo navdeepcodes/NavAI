@@ -56,6 +56,7 @@ def _git(root: Path, *args: str, timeout: int = 10) -> tuple[int, str, str]:
             cwd=str(root),
             capture_output=True,
             text=True,
+            encoding="utf-8", errors="replace",
             timeout=timeout,
         )
         return p.returncode, p.stdout.strip(), p.stderr.strip()
@@ -293,7 +294,12 @@ def search_code(
         cmd += [query, str(root)]
 
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        # encoding/errors explicit: matched code is real source text, which
+        # is routinely UTF-8 with non-ASCII content (comments, strings,
+        # names) — text=True alone decodes with the platform locale
+        # encoding, cp1252 on Windows, which raises on the first such byte.
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              encoding="utf-8", errors="replace", timeout=30)
     except subprocess.TimeoutExpired:
         return {"status": "error", "error": "Search timed out. Narrow the path or query."}
 
@@ -311,7 +317,8 @@ def search_code(
         retry = list(cmd)
         retry[-2] = unescaped
         try:
-            proc = subprocess.run(retry, capture_output=True, text=True, timeout=30)
+            proc = subprocess.run(retry, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=30)
             output = (proc.stdout or "").strip()
         except subprocess.TimeoutExpired:
             output = ""

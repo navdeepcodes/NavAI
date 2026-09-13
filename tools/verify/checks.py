@@ -179,7 +179,8 @@ def check_syntax(path: str) -> dict:
         probe = subprocess.run(["which", "node"], capture_output=True, text=True)
         if probe.returncode == 0 and suffix in (".js", ".mjs", ".cjs"):
             check = subprocess.run(
-                ["node", "--check", str(file)], capture_output=True, text=True, timeout=20
+                ["node", "--check", str(file)], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=20,
             )
             valid = check.returncode == 0
             return {

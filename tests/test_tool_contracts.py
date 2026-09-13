@@ -90,7 +90,19 @@ try:
     result = executor.execute(
         tool_name="terminal", action="run", command="pwd", cwd=sandbox
     )
-    check("run_command honours cwd", result.success and sandbox in str(result.data))
+    # On Windows this runs through Git Bash (hostplatform.processes.
+    # shell_invocation), so pwd reports its own MSYS view of the path
+    # (e.g. /c/Users/...), not the native Windows form — cwd was still
+    # honoured; cygpath gives the form to expect instead of a native
+    # substring match, the same seam test_runtime_v1.py hits and resolves
+    # the same way.
+    if sys.platform == "win32":
+        expected_cwd = subprocess.run(
+            ["bash", "-c", f"cygpath -u '{sandbox}'"], capture_output=True, text=True,
+        ).stdout.strip()
+    else:
+        expected_cwd = sandbox
+    check("run_command honours cwd", result.success and expected_cwd in str(result.data))
 
     # A non-zero exit is data, not an exception. This is the contract that
     # makes failing tests and broken builds diagnosable at all.

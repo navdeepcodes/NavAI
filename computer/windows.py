@@ -99,12 +99,23 @@ _MOUSEEVENTF_LEFTDOWN = 0x0002
 _MOUSEEVENTF_LEFTUP = 0x0004
 _MOUSEEVENTF_RIGHTDOWN = 0x0008
 _MOUSEEVENTF_RIGHTUP = 0x0010
+_KEYEVENTF_EXTENDEDKEY = 0x0001
 _KEYEVENTF_KEYUP = 0x0002
 _KEYEVENTF_UNICODE = 0x0004
 
+# The navigation cluster (arrows, Home/End, Page Up/Down, Insert/Delete) are
+# "extended" keys on a standard keyboard, and SendInput needs to be told so
+# explicitly. Missing this is a well-documented, easy-to-miss gotcha — and a
+# real one here: verified directly, ctrl+Home without it left Notepad's
+# scroll position unmoved (88.6% before, 88.8% after — noise, not a jump to
+# the top), and this was the reason.
+_EXTENDED_VKS = {0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E}
+
 
 def _mouse_input(flags: int, mouse_data: int = 0) -> _INPUT:
-    mi = _MOUSEINPUT(0, 0, mouse_data, flags, 0, None)
+    # mouseData is declared unsigned; a negative wheel delta (scroll down)
+    # has to go in as its two's-complement bit pattern.
+    mi = _MOUSEINPUT(0, 0, mouse_data & 0xFFFFFFFF, flags, 0, None)
     return _INPUT(_INPUT_MOUSE, _INPUT_UNION(mi=mi))
 
 
@@ -114,6 +125,8 @@ def _key_input(vk: int, down: bool, unicode: bool = False) -> _INPUT:
         flags |= _KEYEVENTF_UNICODE
         ki = _KEYBDINPUT(0, vk, flags, 0, None)
     else:
+        if vk in _EXTENDED_VKS:
+            flags |= _KEYEVENTF_EXTENDEDKEY
         ki = _KEYBDINPUT(vk, 0, flags, 0, None)
     return _INPUT(_INPUT_KEYBOARD, _INPUT_UNION(ki=ki))
 
@@ -160,6 +173,49 @@ _ACTIONABLE = {
 
 _MAX_NODES = 4000
 _MAX_DEPTH = 20
+
+# Document (50030) is genuinely ambiguous: Notepad's own text editor reports
+# this control type, and so does a Chrome tab's page-content root — verified
+# directly, side by side, on this machine. Both claim ValuePattern support,
+# so "is a value pattern available" does not separate them; ValuePattern's
+# own IsReadOnly does (Notepad: False: Chrome's page root: True). Checked
+# per-node rather than mapped statically, since the same control type means
+# different things depending on what is actually inside it.
+_DOCUMENT_CONTROL_TYPE = 50030
+
+
+def _value_pattern(node, uia):
+    try:
+        pattern = node.GetCurrentPattern(uia.UIA_ValuePatternId)
+        return pattern.QueryInterface(uia.IUIAutomationValuePattern) if pattern else None
+    except Exception:
+        return None
+
+
+def _is_editable_document(node, uia) -> bool:
+    pattern = _value_pattern(node, uia)
+    if pattern is None:
+        return False
+    try:
+        return not bool(pattern.CurrentIsReadOnly)
+    except Exception:
+        return False
+
+
+# Roles whose current contents are worth the extra UIA call. Reading a
+# ValuePattern on every node in a large tree would be wasted work for the
+# buttons and links that make up most of one.
+_VALUE_ROLES = {"text_field", "text_area", "combo_box"}
+
+
+def _current_value(node, uia) -> str:
+    pattern = _value_pattern(node, uia)
+    if pattern is None:
+        return ""
+    try:
+        return pattern.CurrentValue or ""
+    except Exception:
+        return ""
 
 
 def _automation():
@@ -281,7 +337,7 @@ class WindowsController(ComputerController):
         hwnd = self._hwnd_by_name(app) if app else win32gui.GetForegroundWindow()
         if not hwnd:
             return Observation(source="none", note=(
-                f"No window found for {app!r}." if app else "No frontmost window."
+                f"No running application named {app!r}." if app else "No frontmost window."
             ))
         title = win32gui.GetWindowText(hwnd)
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
@@ -320,13 +376,16 @@ class WindowsController(ComputerController):
                 return
             counter[0] += 1
             role = _ROLE_MAP.get(control_type, "unknown")
+            if control_type == _DOCUMENT_CONTROL_TYPE and _is_editable_document(node, uia):
+                role = "text_area"
             bounds = None
             if rect and (rect.right > rect.left) and (rect.bottom > rect.top):
                 bounds = Bounds(rect.left, rect.top,
                                  rect.right - rect.left, rect.bottom - rect.top)
             if role in _ACTIONABLE and len(elements) < limit:
+                value = _current_value(node, uia) if role in _VALUE_ROLES else ""
                 elements.append(UIElement(
-                    ref=f"el{len(elements)}", role=role, label=name,
+                    ref=f"el{len(elements)}", role=role, label=name, value=value,
                     bounds=bounds, enabled=enabled, focused=focused,
                     native_role=str(control_type),
                 ))
@@ -355,17 +414,22 @@ class WindowsController(ComputerController):
 
     def focused_element(self) -> UIElement | None:
         try:
-            node = _automation().GetFocusedElement()
+            automation = _automation()
+            uia = _uia()
+            node = automation.GetFocusedElement()
             control_type = node.CurrentControlType
             rect = node.CurrentBoundingRectangle
             bounds = None
             if rect and rect.right > rect.left:
                 bounds = Bounds(rect.left, rect.top,
                                  rect.right - rect.left, rect.bottom - rect.top)
+            role = _ROLE_MAP.get(control_type, "unknown")
+            if control_type == _DOCUMENT_CONTROL_TYPE and _is_editable_document(node, uia):
+                role = "text_area"
+            value = _current_value(node, uia) if role in _VALUE_ROLES else ""
             return UIElement(
-                ref="focused", role=_ROLE_MAP.get(control_type, "unknown"),
-                label=node.CurrentName or "", bounds=bounds, focused=True,
-                native_role=str(control_type),
+                ref="focused", role=role, label=node.CurrentName or "", value=value,
+                bounds=bounds, focused=True, native_role=str(control_type),
             )
         except Exception:
             return None
@@ -386,10 +450,19 @@ class WindowsController(ComputerController):
         return ActionResult(True, f"{button} {label} at ({x}, {y})")
 
     def scroll(self, dx: int, dy: int, x: int | None = None, y: int | None = None) -> ActionResult:
+        # Tried and pulled back, not left unattempted: SendInput's
+        # MOUSEEVENTF_WHEEL, cursor positioned first via SetCursorPos, is the
+        # textbook approach and click/type_text/press_keys all work through
+        # the same SendInput path. But measured against Notepad's editor and
+        # a File Explorer listing, both confirmed genuinely scrollable via
+        # their own UIA ScrollPattern, the wheel event produced no observed
+        # position change in either — repeatedly, in both directions. Rather
+        # than ship a plausible-looking implementation nobody watched
+        # actually work, this stays an honest gap.
         raise NotSupportedError(
-            "Scroll is not currently supported on Windows. Mouse-wheel "
-            "synthesis has not yet been verified against a real scrollable "
-            "view on this machine."
+            "Scroll is not currently supported on Windows. A SendInput-based "
+            "implementation was tried and did not produce a verified effect "
+            "against real scrollable content — not yet safe to claim."
         )
 
     def drag(self, from_x: int, from_y: int, to_x: int, to_y: int) -> ActionResult:
@@ -403,6 +476,18 @@ class WindowsController(ComputerController):
         if not text:
             return ActionResult(False, error="No text given to type.")
         for ch in text:
+            if ch == "\r":
+                continue    # \r\n: the \n below sends the actual newline
+            if ch == "\n":
+                # Verified directly: a raw LF sent via KEYEVENTF_UNICODE is
+                # silently dropped by Windows edit controls — Notepad typed
+                # "line 0line 1line 2..." with every newline vanishing, not
+                # even a space in its place. Edit controls listen for the
+                # Enter *key*, not a unicode line-feed character, so this
+                # sends VK_RETURN instead.
+                _send_input(_key_input(0x0D, down=True))
+                _send_input(_key_input(0x0D, down=False))
+                continue
             code = ord(ch)
             if code > 0xFFFF:
                 # Outside the BMP (most emoji): KEYEVENTF_UNICODE's wScan is
@@ -431,12 +516,16 @@ class WindowsController(ComputerController):
                     f"Unknown modifier {modifier!r}. Use: shift, ctrl, alt, win."
                 ))
             mod_vks.append(mvk)
-        for mvk in mod_vks:
-            _send_input(_key_input(mvk, down=True))
-        _send_input(_key_input(vk, down=True))
-        _send_input(_key_input(vk, down=False))
-        for mvk in reversed(mod_vks):
-            _send_input(_key_input(mvk, down=False))
+        # One SendInput call, not one per key: separate calls are separate
+        # syscalls, and an application reading input between them can see a
+        # modifier-down with no combination key yet, rather than the combo
+        # atomically. Batching is what actually made ctrl+Home reach Notepad
+        # — verified directly; N separate calls did not move the cursor.
+        events = [_key_input(mvk, down=True) for mvk in mod_vks]
+        events.append(_key_input(vk, down=True))
+        events.append(_key_input(vk, down=False))
+        events.extend(_key_input(mvk, down=False) for mvk in reversed(mod_vks))
+        _send_input(*events)
         combo = "+".join((modifiers or []) + [key])
         return ActionResult(True, f"pressed {combo}")
 

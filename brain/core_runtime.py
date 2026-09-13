@@ -1074,8 +1074,10 @@ class CoreRuntime:
         this now does the thing search_code cannot: locate files by name.
         Content searches are directed to search_code instead.
         """
+        import shlex
         import subprocess
 
+        from hostplatform import processes
         from tools.filesystem.path_utils import resolve_path
 
         query = (args.get("query") or "").strip()
@@ -1100,8 +1102,17 @@ class CoreRuntime:
             cmd += ["-name", name, "-prune", "-o"]
         cmd += ["-iname", pattern, "-type", "f", "-print"]
 
+        # A bare "find" via subprocess without a shell hits a real Windows
+        # gotcha: CreateProcess searches System32 before PATH, so Windows'
+        # own find.exe (a find-text-in-a-file tool, not GNU find) silently
+        # shadows Git's — verified directly, it turns `-iname '*x*'` into a
+        # literal search string and reports "File not found". Routing
+        # through the same shell_invocation used for run_command resolves
+        # the name the way a real POSIX shell would.
+        argv, use_shell = processes.shell_invocation(shlex.join(cmd))
         try:
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            proc = subprocess.run(argv, shell=use_shell, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=20)
         except subprocess.TimeoutExpired:
             return {"status": "error", "error": (
                 f"Searching {root} for {pattern!r} took too long. Give a narrower "

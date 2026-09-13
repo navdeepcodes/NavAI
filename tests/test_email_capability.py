@@ -223,7 +223,7 @@ def test_no_test_here_sends_real_mail():
     source rather than on behaviour, because a behavioural check would have to
     send something to find out.
     """
-    source = Path(__file__).read_text()
+    source = Path(__file__).read_text(encoding="utf-8")
     body = source.split("def test_no_test_here_sends_real_mail")[0]
     for line in body.splitlines():
         stripped = line.strip()

@@ -61,29 +61,20 @@ def run(
 
     started = time.monotonic()
 
-    argv, use_shell = processes.shell_invocation(command)
+    # spawn_detached + terminate_tree, not subprocess.run(timeout=...): a
+    # command that spawns a real child (not just itself) leaves that child
+    # holding the inherited stdout/stderr pipe open, so subprocess.run's own
+    # timeout kills only the shell and then blocks reading output until the
+    # child exits on its own — verified directly, "sleep 5" under a 2s
+    # timeout still took the full 5s. terminate_tree reaches the whole tree,
+    # which is the actual fix, on both platforms — POSIX's plain
+    # process.kill() had the identical gap, just never exercised.
     try:
-        completed = subprocess.run(
-            argv,
-            shell=use_shell,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=timeout,
+        process = processes.spawn_detached(
+            command, cwd=cwd,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding="utf-8", errors="replace",
         )
-    except subprocess.TimeoutExpired as exc:
-        # Partial output is often the whole diagnosis for a hang (where it got
-        # stuck), so it's returned rather than thrown away with the exception.
-        return {
-            "exit_code": None,
-            "timed_out": True,
-            "timeout_seconds": timeout,
-            "stdout": _clip(_decode(exc.stdout)),
-            "stderr": _clip(_decode(exc.stderr)),
-            "cwd": workdir,
-            "command": command,
-            "duration_ms": round((time.monotonic() - started) * 1000),
-        }
     except FileNotFoundError as exc:
         return {
             "exit_code": None,
@@ -95,11 +86,29 @@ def run(
             "duration_ms": round((time.monotonic() - started) * 1000),
         }
 
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        processes.terminate_tree(process, timeout=5)
+        # The tree is gone, so every pipe writer has exited and this drains
+        # whatever was already buffered without blocking further.
+        stdout, stderr = process.communicate()
+        return {
+            "exit_code": None,
+            "timed_out": True,
+            "timeout_seconds": timeout,
+            "stdout": _clip(_decode(stdout)),
+            "stderr": _clip(_decode(stderr)),
+            "cwd": workdir,
+            "command": command,
+            "duration_ms": round((time.monotonic() - started) * 1000),
+        }
+
     return {
-        "exit_code": completed.returncode,
+        "exit_code": process.returncode,
         "timed_out": False,
-        "stdout": _clip(completed.stdout),
-        "stderr": _clip(completed.stderr),
+        "stdout": _clip(_decode(stdout)),
+        "stderr": _clip(_decode(stderr)),
         "cwd": workdir,
         "command": command,
         "duration_ms": round((time.monotonic() - started) * 1000),
@@ -173,7 +182,7 @@ def run_background(command: str, cwd: str | None = None) -> dict:
         cwd=cwd,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
     )
 
     with _processes_lock:
