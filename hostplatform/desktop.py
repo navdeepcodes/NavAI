@@ -212,6 +212,75 @@ class _DarwinHotkey(_HotkeyBackend):
         return " + ".join(parts)
 
 
+class _HotkeyDispatcher:
+    """One native event filter for the whole process, installed once and
+    never removed — the crash this design replaces was real, not
+    hypothetical. An earlier version gave every _WindowsHotkey its own
+    QAbstractNativeEventFilter, installed on register() and removed on
+    unregister(). Verified directly under the test suite's repeated
+    window-recreation (exactly what "close then reopen" exercises many
+    times in one process): a filter object could still be reachable from
+    Qt's C++ side after its Python side had been freed, and the next
+    native event dispatched into it produced a genuine access violation
+    that killed the whole process. A single filter that outlives every
+    _WindowsHotkey it ever serves, routing by hotkey id through a plain
+    dict, cannot go stale that way — there is nothing per-instance for
+    Qt to hold a dangling reference to.
+    """
+
+    def __init__(self, event_filter) -> None:
+        self.callbacks: dict[int, Callable[[], None]] = {}
+        self._filter = event_filter
+
+    def install(self, app) -> None:
+        app.installNativeEventFilter(self._filter)
+
+
+_dispatcher: "_HotkeyDispatcher | None" = None
+
+
+def _hotkey_dispatcher() -> "_HotkeyDispatcher | None":
+    """The one dispatcher for this process, created and installed on first
+    use. Never torn down: it has nothing platform-heavy of its own to
+    release (no hotkey registration lives here, only the id -> callback
+    map), so there is no teardown that would make removing it worthwhile,
+    and removing it would reintroduce exactly the lifetime question this
+    design exists to avoid."""
+    global _dispatcher
+    if _dispatcher is not None:
+        return _dispatcher
+
+    from PySide6.QtCore import QAbstractNativeEventFilter
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return None
+
+    import ctypes
+
+    from logs.logger import logger
+
+    class _Filter(QAbstractNativeEventFilter):
+        def nativeEventFilter(self, event_type, message):
+            if event_type != b"windows_generic_MSG":
+                return False, 0
+            msg = ctypes.cast(int(message), ctypes.POINTER(_MSG)).contents
+            if msg.message == _WindowsHotkey.WM_HOTKEY:
+                callback = _dispatcher.callbacks.get(msg.wParam)
+                if callback is not None:
+                    try:
+                        callback()
+                    except Exception:
+                        logger.exception("Global hotkey handler failed.")
+                    return True, 0
+            return False, 0
+
+    _dispatcher = _HotkeyDispatcher(_Filter())
+    _dispatcher.install(app)
+    return _dispatcher
+
+
 class _WindowsHotkey(_HotkeyBackend):
     """System-wide hotkey via RegisterHotKey, wired into Qt's own event loop.
 
@@ -256,7 +325,6 @@ class _WindowsHotkey(_HotkeyBackend):
             (self.MOD_CONTROL | self.MOD_SHIFT) if modifiers is None else modifiers
         )
         self._registered = False
-        self._filter = None
 
     def register(self) -> bool:
         from logs.logger import logger
@@ -267,14 +335,11 @@ class _WindowsHotkey(_HotkeyBackend):
         try:
             import ctypes
 
-            from PySide6.QtCore import QAbstractNativeEventFilter
-            from PySide6.QtWidgets import QApplication
-
-            app = QApplication.instance()
-            if app is None:
+            dispatcher = _hotkey_dispatcher()
+            if dispatcher is None:
                 logger.warning(
                     "Global hotkey: no QApplication yet — register() must "
-                    "run after one exists, since the filter attaches to it."
+                    "run after one exists, since the dispatcher attaches to it."
                 )
                 return False
 
@@ -289,27 +354,7 @@ class _WindowsHotkey(_HotkeyBackend):
                 )
                 return False
 
-            hotkey_id = self._HOTKEY_ID
-            wm_hotkey = self.WM_HOTKEY
-            on_pressed = self._on_pressed
-
-            class _Filter(QAbstractNativeEventFilter):
-                def nativeEventFilter(self, event_type, message):
-                    if event_type != b"windows_generic_MSG":
-                        return False, 0
-                    msg = ctypes.cast(
-                        int(message), ctypes.POINTER(_MSG)
-                    ).contents
-                    if msg.message == wm_hotkey and msg.wParam == hotkey_id:
-                        try:
-                            on_pressed()
-                        except Exception:
-                            logger.exception("Global hotkey handler failed.")
-                        return True, 0
-                    return False, 0
-
-            self._filter = _Filter()
-            app.installNativeEventFilter(self._filter)
+            dispatcher.callbacks[self._HOTKEY_ID] = self._on_pressed
             self._registered = True
             logger.info("Global hotkey registered (%s).", self.describe())
             return True
@@ -326,17 +371,13 @@ class _WindowsHotkey(_HotkeyBackend):
         try:
             import ctypes
 
-            from PySide6.QtWidgets import QApplication
-
             ctypes.windll.user32.UnregisterHotKey(None, self._HOTKEY_ID)
-            app = QApplication.instance()
-            if app is not None and self._filter is not None:
-                app.removeNativeEventFilter(self._filter)
+            if _dispatcher is not None:
+                _dispatcher.callbacks.pop(self._HOTKEY_ID, None)
         except Exception:
             logger.exception("Global hotkey teardown failed.")
         finally:
             self._registered = False
-            self._filter = None
 
     def is_registered(self) -> bool:
         return self._registered
