@@ -24,8 +24,46 @@ from __future__ import annotations
 
 import os
 import platform
+import shutil
 import signal
 import subprocess
+
+# The model writes shell commands in POSIX form — `pwd`, `1>&2`, `for x in
+# ...; do ... done` — regardless of which OS it is actually running on,
+# because that is the shell syntax it was trained and prompted on. `shell=True`
+# alone would hand that to cmd.exe on Windows, where none of it parses. Git
+# for Windows ships a real POSIX `bash` and is already the assumed baseline
+# for a dev machine (Mike's own tools already shell out to `git`), so it is
+# the interpreter, not cmd.exe, that makes the terminal tool's contract
+# — "run this shell command" — actually hold on Windows. Resolved once and
+# cached: every backgrounded command would otherwise re-search PATH.
+_windows_bash: str | None | bool = False  # False = not yet resolved
+
+
+def _resolve_windows_bash() -> str | None:
+    global _windows_bash
+    if _windows_bash is False:
+        _windows_bash = shutil.which("bash")
+    return _windows_bash
+
+
+def shell_invocation(command: str) -> tuple[list[str] | str, bool]:
+    """The (argv-or-string, shell) pair to hand to Popen/subprocess.run for a
+    POSIX-syntax shell command on this OS.
+
+    Returns `(command, True)` unchanged on POSIX, where the platform shell
+    already speaks the syntax the model writes. On Windows, returns
+    `([bash, "-c", command], False)` when Git Bash is present. If it is not
+    on PATH, this honestly falls back to `(command, True)` — cmd.exe — rather
+    than failing outright; most such commands will not parse there, but that
+    is a real, visible failure the model can see and explain, not a silent
+    wrong answer.
+    """
+    if platform.system() == "Windows":
+        bash = _resolve_windows_bash()
+        if bash:
+            return [bash, "-c", command], False
+    return command, True
 
 
 def spawn_detached(command: str, *, cwd: str | None = None,
@@ -45,7 +83,8 @@ def spawn_detached(command: str, *, cwd: str | None = None,
         )
     else:
         kwargs["start_new_session"] = True
-    return subprocess.Popen(command, shell=True, cwd=cwd, **kwargs)
+    argv, use_shell = shell_invocation(command)
+    return subprocess.Popen(argv, shell=use_shell, cwd=cwd, **kwargs)
 
 
 def terminate_tree(process: subprocess.Popen, *, timeout: float = 5.0) -> None:

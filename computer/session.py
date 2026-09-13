@@ -318,7 +318,10 @@ class ComputerSession:
                 "preferred: it is checked against a real element."
             )}
 
-        result = self.controller().click(int(x), int(y), button=button, count=count)
+        try:
+            result = self.controller().click(int(x), int(y), button=button, count=count)
+        except ComputerError as exc:
+            return {"status": "error", "error": str(exc)}
         if not result.ok:
             return {"status": "error", "error": result.error or result.detail}
 
@@ -366,7 +369,10 @@ class ComputerSession:
         # control had focus. Reading it costs one accessibility call.
         before = self._focused()
 
-        result = self.controller().type_text(text).as_dict()
+        try:
+            result = self.controller().type_text(text).as_dict()
+        except ComputerError as exc:
+            return {"status": "error", "error": str(exc)}
         if result.get("status") != "success":
             return result
 
@@ -406,7 +412,10 @@ class ComputerSession:
         if not ok:
             return {"status": "error", "error": why}
         note = self._ensure_front()
-        result = self.controller().press_keys(key, modifiers).as_dict()
+        try:
+            result = self.controller().press_keys(key, modifiers).as_dict()
+        except ComputerError as exc:
+            return {"status": "error", "error": str(exc)}
         if note and result.get("status") == "success":
             result["result"] = result.get("result", "") + note
         return result
@@ -421,13 +430,19 @@ class ComputerSession:
             if problem:
                 return {"status": "error", "error": problem, "retry_safe": True}
             x, y = element.bounds.center
-        return self.controller().scroll(dx, dy, x, y).as_dict()
+        try:
+            return self.controller().scroll(dx, dy, x, y).as_dict()
+        except ComputerError as exc:
+            return {"status": "error", "error": str(exc)}
 
     def list_windows(self) -> dict:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
-        windows = self.controller().list_windows()
+        try:
+            windows = self.controller().list_windows()
+        except ComputerError as exc:
+            return {"status": "error", "error": str(exc)}
         if not windows:
             return {"status": "success", "result": "No addressable windows are open."}
         return {
@@ -440,7 +455,10 @@ class ComputerSession:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
-        result = self.controller().activate_app(name)
+        try:
+            result = self.controller().activate_app(name)
+        except ComputerError as exc:
+            return {"status": "error", "error": str(exc)}
         if result.ok:
             # The previous observation belongs to the previous app.
             self._observation = None

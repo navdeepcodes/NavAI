@@ -40,12 +40,16 @@ def _pid_alive(pid: int) -> bool:
 def _child_pids(parent_pid: int) -> list[int]:
     """Every process that reports `parent_pid` as its parent, right now."""
     if platform.system() == "Windows":
+        # wmic is gone on current Windows 11 builds (removed as of recent
+        # releases) — verified on this machine, not assumed. Get-CimInstance
+        # is the supported replacement and ships with every Windows install.
         out = subprocess.run(
-            ["wmic", "process", "where", f"(ParentProcessId={parent_pid})",
-             "get", "ProcessId"],
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-CimInstance Win32_Process -Filter "
+             f"'ParentProcessId={parent_pid}').ProcessId"],
             capture_output=True, text=True,
         ).stdout
-        return [int(line.strip()) for line in out.splitlines()[1:] if line.strip().isdigit()]
+        return [int(line.strip()) for line in out.splitlines() if line.strip().isdigit()]
     out = subprocess.run(["pgrep", "-P", str(parent_pid)], capture_output=True, text=True).stdout
     return [int(p) for p in out.split() if p.strip()]
 
@@ -54,7 +58,21 @@ def _child_pids(parent_pid: int) -> list[int]:
 # not just sleeps itself — so the test actually exercises "the whole tree
 # dies", not only "the shell dies".
 if platform.system() == "Windows":
-    _TREE_COMMAND = 'start /B cmd /C "ping -n 30 127.0.0.1 >NUL"'
+    # `start /B` alone returns control to the outer shell immediately, so the
+    # tracked process (the outer cmd.exe) would exit right away — unlike the
+    # POSIX side, where `wait` keeps the shell blocked on its backgrounded
+    # child. Block the outer shell on its own ping too, so it stays alive
+    # exactly the way `sleep 30 & wait` does, while still leaving a real,
+    # separately-visible child process for the tree-kill to reach.
+    # The inner `cmd /C "...>NUL"` is its own real cmd.exe, where NUL is the
+    # correct device name. The outer redirect is interpreted by whatever
+    # shell is running this string directly — Git Bash, per
+    # hostplatform.processes.shell_invocation — where NUL is not special and
+    # `>NUL` would silently create a file literally named NUL in the test's
+    # cwd instead of discarding output. /dev/null is what that shell means
+    # by "discard".
+    _TREE_COMMAND = ('start /B cmd /C "ping -n 30 127.0.0.1 >NUL" '
+                      '& ping -n 30 127.0.0.1 >/dev/null')
 else:
     _TREE_COMMAND = "sleep 30 & wait"
 

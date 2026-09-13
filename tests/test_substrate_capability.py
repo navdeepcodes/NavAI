@@ -29,14 +29,14 @@ def _rt():
 
 def test_substrate_can_fix_a_bug_and_prove_it():
     """Task 2: run tests, see the real failure, fix it, verify."""
-    from tests.benchmark_runtime import setup_bug, verify_bug
+    from tests.benchmark_runtime import python_invocation, setup_bug, verify_bug
 
     rt = _rt()
     wd = tempfile.mkdtemp()
     setup_bug(wd)
 
     # 1. observe the failure — this is what used to be impossible
-    run = rt._execute_tool("run_command", {"command": f"{sys.executable} -m pytest -q", "cwd": wd})
+    run = rt._execute_tool("run_command", {"command": f"{python_invocation('-m', 'pytest', '-q')}", "cwd": wd})
     assert run["status"] == "command_failed"
     assert run["exit_code"] != 0
     assert "test_add" in run["stdout"], "the failing test must be identifiable from the output"
@@ -53,7 +53,7 @@ def test_substrate_can_fix_a_bug_and_prove_it():
     assert "+    return a + b" in edit["diff"]
 
     # 4. verify by re-running
-    again = rt._execute_tool("run_command", {"command": f"{sys.executable} -m pytest -q", "cwd": wd})
+    again = rt._execute_tool("run_command", {"command": python_invocation('-m', 'pytest', '-q'), "cwd": wd})
     assert again["status"] == "success", again
 
     ok, evidence = verify_bug(wd, {})
@@ -116,7 +116,7 @@ def test_substrate_can_rename_across_multiple_files():
 
 
 def test_substrate_can_start_and_verify_a_server():
-    from tests.benchmark_runtime import setup_server, verify_server, cleanup_server
+    from tests.benchmark_runtime import python_invocation, setup_server, verify_server, cleanup_server
     from tools.terminal import actions
 
     rt = _rt()
@@ -125,7 +125,7 @@ def test_substrate_can_start_and_verify_a_server():
 
     try:
         started = rt._execute_tool("run_background", {
-            "command": f"{sys.executable} serve.py", "cwd": wd,
+            "command": f"{python_invocation('serve.py')}", "cwd": wd,
         })
         assert started["status"] == "success", started
         pid = started["pid"]

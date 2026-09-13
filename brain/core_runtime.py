@@ -1232,8 +1232,9 @@ class CoreRuntime:
         # changing threw the whole prefix away and the entire prompt was
         # re-evaluated every turn. They are recorded into history as the turn
         # happens instead; see _record_user_turn for the measurements.
+        _now = datetime.now()
         prompt = SYSTEM_PROMPT.replace(
-            "{date}", datetime.now().strftime("%A, %B %-d, %Y")
+            "{date}", f"{_now:%A}, {_now:%B} {_now.day}, {_now:%Y}"
         )
 
         return [{"role": "system", "content": prompt}, *self._core.history]

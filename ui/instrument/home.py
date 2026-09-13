@@ -517,7 +517,8 @@ class HomeSurface(QWidget):
         col = QVBoxLayout(block)
         col.setContentsMargins(0, 0, 0, 0)
         col.setSpacing(6)
-        date_lbl = QLabel(datetime.now().strftime("%A %-d %B").upper())
+        _now = datetime.now()
+        date_lbl = QLabel(f"{_now:%A} {_now.day} {_now:%B}".upper())
         date_lbl.setFont(tokens.label(10))
         date_lbl.setStyleSheet(f"color: {tokens.INK_DIM}; background: transparent; border: none;")
         col.addWidget(date_lbl)
@@ -732,7 +733,7 @@ class HomeSurface(QWidget):
         current_day = None
         for row in rows:
             when = datetime.fromtimestamp(row.get("started_at") or 0)
-            day = when.strftime("%A %-d %B")
+            day = f"{when:%A} {when.day} {when:%B}"
             if day != current_day:
                 current_day = day
                 if self._history_body.count():
@@ -874,7 +875,7 @@ class HomeSurface(QWidget):
         side.setSpacing(6)
 
         when = datetime.fromtimestamp(row.get("created_at") or 0)
-        date_lbl = QLabel(when.strftime("%-d %b"))
+        date_lbl = QLabel(f"{when.day} {when:%b}")
         date_lbl.setFont(tokens.machine(10.5))
         date_lbl.setStyleSheet(f"color: {tokens.FAINT}; background: transparent; border: none;")
         date_lbl.setAlignment(Qt.AlignRight)

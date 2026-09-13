@@ -4,8 +4,6 @@ certifi==2026.6.17
 cffi==2.0.0
 charset-normalizer==3.4.7
 cryptography==49.0.0
-customtkinter==6.0.0
-darkdetect==0.8.0
 distro==1.9.0
 et_xmlfile==2.0.0
 google-api-core==2.31.0
@@ -15,7 +13,6 @@ google-auth-oauthlib==1.4.0
 google-auth==2.55.1
 google-genai==2.10.0
 googleapis-common-protos==1.75.0
-groq==1.5.0
 h11==0.16.0
 httpcore==1.0.9
 httplib2==0.32.0
@@ -25,7 +22,6 @@ jiter==0.16.0
 numpy==2.5.0
 oauthlib==3.3.1
 ollama==0.6.2
-openai==2.44.0
 openpyxl==3.1.5
 packaging==26.2
 pillow==12.3.0
@@ -36,10 +32,12 @@ pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
-pyobjc-core==12.2.2
-pyobjc-framework-AVFoundation==12.2.2
-pyobjc-framework-Cocoa==12.2.2
-pyobjc-framework-Speech==12.2.2
+pyobjc-core==12.2.2                  ; sys_platform == "darwin"
+pyobjc-framework-AVFoundation==12.2.2; sys_platform == "darwin"
+pyobjc-framework-Cocoa==12.2.2       ; sys_platform == "darwin"
+pyobjc-framework-Speech==12.2.2      ; sys_platform == "darwin"
+comtypes                             ; sys_platform == "win32"
+pywin32                              ; sys_platform == "win32"
 pyparsing==3.3.2
 PySide6==6.11.1
 PySide6_Addons==6.11.1

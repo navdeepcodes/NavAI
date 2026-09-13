@@ -278,7 +278,13 @@ def search_code(
         cmd += [query, str(root)]
     else:
         cmd = ["grep", "-rn", "-I"]
-        if not regex:
+        # -E (extended regex) so escaping matches rg's convention — `\(` is a
+        # literal paren, unescaped `(` groups. Plain BRE grep inverts that
+        # (unescaped `(` is literal, `\(` opens a group), so a pattern like
+        # `def add\(.*rule`, valid for rg, would fail BRE with "Unmatched (".
+        if regex:
+            cmd.append("-E")
+        else:
             cmd.append("-F")
         for skip in ("node_modules", ".git", "__pycache__", "venv", "dist", "build"):
             cmd += ["--exclude-dir", skip]

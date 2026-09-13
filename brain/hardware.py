@@ -23,6 +23,7 @@ Nothing here downloads, installs, or changes anything.
 """
 from __future__ import annotations
 
+import ctypes
 import os
 import platform
 import shutil
@@ -32,6 +33,38 @@ from dataclasses import dataclass, field
 from logs.logger import logger
 
 GB = 1024 ** 3
+
+
+class _MEMORYSTATUSEX(ctypes.Structure):
+    """Mirrors the Win32 MEMORYSTATUSEX struct for GlobalMemoryStatusEx.
+
+    ctypes + a kernel32 call already shipped with every Windows install, the
+    same "no extra dependency" choice hostplatform.processes makes with
+    taskkill rather than pywin32.
+    """
+    _fields_ = [
+        ("dwLength", ctypes.c_ulong),
+        ("dwMemoryLoad", ctypes.c_ulong),
+        ("ullTotalPhys", ctypes.c_ulonglong),
+        ("ullAvailPhys", ctypes.c_ulonglong),
+        ("ullTotalPageFile", ctypes.c_ulonglong),
+        ("ullAvailPageFile", ctypes.c_ulonglong),
+        ("ullTotalVirtual", ctypes.c_ulonglong),
+        ("ullAvailVirtual", ctypes.c_ulonglong),
+        ("sullAvailExtendedVirtual", ctypes.c_ulonglong),
+    ]
+
+
+def _windows_memory_status() -> "_MEMORYSTATUSEX | None":
+    try:
+        status = _MEMORYSTATUSEX()
+        status.dwLength = ctypes.sizeof(_MEMORYSTATUSEX)
+        if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+            return None
+        return status
+    except Exception:
+        logger.debug("Could not read Windows memory status.", exc_info=True)
+        return None
 
 
 @dataclass(frozen=True)
@@ -145,6 +178,9 @@ def _total_memory_bytes() -> int:
             out = subprocess.run(["sysctl", "-n", "hw.memsize"],
                                  capture_output=True, text=True, timeout=5)
             return int(out.stdout.strip())
+        if platform.system() == "Windows":
+            status = _windows_memory_status()
+            return status.ullTotalPhys if status else 0
         with open("/proc/meminfo") as handle:
             for line in handle:
                 if line.startswith("MemTotal:"):
@@ -187,6 +223,19 @@ def _memory_pressure_gb() -> tuple[float, float]:
                 swap = float(swap_out.split("used =")[1].split("M")[0]) / 1024
             return available, swap
 
+        if platform.system() == "Windows":
+            status = _windows_memory_status()
+            if status is None:
+                return 0.0, 0.0
+            available = status.ullAvailPhys / GB
+            # Best-effort: page-file usage beyond what physical memory alone
+            # would need. Windows has no single "swap used" figure the way
+            # vm_stat/vm.swapusage give one on macOS.
+            committed_to_pagefile = (status.ullTotalPageFile - status.ullAvailPageFile)
+            committed_to_phys = status.ullTotalPhys - status.ullAvailPhys
+            swap = max(0.0, (committed_to_pagefile - committed_to_phys) / GB)
+            return available, swap
+
         with open("/proc/meminfo") as handle:
             info = {}
             for line in handle:
@@ -204,6 +253,8 @@ def _chip_name() -> str:
             out = subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
                                  capture_output=True, text=True, timeout=5)
             return out.stdout.strip()
+        if platform.system() == "Windows":
+            return platform.processor().strip()
     except Exception:
         logger.debug("Could not read the chip name.", exc_info=True)
     return ""

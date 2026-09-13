@@ -61,10 +61,11 @@ def run(
 
     started = time.monotonic()
 
+    argv, use_shell = processes.shell_invocation(command)
     try:
         completed = subprocess.run(
-            command,
-            shell=True,
+            argv,
+            shell=use_shell,
             capture_output=True,
             text=True,
             cwd=cwd,

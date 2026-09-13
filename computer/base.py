@@ -176,6 +176,20 @@ class ComputerError(Exception):
     """Raised for a platform failure the caller should report, not retry."""
 
 
+class NotSupportedError(ComputerError):
+    """One specific capability is not yet implemented on this platform.
+
+    Distinct from `ComputerError` on purpose: `get_controller()` raises the
+    base class when there is no adapter at all for this OS. Once an adapter
+    exists but is partial, the honest granularity is per-capability, not
+    per-platform — a caller that can already observe the screen and click
+    should not be told computer control is "unavailable" because `drag`
+    happens not to be built yet. Raised with a message naming the specific
+    capability, so it reaches the model as "Drag is not currently supported
+    on Windows," not a blanket refusal.
+    """
+
+
 # ══ roles ══════════════════════════════════════════════════
 # Platform role vocabularies differ (AXButton vs Button vs push button). The
 # model should not have to learn three of them, so adapters normalise into
@@ -286,9 +300,14 @@ class ComputerController(ABC):
 def get_controller() -> ComputerController:
     """The adapter for this machine.
 
-    Raises rather than returning a stub: a caller that cannot control the
-    computer needs to know that now, not discover it from actions that
-    silently do nothing.
+    Raises `ComputerError` when there is no adapter for this OS at all — a
+    caller that cannot control the computer needs to know that now, not
+    discover it from actions that silently do nothing. That is a
+    per-platform question, though, not a per-capability one: once an
+    adapter exists, a capability it has not implemented yet raises
+    `NotSupportedError` from that specific method instead, so a machine
+    that can already observe and click is not told computer control is
+    "unavailable" because one action, like drag, happens not to be built.
     """
     system = platform.system()
     if system == "Darwin":
@@ -296,10 +315,7 @@ def get_controller() -> ComputerController:
 
         return MacController()
     if system == "Windows":
-        raise ComputerError(
-            "Windows computer control is not implemented. The interface in "
-            "computer/base.py defines what an implementation must provide; "
-            "computer/macos.py is the reference. Nothing here is Mac-specific "
-            "above the adapter boundary."
-        )
+        from computer.windows import WindowsController
+
+        return WindowsController()
     raise ComputerError(f"No computer control adapter for {system}.")

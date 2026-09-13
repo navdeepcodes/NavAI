@@ -288,6 +288,7 @@ def test_observing_a_missing_app_is_an_error_not_an_empty_success():
     print("PASS: a missing application reports honestly")
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="inspects computer.macos, a macOS-only module")
 def test_frontmost_app_tracks_reality_within_one_process():
     """NSWorkspace answers from a run-loop-refreshed cache and goes stale in a
     tool call, naming whatever was frontmost when the process started."""
@@ -625,6 +626,7 @@ def test_verification_happens_before_the_click_not_after():
 # tests pin that, and pin the one thing that needed adding: navigation state.
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="inspects computer.macos, a macOS-only module")
 def test_navigation_state_requires_a_real_scheme():
     """A URL heuristic that guesses is worse than one that abstains.
 

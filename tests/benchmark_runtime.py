@@ -42,6 +42,24 @@ APPROVE_ALL = True
 MAX_SECONDS_PER_TASK = 260
 
 
+def python_invocation(*args: str) -> str:
+    """`sys.executable ...args`, safe to embed in a shell command string on
+    any platform.
+
+    Two problems, one fix. On Windows the command is routed through Git Bash
+    (see hostplatform.processes.shell_invocation), which treats backslash as
+    an escape character, so sys.executable's native backslash form gets
+    mangled mid-path — forward slashes sidestep that (Windows and Python
+    both accept them). And any Windows account with a space in its name (a
+    "First Last" username, common on this OS) puts a space in sys.executable
+    itself, which word-splits an unquoted path in any shell, POSIX or cmd.
+    Also sidesteps `python3` vs `python` naming, which differs by platform
+    and was never the point of the fixtures that used to hardcode one.
+    """
+    quoted = f'"{sys.executable.replace(os.sep, "/")}"'
+    return " ".join([quoted, *args])
+
+
 class Recorder:
     """Captures what actually happened during a task, for the report."""
 
@@ -326,7 +344,11 @@ def verify_rename(workdir, info):
 # ── 5. Diagnose a failing build ────────────────────────────
 
 def setup_broken_build(workdir):
-    _write(workdir, "build.sh", "#!/bin/sh\nset -e\npython3 -c 'import json; json.loads(open(\"config.json\").read())'\necho BUILD_OK\n")
+    # python_invocation(), not a hardcoded `python3`: that name is a Linux/
+    # macOS convention with no guarantee on Windows, where only `python` (or
+    # none at all, PATH-dependent) is typically present.
+    py = python_invocation("-c", "'import json; json.loads(open(\"config.json\").read())'")
+    _write(workdir, "build.sh", f"#!/bin/sh\nset -e\n{py}\necho BUILD_OK\n")
     _write(workdir, "config.json", '{"name": "demo", "port": 8080,}')  # trailing comma
     os.chmod(Path(workdir) / "build.sh", 0o755)
     return {}

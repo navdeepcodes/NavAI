@@ -60,7 +60,25 @@ def test_command_reports_cwd_and_respects_it():
 
     assert r["status"] == "success"
     assert r["cwd"] == tmp
-    assert os.path.realpath(r["stdout"].strip()) == os.path.realpath(tmp)
+    reported = r["stdout"].strip()
+    if sys.platform == "win32":
+        # Windows routes POSIX-syntax commands through Git Bash (see
+        # hostplatform.processes.shell_invocation), so `pwd` reports the
+        # shell's own MSYS view of the path, not a native Windows one — the
+        # cwd was still set correctly; r["cwd"] above is already the real,
+        # native path. This is the filesystem-path version of the
+        # coordinate-space seam the DPI work hits for screen pixels: translate
+        # deliberately, at the boundary, rather than compare mismatched spaces
+        # directly. cygpath (shipped with Git Bash) does the translation
+        # rather than a hand-rolled drive-letter mapping, because MSYS mounts
+        # some paths specially — tempfile.mkdtemp() lands under Windows TEMP,
+        # which Git Bash mounts as /tmp, not /c/Users/.../AppData/Local/Temp.
+        expected = subprocess.run(
+            ["bash", "-c", f"cygpath -u '{tmp}'"], capture_output=True, text=True,
+        ).stdout.strip()
+        assert reported == expected
+    else:
+        assert os.path.realpath(reported) == os.path.realpath(tmp)
     print("PASS: commands run in, and report, the requested directory")
 
 
@@ -525,8 +543,17 @@ def test_server_lifecycle_produces_evidence_at_every_step():
 
     assert rt._execute_tool("check_port", {"port": port})["listening"] is False
 
+    # Forward slashes: Windows commands route through Git Bash (see
+    # hostplatform.processes.shell_invocation), which treats backslash as an
+    # escape character — sys.executable's native backslash form would be
+    # mangled mid-path. Windows and Python both accept forward slashes in
+    # paths, so this is the safe way to embed one in a shell command string.
+    # Quoted, too: a Windows username containing a space (as this one does)
+    # makes sys.executable itself contain a space, which word-splits an
+    # unquoted path in any POSIX shell the same way it would in cmd.exe.
+    interpreter = sys.executable.replace("\\", "/")
     started = rt._execute_tool("run_background", {
-        "command": f"{sys.executable} serve.py", "cwd": tmp,
+        "command": f'"{interpreter}" serve.py', "cwd": tmp,
     })
     assert started["status"] == "success"
     try:
