@@ -22,17 +22,20 @@ from tests import _isolate  # noqa: F401
 
 import pytest
 
-from voice.providers import get_provider
+from voice.providers import get_provider, native_provider_class
 from voice.providers.base import VoiceProvider
-from voice.providers.native import NativeVoice
 from voice.speaker import Speaker
 
 
 # ── the boundary ──────────────────────────────────────────
 
 def test_the_native_voice_is_always_available():
-    """It is the fallback, so it has to be the thing that cannot fail."""
-    ok, why = NativeVoice().available()
+    """It is the fallback, so it has to be the thing that cannot fail.
+
+    native_provider_class() is this platform's actual fallback — NativeVoice
+    (macOS `say`) on macOS, WindowsVoice (SAPI5) on Windows — not NativeVoice
+    unconditionally, which is only ever available where `say` exists."""
+    ok, why = native_provider_class()().available()
     assert ok, why
 
 
@@ -46,14 +49,14 @@ def test_an_unknown_provider_falls_back_rather_than_raising():
 def test_both_providers_satisfy_the_interface():
     from voice.providers.qwen import QwenVoice
 
-    for provider in (NativeVoice(), QwenVoice()):
+    for provider in (native_provider_class()(), QwenVoice()):
         assert isinstance(provider, VoiceProvider)
         for method in ("available", "speak", "is_speaking", "stop", "shutdown"):
             assert callable(getattr(provider, method)), f"{provider.name}.{method}"
 
 
 def test_stop_is_safe_when_nothing_is_speaking():
-    for provider in (NativeVoice(), get_provider("does-not-exist")):
+    for provider in (native_provider_class()(), get_provider("does-not-exist")):
         for _ in range(3):
             provider.stop()
         assert not provider.is_speaking()
@@ -114,7 +117,7 @@ def test_stopping_after_a_fallback_stops_the_voice_that_is_actually_talking():
     speaker.stop()
 
     assert not speaker.is_speaking()
-    assert speaker._native._process is None
+    assert not speaker._native.is_speaking(), "the fallback voice kept talking"
     speaker.shutdown()
 
 
@@ -305,16 +308,27 @@ def test_an_utterance_dropped_after_acceptance_is_still_spoken():
 
 
 def test_the_fallback_speaks_the_sentence_once_not_twice():
-    """The failure mode of a fallback is duplicate speech. Exactly one
-    process should be talking."""
+    """The failure mode of a fallback is duplicate speech. The native voice's
+    speak() should be invoked exactly once for the whole utterance — wrapping
+    the public method rather than reaching into a backend-specific private
+    attribute (e.g. NativeVoice's subprocess handle) keeps this true for
+    whichever native backend this platform actually has."""
     speaker = Speaker(provider=_AcceptsThenFails())
+
+    calls: list[str] = []
+    real_speak = speaker._native.speak
+
+    def _tracked(text):
+        calls.append(text)
+        return real_speak(text)
+
+    speaker._native.speak = _tracked
+
     speaker.speak("Say this exactly once.")
     time.sleep(0.3)
-
-    first = speaker._native._process
-    assert first is not None
+    assert len(calls) == 1
     time.sleep(0.3)
-    assert speaker._native._process is first, "a second utterance was started"
+    assert len(calls) == 1, "a second utterance was started"
 
     speaker.stop()
     speaker.shutdown()
@@ -495,9 +509,7 @@ def test_a_queueing_provider_is_handed_sentences_immediately():
 def test_a_non_queueing_provider_is_still_paced_one_at_a_time():
     """The system voice has no queue of its own; handing it a second sentence
     mid-utterance would cut the first one off."""
-    from voice.providers.native import NativeVoice
-
-    native = NativeVoice()
+    native = native_provider_class()()
     assert not native.queues
     assert native.speak("A sentence long enough to still be playing.")
     assert not native.enqueue("This must not interrupt it."), (

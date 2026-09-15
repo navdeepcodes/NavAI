@@ -20,6 +20,7 @@ separately below.
 from __future__ import annotations
 
 import os
+import platform
 import sys
 import threading
 import time
@@ -227,10 +228,11 @@ def test_speech_can_be_interrupted_mid_utterance():
 
     speaker.stop()
 
+    # is_speaking() reflects the backend's own real, live OS-level state
+    # (a subprocess's poll(), or SAPI's RunningState) rather than a Python
+    # flag, so False here is the same "actually gone, not merely marked as
+    # gone" guarantee regardless of which native backend this platform has.
     assert not speaker.is_speaking()
-    # The process now belongs to the provider rather than to Speaker. The
-    # guarantee is the same one, checked where the process actually lives.
-    assert speaker._native._process is None, "the say process was left behind"
 
 
 def test_a_new_utterance_replaces_the_one_in_progress():
@@ -239,14 +241,23 @@ def test_a_new_utterance_replaces_the_one_in_progress():
     from voice.speaker import Speaker
 
     speaker = Speaker()
+
+    calls: list[str] = []
+    real_speak = speaker._native.speak
+
+    def _tracked(text):
+        calls.append(text)
+        return real_speak(text)
+
+    speaker._native.speak = _tracked
+
     speaker.speak("The first sentence, which is quite long and will be cut off.")
     time.sleep(0.3)
-    first = speaker._native._process
-    assert first is not None
+    assert calls == ["The first sentence, which is quite long and will be cut off."]
 
     speaker.speak("The second sentence.")
-    assert speaker._native._process is not first
-    assert first.poll() is not None, "the first utterance was left running"
+    assert calls[-1] == "The second sentence.", "the new utterance never reached the native voice"
+    assert speaker.is_speaking(), "replacing an utterance must not leave Mike silent"
     speaker.stop()
 
 
@@ -274,46 +285,43 @@ def test_stop_is_safe_when_nothing_is_speaking():
 
 
 def test_twenty_speak_stop_cycles_leave_no_processes():
-    """Each utterance is a subprocess. Twenty rapid cycles would show up as
-    zombies if stop() were not really reaping them."""
+    """Each utterance is a subprocess (macOS) or a COM speech call (Windows).
+    Twenty rapid cycles would leave something audibly running afterward if
+    stop() were not really tearing it down each time — checked against
+    is_speaking()'s real, live OS-level state rather than a leaked handle,
+    since what "leaked" even means differs by backend."""
     from voice.speaker import Speaker
 
     speaker = Speaker()
-    processes = []
     for _ in range(20):
         speaker.speak("Testing one two three.")
-        if speaker._native._process:
-            processes.append(speaker._native._process)
         speaker.stop()
 
     assert not speaker.is_speaking()
     time.sleep(0.2)
-    alive = [p for p in processes if p.poll() is None]
-    assert not alive, f"{len(alive)} say processes were left running"
+    assert not speaker.is_speaking(), "something was left running after 20 speak/stop cycles"
 
 
 # ══ failure isolation: the point of the whole file ═════════
 
 def test_a_broken_speaker_does_not_stop_the_runtime():
-    """TTS is an output device. If the machine has no `say`, or it fails, Mike
-    must still think and act — the answer simply arrives silently."""
+    """TTS is an output device. If the platform's own voice fails, Mike must
+    still think and act — the answer simply arrives silently.
+
+    Patches the native provider's public speak() directly rather than a
+    backend-specific internal (NativeVoice shells out via subprocess; the
+    Windows backend goes through win32com/SAPI5 and never touches
+    subprocess.Popen at all) — speak() returning False is the one contract
+    every backend must honour when its own OS call fails, so this is the
+    platform-independent way to simulate that."""
     from brain.core_runtime import CoreRuntime
     from voice.speaker import Speaker
 
     speaker = Speaker()
-    original = __import__("subprocess").Popen
+    speaker._native.speak = lambda text: False
 
-    import subprocess as sp
-
-    def refuse(*args, **kwargs):
-        raise OSError("no such binary: say")
-
-    sp.Popen = refuse
-    try:
-        speaker.speak("this cannot be spoken")   # must not raise
-        assert not speaker.is_speaking()
-    finally:
-        sp.Popen = original
+    speaker.speak("this cannot be spoken")   # must not raise
+    assert not speaker.is_speaking()
 
     runtime = CoreRuntime()
     result = runtime._execute_tool("calculate", {"expression": "2 + 2"})
@@ -346,6 +354,12 @@ def test_a_microphone_failure_does_not_stop_the_runtime():
     assert result["status"] == "success", "the runtime died with the microphone"
 
 
+@pytest.mark.skipif(
+    platform.system() != "Darwin",
+    reason="voice.transcriber is the macOS SFSpeechRecognizer backend; "
+           "Windows transcription is voice.recognizer.windows.WhisperRecognizer, "
+           "covered by tests/test_voice_input_seams.py",
+)
 def test_transcription_of_a_missing_file_is_reported_not_raised():
     """Speech recognition is fed a file the recorder wrote. If that write
     failed, transcription must come back empty rather than throwing into the
@@ -356,6 +370,11 @@ def test_transcription_of_a_missing_file_is_reported_not_raised():
     assert result == "" or isinstance(result, str)
 
 
+@pytest.mark.skipif(
+    platform.system() != "Darwin",
+    reason="voice.transcriber is the macOS SFSpeechRecognizer backend, and "
+           "this test also shells out to the macOS `say` binary directly",
+)
 def test_transcription_of_a_real_recording_returns_text():
     """The recognition path itself, end to end, on audio this test makes."""
     import subprocess

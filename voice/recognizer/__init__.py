@@ -38,11 +38,8 @@ def get_recognizer() -> SpeechRecognizer:
         _instance = MacSpeechRecognizer()
         return _instance
     if system == "Windows":
-        raise RecognizerUnavailable(
-            "No speech-to-text backend for Windows yet. SFSpeechRecognizer "
-            "has no direct Windows equivalent; a real implementation needs "
-            "either a local model (e.g. Whisper) or the Windows Speech "
-            "Recognition API, chosen and verified on the physical machine "
-            "rather than added as a guessed dependency."
-        )
+        from voice.recognizer.windows import WhisperRecognizer
+
+        _instance = WhisperRecognizer()
+        return _instance
     raise RecognizerUnavailable(f"No speech-to-text backend for {system}.")

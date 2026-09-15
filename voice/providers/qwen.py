@@ -14,9 +14,10 @@ process per utterance would pay that every sentence; a persistent worker pays
 it once, at first use.
 
 **Playback happens here, not in the worker.** The worker writes chunks and
-reports paths; this side plays them with `afplay` — the same shape as the
-native voice, so stopping is the same operation and the lifecycle code that
-already works keeps working.
+reports paths; this side plays them with `sounddevice` (already a hard
+dependency for microphone capture, and cross-platform where `afplay` was
+macOS-only) — the same shape as the native voice, so stopping is the same
+operation and the lifecycle code that already works keeps working.
 
 Everything about it is optional. If the worker will not start, or dies, or
 falls silent, `available()` says so and the caller uses the native voice.
@@ -144,7 +145,7 @@ class QwenVoice(VoiceProvider):
         self._ready = False
         self._lock = threading.Lock()
 
-        self._player: subprocess.Popen | None = None
+        self._playing = threading.Event()
         self._playback: threading.Thread | None = None
         self._stop_flag = threading.Event()
         self._request = 0
@@ -179,8 +180,6 @@ class QwenVoice(VoiceProvider):
                 f"the neural voice is not installed (no interpreter at "
                 f"{self._python}). See docs/voice-setup.md."
             )
-        if shutil.which("afplay") is None:
-            return False, "afplay is not on this machine"
         weights = self._home / "hf" / "hub" / f"models--{self._model.replace('/', '--')}"
         if not weights.exists():
             return False, (
@@ -598,15 +597,21 @@ class QwenVoice(VoiceProvider):
         if not path or self._stop_flag.is_set():
             return
         try:
-            self._player = subprocess.Popen(
-                ["afplay", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            while self._player.poll() is None:
+            import soundfile as sf
+            import sounddevice as sd
+
+            data, samplerate = sf.read(path)
+            self._playing.set()
+            sd.play(data, samplerate)
+            while sd.get_stream().active:
                 if self._stop_flag.is_set():
+                    sd.stop()
                     return
                 time.sleep(0.01)
         except Exception as exc:
             logger.warning("Qwen TTS playback failed: %s", exc)
         finally:
+            self._playing.clear()
             try:
                 os.unlink(path)
             except OSError:
@@ -619,7 +624,7 @@ class QwenVoice(VoiceProvider):
         # worked, and would have had the caller stopping twice.
         if self._stop_flag.is_set():
             return False
-        if self._player is not None and self._player.poll() is None:
+        if self._playing.is_set():
             return True
         with self._queue_lock:
             if self._pending:
@@ -654,17 +659,13 @@ class QwenVoice(VoiceProvider):
         with self._mailbox_lock:
             self._mailboxes.clear()
         self._send_cancel()
-        player = self._player
-        if player is not None:
+        if self._playing.is_set():
             try:
-                player.terminate()
-                player.wait(timeout=1)
+                import sounddevice as sd
+
+                sd.stop()
             except Exception:
-                try:
-                    player.kill()
-                except Exception:
-                    pass
-        self._player = None
+                pass
         # Drain anything the worker is still reporting for the abandoned
         # utterance, so the next one does not read stale events.
         while True:

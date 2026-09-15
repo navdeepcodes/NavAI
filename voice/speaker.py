@@ -18,8 +18,7 @@ import time
 
 from logs.logger import logger
 from voice import diagnostics
-from voice.providers import VoiceProvider, get_provider
-from voice.providers.native import NativeVoice
+from voice.providers import VoiceProvider, get_provider, native_provider_class
 
 VOICE = "Samantha"
 RATE = 185
@@ -35,7 +34,7 @@ class Speaker:
         self._streaming = False
         # The native voice is held separately from the configured one: it is
         # the fallback, so it must exist even when it is not the default.
-        self._native = NativeVoice()
+        self._native = native_provider_class()()
         self._provider = provider or self._configured_provider(self._native)
         self._fell_back = False
         # An accepted utterance can still fail, and by then the caller has
@@ -47,14 +46,14 @@ class Speaker:
         self._record: diagnostics.Utterance | None = None
 
     @staticmethod
-    def _configured_provider(native: NativeVoice) -> VoiceProvider:
+    def _configured_provider(native: VoiceProvider) -> VoiceProvider:
         """The configured voice, reusing the fallback instance when they are
         the same thing.
 
-        Returning a second NativeVoice when native is the configured choice
-        left Mike holding two of them. Behaviour survived it — stop() stops
-        both — but one voice should be one object, and the duplicate made
-        "which one is actually speaking?" ambiguous.
+        Returning a second native-voice instance when native is the
+        configured choice left Mike holding two of them. Behaviour survived
+        it — stop() stops both — but one voice should be one object, and the
+        duplicate made "which one is actually speaking?" ambiguous.
         """
         try:
             from config import preferences
@@ -63,7 +62,7 @@ class Speaker:
         except Exception:
             return native
 
-        if choice.strip().lower() in ("", "native", "macos", "say", "samantha"):
+        if choice.strip().lower() in ("", "native", "macos", "windows", "say", "sapi", "samantha"):
             return native
         provider = get_provider(choice)
         return native if provider.name == "native" else provider

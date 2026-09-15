@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import os
+import platform
 import sys
 import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import pytest
 
 
 def test_recorder_start_stop():
@@ -48,6 +51,12 @@ def test_recorder_stop_without_start():
     print("PASS: recorder stop-without-start")
 
 
+@pytest.mark.skipif(
+    platform.system() != "Darwin",
+    reason="voice.transcriber is the macOS SFSpeechRecognizer backend; "
+           "Windows transcription is voice.recognizer.windows.WhisperRecognizer, "
+           "covered by tests/test_voice_input_seams.py",
+)
 def test_transcribe_missing_file():
     """Transcribing a missing file returns empty string."""
     from voice.transcriber import transcribe_blocking

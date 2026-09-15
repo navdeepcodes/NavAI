@@ -125,8 +125,7 @@ def check_voice() -> dict[str, Any]:
     same thing: a missing model or a broken runtime falls back silently and
     on purpose. This is where that becomes visible.
     """
-    from voice.providers import get_provider
-    from voice.providers.native import NativeVoice
+    from voice.providers import get_provider, native_provider_class
 
     try:
         from config import preferences
@@ -139,7 +138,7 @@ def check_voice() -> dict[str, Any]:
     ok, detail = provider.available()
     report = {
         "configured": configured,
-        "will_use": provider.name if ok else NativeVoice().name,
+        "will_use": provider.name if ok else native_provider_class().name,
         "available": ok,
         "detail": detail,
     }

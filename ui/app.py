@@ -262,10 +262,35 @@ class MikeWindow(QMainWindow):
 
         self._animate_in()
 
+    def _stop_summon_animations(self) -> None:
+        """Stop whatever summon/dismiss animation is still in flight.
+
+        _summon() toggles on every hotkey press, and nothing stops the user
+        from pressing it again before the ~150-180ms show/hide animation has
+        finished. Left alone, the old QPropertyAnimation is simply dropped in
+        favour of a new one *while still running* — two animations then drive
+        the same windowOpacity (and, for a show cut short by a hide, `pos`)
+        property at once, and the abandoned one's `finished` signal still
+        fires later and can act on a window that has since changed state
+        (e.g. a stale fadeout hiding a window a following animate_in just
+        showed). Stopping the previous animation before replacing it is the
+        same guard `_teardown` already applies at shutdown, just applied on
+        every toggle instead of only the last one.
+        """
+        for name in ("_fade", "_rise", "_fadeout"):
+            anim = getattr(self, name, None)
+            if anim is not None:
+                try:
+                    anim.stop()
+                except Exception:
+                    pass
+
     def _animate_in(self) -> None:
         """Mike appears — a fast fade and a small rise into place, so it reads
         as a presence arriving rather than a window opening. Short enough
         (~150ms) that it never feels like waiting."""
+        self._stop_summon_animations()
+
         try:
             screen = QApplication.primaryScreen().availableGeometry()
             rest_x = screen.center().x() - self.PANEL_WIDTH // 2
@@ -297,6 +322,8 @@ class MikeWindow(QMainWindow):
 
     def _animate_out(self) -> None:
         """Mike steps back — a quick fade, then actually hidden."""
+        self._stop_summon_animations()
+
         self._fadeout = QPropertyAnimation(self, b"windowOpacity", self)
         self._fadeout.setDuration(110)
         self._fadeout.setStartValue(self.windowOpacity())
@@ -345,13 +372,7 @@ class MikeWindow(QMainWindow):
         # Stop any in-flight summon/dismiss animations before the window goes,
         # so a property animation can never fire a frame against a window that
         # is being destroyed.
-        for name in ("_fade", "_rise", "_fadeout"):
-            anim = getattr(self, name, None)
-            if anim is not None:
-                try:
-                    anim.stop()
-                except Exception:
-                    pass
+        self._stop_summon_animations()
 
         self.controller.shutdown()
 

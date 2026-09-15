@@ -22,8 +22,8 @@ Protocol
          {"event": "truncated", "id": 7, "seconds": 21.0, "limit": 20.4}
 
 Chunks are written as files and their paths reported, rather than piped as
-bytes: the parent plays them with afplay, which keeps audio handling in the
-parent where interruption already works.
+bytes: the parent plays them with sounddevice, which keeps audio handling in
+the parent where interruption already works.
 
 Commands are read on a dedicated thread while generation runs on the main
 thread, so a `cancel` (barge-in, or a new turn replacing this one) aborts the

@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import os
+import platform
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests import _isolate  # noqa: F401 — must run before any brain/config import
+
+import pytest
 
 
 def test_recorder():
@@ -37,6 +40,12 @@ def test_recorder():
     return path
 
 
+@pytest.mark.skipif(
+    platform.system() != "Darwin",
+    reason="voice.transcriber is the macOS SFSpeechRecognizer backend; also "
+           "meant to be driven manually via __main__ with a recorded "
+           "audio_path, not runnable under pytest as a bare positional arg",
+)
 def test_transcribe(audio_path: str):
     """Test macOS native transcription."""
     from voice.transcriber import transcribe_blocking
@@ -51,6 +60,12 @@ def test_transcribe(audio_path: str):
     return text, elapsed
 
 
+@pytest.mark.skipif(
+    platform.system() != "Darwin",
+    reason="voice.transcriber is the macOS SFSpeechRecognizer backend; "
+           "Windows transcription is voice.recognizer.windows.WhisperRecognizer, "
+           "covered by tests/test_voice_input_seams.py",
+)
 def test_full_pipeline():
     """Record → transcribe → CoreRuntime."""
     from voice.recorder import PushToTalkRecorder

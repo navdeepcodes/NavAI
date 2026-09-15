@@ -36,6 +36,56 @@ def test_get_recognizer_returns_a_real_macos_backend():
     assert isinstance(ok, bool) and isinstance(why, str) and why
 
 
+@pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only backend")
+def test_get_recognizer_returns_a_real_windows_backend():
+    from voice.recognizer import get_recognizer
+    from voice.recognizer.windows import WhisperRecognizer
+
+    recognizer = get_recognizer()
+    assert isinstance(recognizer, WhisperRecognizer)
+    ok, why = recognizer.available()
+    assert isinstance(ok, bool) and isinstance(why, str) and why
+
+
+@pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only backend")
+def test_whisper_recognizer_transcribes_real_audio_end_to_end():
+    """Not mocked: loads the real model and runs it against a real recorded
+    WAV (audio/recordings/recording.wav, a genuine prior mic capture saying
+    "one two three mic testing"), on a background thread, exactly as
+    voice_input.py drives it. Pins the whole local pipeline -- model load,
+    inference, and the off-thread on_done callback -- not just that the
+    class satisfies the interface."""
+    import threading
+    from pathlib import Path
+
+    from voice.recognizer.windows import WhisperRecognizer
+
+    audio_path = Path(__file__).resolve().parent.parent / "audio" / "recordings" / "recording.wav"
+    if not audio_path.exists():
+        pytest.skip("no real recorded fixture on this checkout")
+
+    recognizer = WhisperRecognizer()
+    ok, _why = recognizer.available()
+    assert ok
+
+    done = threading.Event()
+    result: dict = {}
+
+    def on_done(text: str) -> None:
+        result["text"] = text
+        done.set()
+
+    def on_error(message: str) -> None:
+        result["error"] = message
+        done.set()
+
+    recognizer.transcribe_async(str(audio_path), on_done=on_done, on_error=on_error)
+    assert done.wait(timeout=600), "transcription did not complete in time"
+
+    assert "error" not in result, result.get("error")
+    assert "mic" in result["text"].lower() or "testing" in result["text"].lower(), result["text"]
+
+
 def test_get_recognizer_raises_a_named_error_for_an_unsupported_platform(monkeypatch):
     import voice.recognizer as recognizer_module
 
@@ -117,4 +167,7 @@ if __name__ == "__main__":
     if platform.system() == "Darwin":
         test_get_recognizer_returns_a_real_macos_backend()
         test_make_backend_returns_a_real_macos_backend()
+    if platform.system() == "Windows":
+        test_get_recognizer_returns_a_real_windows_backend()
+        test_whisper_recognizer_transcribes_real_audio_end_to_end()
     print("\nAll voice-input-seam tests passed.")
