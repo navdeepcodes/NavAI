@@ -1,38 +1,27 @@
-"""Local wake-word detection using macOS NSSpeechRecognizer."""
+"""Local wake-word detection.
+
+macOS uses NSSpeechRecognizer, a lightweight on-device command-and-control
+recognizer built for exactly this (keyword spotting, minimal CPU).
+
+Linux has no equivalent shipped with the OS — there is no built-in
+low-power keyword spotter comparable to NSSpeechRecognizer, and pulling in
+an offline engine (e.g. a Porcupine/Vosk keyword model) is a real feature,
+not a compatibility shim, so it isn't faked here. WakeWordDetector.start()
+returns False and logs why; callers already treat a False return as
+"wake word unavailable" (see ui/app.py), so the rest of Mike degrades
+gracefully to push-to-talk instead of crashing or silently doing nothing.
+"""
 from __future__ import annotations
 
 from typing import Callable
 
-import objc
-from Foundation import NSObject
-
+from hostplatform import is_macos
 from logs.logger import logger
 
 WAKE_PHRASES = ["Hey Mike", "Hey mike", "hey Mike", "hey mike"]
 
 
-class _WakeWordDelegate(NSObject):
-
-    def initWithCallback_(self, callback: Callable[[], None]):
-        self = objc.super(_WakeWordDelegate, self).init()
-        if self is None:
-            return None
-        self._callback = callback
-        return self
-
-    def speechRecognizer_didRecognizeCommand_(self, sender, command):
-        logger.info("Wake word detected: %s", command)
-        if self._callback:
-            self._callback()
-
-
 class WakeWordDetector:
-    """Listens for 'Hey Mike' using macOS NSSpeechRecognizer.
-
-    NSSpeechRecognizer is a lightweight command-and-control
-    recognizer designed for keyword spotting. It uses minimal
-    CPU and runs entirely on-device.
-    """
 
     def __init__(self, on_wake: Callable[[], None]) -> None:
         self._on_wake = on_wake
@@ -45,8 +34,31 @@ class WakeWordDetector:
         if self._active:
             return True
 
+        if not is_macos():
+            logger.warning(
+                "Wake word detection is not implemented on this platform yet "
+                "(no on-device keyword spotter wired up). Use push-to-talk instead."
+            )
+            return False
+
         try:
+            import objc
             import AppKit
+            from Foundation import NSObject
+
+            class _WakeWordDelegate(NSObject):
+                def initWithCallback_(self, callback: Callable[[], None]):
+                    self = objc.super(_WakeWordDelegate, self).init()
+                    if self is None:
+                        return None
+                    self._callback = callback
+                    return self
+
+                def speechRecognizer_didRecognizeCommand_(self, sender, command):
+                    logger.info("Wake word detected: %s", command)
+                    if self._callback:
+                        self._callback()
+
             self._recognizer = AppKit.NSSpeechRecognizer.alloc().init()
             if self._recognizer is None:
                 logger.error("NSSpeechRecognizer not available")

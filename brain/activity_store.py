@@ -8,11 +8,12 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from pathlib import Path
 from typing import Any
 
-_DB_DIR = Path.home() / "Library" / "Application Support" / "Mike"
-_DB_PATH = _DB_DIR / "memory.db"
+from hostplatform.storage import data_dir, memory_db_path
+
+_DB_DIR = data_dir()
+_DB_PATH = memory_db_path()
 
 MAX_ROWS = 500
 

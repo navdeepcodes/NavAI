@@ -1,17 +1,16 @@
-import subprocess
 import tempfile
 
 from PIL import Image
 
 from config.ollama import VISION_RESOLUTION
+from hostplatform.capture import capture_raw
 from logs.logger import logger
 
 
 class Screenshot:
 
     def capture(self) -> str:
-        raw = tempfile.mktemp(suffix="_raw.png")
-        subprocess.run(["screencapture", "-x", raw], check=True)
+        raw = str(capture_raw())
 
         img = Image.open(raw)
         ratio = VISION_RESOLUTION / max(img.size)

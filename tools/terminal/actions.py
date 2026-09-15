@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 
 from logs.logger import logger
@@ -8,6 +10,12 @@ from logs.logger import logger
 # that doesn't is either stuck or is really a long-running process, which
 # belongs in run_background instead.
 DEFAULT_TIMEOUT = 60
+
+# subprocess.run(shell=True, timeout=...) only kills the shell it spawns —
+# a child the shell started (e.g. `sleep 999` under `sh -c`) is orphaned and
+# keeps running. Starting the shell in its own process group and killing the
+# whole group on timeout closes that leak. POSIX-only (no killpg on Windows).
+_HAS_PROCESS_GROUPS = hasattr(os, "killpg") and hasattr(os, "setsid")
 
 
 def run(command: str, cwd: str | None = None, timeout: int = DEFAULT_TIMEOUT) -> str:
@@ -23,29 +31,42 @@ def run(command: str, cwd: str | None = None, timeout: int = DEFAULT_TIMEOUT) ->
 
     logger.info(f"Running command: {command}")
 
+    popen_kwargs = {"start_new_session": True} if _HAS_PROCESS_GROUPS else {}
+
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        cwd=cwd,
+        **popen_kwargs,
+    )
+
     try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            cwd=cwd,
-            timeout=timeout,
-        )
+        stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
+        if _HAS_PROCESS_GROUPS:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        process.communicate()
         raise RuntimeError(
             f"The command was still running after {timeout}s and was stopped. "
             "If it's a server or another process meant to keep running, "
             "start it in the background instead."
         )
 
-    if result.returncode != 0:
+    if process.returncode != 0:
         raise RuntimeError(
-            result.stderr.strip() or
+            stderr.strip() or
             "Command failed."
         )
 
-    return result.stdout.strip()
+    return stdout.strip()
 
 
 def run_background(command: str, cwd: str | None = None) -> str:

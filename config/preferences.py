@@ -8,13 +8,13 @@ from __future__ import annotations
 
 import json
 import threading
-from pathlib import Path
 from typing import Any
 
+from hostplatform.storage import data_dir, preferences_path
 from logs.logger import logger
 
-_DIR = Path.home() / "Library" / "Application Support" / "Mike"
-_PATH = _DIR / "preferences.json"
+_DIR = data_dir()
+_PATH = preferences_path()
 
 DEFAULTS: dict[str, Any] = {
     "voice_enabled": True,

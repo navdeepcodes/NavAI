@@ -1,11 +1,22 @@
 """System-wide hotkey for summoning Mike from anywhere.
 
-Uses Carbon's RegisterEventHotKey rather than an NSEvent global monitor: the
-Carbon route needs no Accessibility permission, so Mike is reachable the moment
-the app launches instead of after a trip through System Settings.
+macOS: Carbon's RegisterEventHotKey rather than an NSEvent global monitor —
+the Carbon route needs no Accessibility permission, so Mike is reachable the
+moment the app launches instead of after a trip through System Settings. The
+Carbon handler is dispatched by the same CFRunLoop Qt drives on macOS, so the
+callback lands on the GUI thread and can touch widgets directly.
 
-The Carbon handler is dispatched by the same CFRunLoop Qt drives on macOS, so
-the callback lands on the GUI thread and can touch widgets directly.
+Linux: there is no portable equivalent. X11 has no single answer either
+(window-manager-specific keybinding config, or raw XGrabKey against
+whichever display is active); Wayland compositors deliberately withhold
+global input grabs from apps and only expose one through the
+org.freedesktop.portal.GlobalShortcuts portal — which this GNOME/Wayland
+session doesn't advertise (checked via `gdbus introspect` against
+org.freedesktop.portal.Desktop; no GlobalShortcuts interface present). So
+register() reports failure honestly here rather than silently doing
+nothing or faking success; Mike stays reachable through its other surfaces
+(the window itself, push-to-talk) exactly as it does today when the Carbon
+call fails on an unsupported macOS configuration.
 """
 from __future__ import annotations
 
@@ -13,6 +24,7 @@ import ctypes
 import ctypes.util
 from typing import Callable
 
+from hostplatform import is_macos
 from logs.logger import logger
 
 # Carbon modifier masks (Events.h)
@@ -70,6 +82,14 @@ class GlobalHotkey:
     def register(self) -> bool:
         if self._registered:
             return True
+
+        if not is_macos():
+            logger.warning(
+                "Global hotkey not supported on this platform (no portal-based "
+                "global shortcut mechanism available on this session). Mike "
+                "stays reachable through its window and push-to-talk."
+            )
+            return False
 
         try:
             path = ctypes.util.find_library("Carbon")

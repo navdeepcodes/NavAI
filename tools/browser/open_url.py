@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import platform
-import subprocess
 from urllib.parse import urlparse
 
 from config.settings import DEFAULT_BROWSER
+from hostplatform import desktop
 from logs.logger import logger
 
 
@@ -26,43 +25,7 @@ def open_url(
         f"Opening URL: {url}"
     )
 
-    system = platform.system()
-
-    if system == "Darwin":
-
-        subprocess.run(
-            [
-                "open",
-                "-a",
-                DEFAULT_BROWSER,
-                url
-            ],
-            check=True
-        )
-
-    elif system == "Windows":
-
-        subprocess.run(
-            [
-                "start",
-                DEFAULT_BROWSER,
-                url
-            ],
-            shell=True,
-            check=True
-        )
-
-    else:
-
-        subprocess.run(
-            [
-                DEFAULT_BROWSER,
-                url
-            ],
-            check=True
-        )
-
-    return f"Opened {url}"
+    return desktop.open_url(url, DEFAULT_BROWSER)
 
 
 def _normalize_url(

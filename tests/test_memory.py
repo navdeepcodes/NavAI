@@ -144,10 +144,14 @@ def test_10_performance():
 
 
 def test_11_db_location():
-    """Database is in Application Support, not the source repo."""
+    """Database is in the platform's app-data directory, not the source repo."""
     from brain.memory_store import db_path
+    from hostplatform import current_platform
     path = db_path()
-    assert "Application Support" in path or "Library" in path
+    if current_platform() == "Darwin":
+        assert "Application Support" in path or "Library" in path
+    elif current_platform() == "Linux":
+        assert ".local/share" in path or "XDG_DATA_HOME" in path
     assert "NavAI-v0" not in path
     print(f"PASS: Test 11 — DB at {path}")
 

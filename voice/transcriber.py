@@ -1,13 +1,19 @@
-"""macOS native speech-to-text using SFSpeechRecognizer (on-device)."""
+"""Speech-to-text.
+
+macOS uses SFSpeechRecognizer (on-device). Linux has no equivalent
+preinstalled with the OS — there's no offline STT engine bundled here, and
+faking one by silently no-oping would produce a worse experience than
+telling the caller plainly that transcription isn't available yet. Both
+entry points keep macOS's callback-based signature so voice/voice_input.py
+doesn't need to know which platform it's running on.
+"""
 from __future__ import annotations
 
 import time
 from pathlib import Path
 from typing import Callable
 
-import Speech
-from Foundation import NSURL, NSRunLoop, NSDate
-
+from hostplatform import is_macos
 from logs.logger import logger
 
 _recognizer = None
@@ -15,6 +21,8 @@ _recognizer = None
 
 def _get_recognizer():
     global _recognizer
+    import Speech
+
     if _recognizer is None or not _recognizer.isAvailable():
         _recognizer = Speech.SFSpeechRecognizer.alloc().init()
     return _recognizer
@@ -25,6 +33,12 @@ def transcribe_blocking(audio_path: str, timeout: float = 15.0) -> str:
 
     Use from main thread in scripts (not inside Qt event loop).
     """
+    if not is_macos():
+        logger.warning("Speech-to-text is not implemented on this platform yet.")
+        return ""
+
+    from Foundation import NSRunLoop, NSDate
+
     result_holder = {"text": "", "done": False}
 
     def on_done(text: str):
@@ -56,6 +70,13 @@ def transcribe_async(
 
     Use from main thread inside Qt event loop (PySide6).
     """
+    if not is_macos():
+        on_error(
+            "Speech-to-text isn't available on this platform yet — "
+            "type your message instead."
+        )
+        return
+
     _start_recognition(audio_path, on_done, on_error)
 
 
@@ -64,6 +85,9 @@ def _start_recognition(
     on_done: Callable[[str], None],
     on_error: Callable[[str], None],
 ) -> None:
+    from Foundation import NSURL
+    import Speech
+
     recognizer = _get_recognizer()
     if not recognizer or not recognizer.isAvailable():
         logger.error("SFSpeechRecognizer not available")

@@ -4,17 +4,17 @@ from __future__ import annotations
 import collections
 import threading
 import time
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
+from hostplatform.storage import recordings_dir
 from logs.logger import logger
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
-RECORDING_DIR = Path("audio/recordings")
+RECORDING_DIR = recordings_dir()
 RECORDING_FILE = RECORDING_DIR / "voice_input.wav"
 
 SPEECH_RMS_THRESHOLD = 0.008

@@ -1,13 +1,14 @@
 import logging
-import os
 
-os.makedirs("logs", exist_ok=True)
+from hostplatform.storage import log_dir
+
+_LOG_FILE = log_dir() / "mike.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
-        logging.FileHandler("logs/mike.log"),
+        logging.FileHandler(str(_LOG_FILE)),
         logging.StreamHandler()
     ]
 )

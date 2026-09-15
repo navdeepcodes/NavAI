@@ -1,13 +1,11 @@
-"""macOS native text-to-speech using the say command."""
+"""Text-to-speech: macOS `say` or Linux `spd-say`, chosen by hostplatform.tts."""
 from __future__ import annotations
 
 import re
 import subprocess
 
+from hostplatform import tts as tts_backend
 from logs.logger import logger
-
-VOICE = "Samantha"
-RATE = 185
 
 
 _SENTENCE_END = re.compile(r'(?<=[.!?])\s+')
@@ -32,11 +30,11 @@ class Speaker:
 
         try:
             self._process = subprocess.Popen(
-                ["say", "-v", VOICE, "-r", str(RATE), clean],
+                tts_backend.speak_command(clean),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            logger.info("Speaking (%s %dwpm): %s", VOICE, RATE, clean[:80])
+            logger.info("Speaking: %s", clean[:80])
         except Exception as exc:
             logger.exception("TTS failed: %s", exc)
             self._process = None
@@ -59,11 +57,11 @@ class Speaker:
         text = self._queue.pop(0)
         try:
             self._process = subprocess.Popen(
-                ["say", "-v", VOICE, "-r", str(RATE), text],
+                tts_backend.speak_command(text),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            logger.info("Speaking chunk (%s %dwpm): %s", VOICE, RATE, text[:60])
+            logger.info("Speaking chunk: %s", text[:60])
         except Exception as exc:
             logger.exception("TTS failed: %s", exc)
             self._process = None
@@ -91,6 +89,17 @@ class Speaker:
                 except Exception:
                     pass
             self._process = None
+
+        # On Linux the process above is just the spd-say client; the actual
+        # speech keeps playing on the speech-dispatcher daemon unless told
+        # to stop. macOS `say` owns the audio device directly, so there's
+        # nothing further to do there (stop_command() returns None).
+        cancel = tts_backend.stop_command()
+        if cancel is not None:
+            try:
+                subprocess.run(cancel, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            except Exception:
+                pass
 
     def is_speaking(self) -> bool:
         if self._process is None:
@@ -231,7 +240,8 @@ def clean_for_speech(text: str) -> str:
     t = re.sub(r'\s{2,}', ' ', t)
     t = re.sub(r'^\s*[.,]\s*', '', t)
 
-    t = _add_conversational_pauses(t)
+    if tts_backend.supports_inline_pauses():
+        t = _add_conversational_pauses(t)
 
     return t.strip()
 
