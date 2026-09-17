@@ -1,0 +1,46 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag to attach the build to (must already exist)"
+        required: true
+        default: "v1.0.0"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller --name Mike --windowed --onedir --noconfirm --clean --collect-all PySide6 main.py
+
+      - name: Zip the build
+        run: |
+          Compress-Archive -Path dist\Mike -DestinationPath Mike-windows-1.0.0.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mike-windows-1.0.0
+          path: Mike-windows-1.0.0.zip
+          retention-days: 30
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ inputs.release_tag }} Mike-windows-1.0.0.zip --clobber
