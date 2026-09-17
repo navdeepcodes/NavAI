@@ -43,7 +43,7 @@ jobs:
           retention-days: 30
 
       - name: Attach to release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ${{ inputs.release_tag }} Mike-windows-1.0.0.zip --clobber
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: Mike-windows-1.0.0.zip
