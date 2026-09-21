@@ -19,7 +19,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install dependencies
         run: |
@@ -27,23 +27,29 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build with PyInstaller
-        run: |
-          pyinstaller --name Mike --windowed --onedir --noconfirm --clean --collect-all PySide6 main.py
-
-      - name: Zip the build
-        run: |
-          Compress-Archive -Path dist\Mike -DestinationPath Mike-windows-1.0.0.zip
+      - name: Build via packaging/build_windows.py
+        # Not a bare `pyinstaller ... main.py` one-liner: that form has no
+        # hiddenimports for the platform-dispatched modules (computer.windows,
+        # voice.recognizer.windows, voice.providers.windows) and, critically,
+        # never pre-generates comtypes' UI Automation bindings -- comtypes
+        # disables its own runtime codegen once frozen, so a build from that
+        # one-liner launches but computer.windows silently can't see or
+        # click anything. Verified on a real machine, not assumed.
+        # build_windows.py runs the real packaging/mike.spec and produces
+        # dist/Mike-windows-<version>.zip, version read from
+        # config.settings.VERSION so the filename can't drift from the
+        # release tag by hand.
+        run: python packaging/build_windows.py
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Mike-windows-1.0.0
-          path: Mike-windows-1.0.0.zip
+          path: dist/Mike-windows-*.zip
           retention-days: 30
 
       - name: Attach to release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
-          files: Mike-windows-1.0.0.zip
+          files: dist/Mike-windows-*.zip
