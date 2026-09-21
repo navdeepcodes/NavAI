@@ -105,7 +105,7 @@ class Machine:
         if unified:
             notes.append("unified memory: GPU and CPU draw on the same pool")
 
-        if system != "Darwin":
+        if system not in ("Darwin", "Windows"):
             notes.append(
                 f"{system} is not yet supported for computer control; "
                 "memory and disk figures are still usable"

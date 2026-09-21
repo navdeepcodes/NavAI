@@ -14,6 +14,7 @@ lives entirely in how Mike presents himself.
 """
 from __future__ import annotations
 
+import platform
 from html import escape
 
 from PySide6.QtCore import Qt, QObject, QTimer, Signal
@@ -25,6 +26,22 @@ from PySide6.QtWidgets import (
 
 from ui.panel import style
 from ui.panel.mark import PresenceMark
+
+def _hotkey_hint() -> str:
+    """The summon hotkey, as this platform's own hardware actually shows it.
+
+    hostplatform.desktop registers Ctrl+Shift+Space on Windows and
+    Cmd+Shift+Space on macOS (there is no Windows keyboard with a Cmd key,
+    so the Mac symbol is meaningless there) — this mirrors those defaults
+    for display rather than hardcoding one platform's hint for both.
+    """
+    return "Ctrl+Shift+Space" if platform.system() == "Windows" else "⌘⇧Space"
+
+
+def _this_machine() -> str:
+    """What to call the machine Mike runs on, in first-person copy."""
+    return "this PC" if platform.system() == "Windows" else "this Mac"
+
 
 STATE_WORD = {
     "idle": "", "listening": "Listening", "thinking": "Thinking",
@@ -105,7 +122,7 @@ class _InputBar(QFrame):
         )
         row.addWidget(self._field, 1)
 
-        self._hint = QLabel("⌘⇧Space")
+        self._hint = QLabel(_hotkey_hint())
         self._hint.setFont(style.label(10))
         self._hint.setStyleSheet(f"color:{style.INK_FAINT};background:transparent;")
         row.addWidget(self._hint, 0, Qt.AlignVCenter)
@@ -486,7 +503,7 @@ class _SettingsView(QScrollArea):
         self._col.addSpacing(14)
         self._section("MEMORY", self._memory_line(), action=("Forget all", self._forget_all))
         self._col.addSpacing(14)
-        self._section("PRIVACY", "Everything Mike does stays on this Mac. "
+        self._section("PRIVACY", f"Everything Mike does stays on {_this_machine()}. "
                       "No account, no cloud, nothing sent anywhere.")
         self._col.addStretch(1)
 
@@ -684,19 +701,21 @@ class MikePanel(QWidget):
         self.input.voice.update()
 
     # ── resting composition ───────────────────────────────
-    _INTRO = (
-        "I'm Mike. I live on this Mac — not in a browser tab — and I stay here "
-        "in the background. I can read and write files, run commands, use your "
-        "browser and see your screen when you ask; anything that changes "
-        "something, I check with you first. Nothing leaves this machine.\n\n"
-        "Ask me anything below, or press ⌘⇧Space to talk from anywhere."
-    )
+    def _intro(self) -> str:
+        return (
+            f"I'm Mike. I live on {_this_machine()} — not in a browser tab — and I "
+            "stay here in the background. I can read and write files, run commands, "
+            "use your browser and see your screen when you ask; anything that "
+            "changes something, I check with you first. Nothing leaves this "
+            "machine.\n\n"
+            f"Ask me anything below, or press {_hotkey_hint()} to talk from anywhere."
+        )
 
     def _show_resting(self) -> None:
         from config import preferences
 
         first_run = not bool(preferences.get("onboarding_complete", False))
-        text = self._INTRO if first_run else self._greeting()
+        text = self._intro() if first_run else self._greeting()
         self._resting = _Turn(text, "mike")
         self._resting.setStyleSheet("padding-top:2px;")
         self._insert(self._resting)
@@ -708,7 +727,7 @@ class MikePanel(QWidget):
         h = datetime.now().hour
         part = ("Good morning." if 5 <= h < 12 else "Good afternoon."
                 if 12 <= h < 17 else "Good evening." if 17 <= h < 22 else "Still here.")
-        return f"{part}  Ask me anything, or press ⌘⇧Space to talk."
+        return f"{part}  Ask me anything, or press {_hotkey_hint()} to talk."
 
     def _drop_resting(self) -> None:
         r = getattr(self, "_resting", None)

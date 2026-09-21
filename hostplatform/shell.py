@@ -114,11 +114,15 @@ def open_browser() -> None:
         _run_checked(["open", "-a", DEFAULT_BROWSER])
         return
     if system == "Windows":
-        from config.settings import DEFAULT_BROWSER
         import os
-        # App Paths resolves a bare executable name (e.g. "msedge") the same
-        # way Explorer's Run box does, which os.startfile goes through.
-        os.startfile(DEFAULT_BROWSER)  # type: ignore[attr-defined]
+        # Windows has no single mechanism for "launch whatever the user set
+        # as their default browser" the way macOS's LaunchServices does by
+        # app name -- but os.startfile on a URL already goes through the
+        # registered http handler, which *is* the user's actual default
+        # browser, whatever it is. Verified directly: this does not depend
+        # on DEFAULT_BROWSER (whose "Opera" default most machines don't
+        # have installed) or any specific browser being present.
+        os.startfile("about:blank")  # type: ignore[attr-defined]
         return
     from config.settings import DEFAULT_BROWSER
     _run_checked([DEFAULT_BROWSER])

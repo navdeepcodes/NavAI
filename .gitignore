@@ -49,3 +49,9 @@ mike-*-task/
 # Audio
 audio/recordings/
 audio/responses/
+
+# PyInstaller build output — packaging/build_windows.py regenerates these.
+# The zip it produces (dist/Mike-windows-*.zip, ~160MB) belongs on a GitHub
+# release, not in git history.
+/build/
+/dist/

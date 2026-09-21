@@ -1,0 +1,120 @@
+# PyInstaller spec for Mike on Windows.
+#
+# onedir, not onefile. The website already promises "unzip and run", and the
+# macOS release ships a .app bundle (also a directory), so this matches both
+# the published instructions and the other platform. onefile would also
+# re-extract ~300MB to %TEMP% on every launch, which is startup latency the
+# user feels for no benefit.
+#
+# windowed, not console: Mike is a tray/panel application. A console window
+# appearing behind it would be the single most obvious "this is a developer
+# script" tell.
+import os
+
+from PyInstaller.utils.hooks import collect_submodules
+
+block_cipher = None
+
+# SPECPATH is injected by PyInstaller into the spec's exec globals -- using
+# it instead of a relative literal means this spec builds correctly whether
+# invoked as `pyinstaller packaging/mike.spec` from the repo root or from
+# inside packaging/, rather than silently depending on the caller's cwd.
+REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
+
+# comtypes generates UI Automation bindings by reading a type library at
+# runtime and writing Python into comtypes/gen. That write cannot be relied
+# on once frozen -- the bundle may sit in Program Files, and comtypes
+# disables its own codegen when sys.frozen is set. build_windows.py
+# generates these before the build so they ship as ordinary modules.
+COMTYPES_GEN = [
+    "comtypes.gen.UIAutomationClient",
+    "comtypes.gen.stdole",
+    "comtypes.gen._00020430_0000_0000_C000_000000000046_0_2_0",
+    "comtypes.gen._944DE083_8FB8_45CF_BCB7_C477ACB2F897_0_1_0",
+]
+
+hiddenimports = [
+    *COMTYPES_GEN,
+    # Imported through a platform dispatch (hostplatform/*, voice/*,
+    # computer/*), so nothing statically references them on the import graph
+    # PyInstaller walks.
+    "computer.windows",
+    "voice.recognizer.windows",
+    "voice.providers.windows",
+    "win32com.client",
+    *collect_submodules("faster_whisper"),
+]
+
+# Mike is one app, but its optional surfaces each drag in a large dependency
+# tree. These stay because they are real features a user can reach: the
+# Google tools (Gmail, Docs, Sheets) and local speech-to-text.
+analysis = Analysis(
+    [os.path.join(REPO_ROOT, "main.py")],
+    pathex=[REPO_ROOT],
+    binaries=[],
+    datas=[],
+    hiddenimports=hiddenimports,
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=[
+        # Development-only. Shipping pytest inside a user's application
+        # would be packaging the test harness as a product.
+        "pytest",
+        "_pytest",
+        "pyinstaller",
+        "PyInstaller",
+        # Qt modules Mike never loads. PySide6 is the single largest
+        # contributor to bundle size; these are the ones with no call site.
+        "PySide6.QtWebEngineCore",
+        "PySide6.QtWebEngineWidgets",
+        "PySide6.Qt3DCore",
+        "PySide6.Qt3DRender",
+        "PySide6.QtCharts",
+        "PySide6.QtDataVisualization",
+        "PySide6.QtQuick3D",
+        "PySide6.QtMultimediaWidgets",
+        "PySide6.QtDesigner",
+        "PySide6.QtBluetooth",
+        "PySide6.QtNfc",
+        "PySide6.QtPositioning",
+        "PySide6.QtSerialPort",
+        "PySide6.QtSql",
+        "PySide6.QtTest",
+    ],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+
+pyz = PYZ(analysis.pure, analysis.zipped_data, cipher=block_cipher)
+
+exe = EXE(
+    pyz,
+    analysis.scripts,
+    [],
+    exclude_binaries=True,
+    name="Mike",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=False,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    analysis.binaries,
+    analysis.zipfiles,
+    analysis.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="Mike",
+)
