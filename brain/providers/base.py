@@ -92,17 +92,20 @@ class BrainError:
     """A model or provider failure, in terms Mike can act on and a person can read.
 
     `kind` separates causes that call for different responses:
-      unavailable   — the backend isn't reachable or the model isn't installed
-      protocol      — the model emitted something the provider couldn't parse
-      context       — the request doesn't fit and couldn't be made to fit
-      timeout       — took too long
-      cancelled     — the user stopped it
-      unsupported   — the model genuinely cannot do this (e.g. no vision)
-      unknown       — anything else
+      unavailable    — the backend isn't reachable
+      model_missing  — the backend is reachable but the model isn't pulled yet
+                       (distinct from unavailable because this one Mike can
+                       fix himself, by pulling it, rather than just reporting)
+      protocol       — the model emitted something the provider couldn't parse
+      context        — the request doesn't fit and couldn't be made to fit
+      timeout        — took too long
+      cancelled      — the user stopped it
+      unsupported    — the model genuinely cannot do this (e.g. no vision)
+      unknown        — anything else
     """
 
     kind: Literal[
-        "unavailable", "protocol", "context", "timeout",
+        "unavailable", "model_missing", "protocol", "context", "timeout",
         "cancelled", "unsupported", "unknown",
     ]
     message: str

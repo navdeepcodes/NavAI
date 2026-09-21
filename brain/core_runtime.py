@@ -346,6 +346,39 @@ class CoreRuntime:
             yield ("token", note)
             return
 
+        # A fresh install has Ollama but not yet the model Mike actually
+        # uses — the single most common way a brand-new user's first message
+        # ever reaches this point. The old behaviour told them to open a
+        # terminal and run `ollama pull <tag>` themselves; someone who has
+        # never heard of Ollama has no way to act on that. health() already
+        # knows how to detect this (kind="model_missing"); pull_model()
+        # closes the loop by actually doing the download, surfaced the same
+        # way a tool call is, so the user sees real progress instead of a
+        # silent multi-minute wait or a dead-end error.
+        if depth == 0 and hasattr(self._brain, "health"):
+            problem = self._brain.health()
+            if problem is not None and problem.kind == "model_missing":
+                if hasattr(self._brain, "pull_model"):
+                    yield (
+                        "tool_start",
+                        "Downloading Mike's language model — first run only, "
+                        "may take a few minutes",
+                    )
+                    pull_failed = self._brain.pull_model(
+                        on_progress=lambda msg: logger.info(msg)
+                    )
+                    yield ("tool_end", "failed" if pull_failed else "done")
+                    if pull_failed is not None:
+                        note = pull_failed.human()
+                        self._core.history.append({"role": "assistant", "content": note})
+                        yield ("token", note)
+                        return
+                else:
+                    note = problem.human()
+                    self._core.history.append({"role": "assistant", "content": note})
+                    yield ("token", note)
+                    return
+
         messages = self._build_messages()
 
         collected_text = ""

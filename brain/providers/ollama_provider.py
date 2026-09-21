@@ -6,7 +6,7 @@ handling. Above this file, nothing knows Ollama exists.
 """
 from __future__ import annotations
 
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 import ollama
 
@@ -176,14 +176,53 @@ class OllamaProvider(BrainProvider):
         family = self._model.split(":")[0]
         if not (self._model in names or any(n.split(":")[0] == family for n in names)):
             return BrainError(
-                kind="unavailable",
+                kind="model_missing",
                 message=(
                     f"Ollama is running, but the model Mike uses ({self._model}) "
-                    f"isn't pulled yet. Run `ollama pull {self._model}` in a "
-                    "terminal — it only needs doing once."
+                    "isn't downloaded yet."
                 ),
             )
         return None
+
+    def pull_model(
+        self, on_progress: Callable[[str], None] | None = None,
+    ) -> BrainError | None:
+        """Downloads self._model, reporting progress through on_progress.
+
+        A first-run gap this closes: `health()` could already *detect* a
+        missing model, but the only remedy it offered was "run `ollama pull`
+        in a terminal" — asking someone who has never heard of Ollama to
+        find a terminal and copy a model tag correctly. Ollama's own client
+        already streams pull progress as named status phases ("pulling
+        manifest", "pulling <digest>", "verifying sha256 digest", ...); each
+        one downloading a layer carries completed/total byte counts, which
+        is what turns into a percentage here.
+        """
+        try:
+            last_status = None
+            for update in self._client.pull(self._model, stream=True):
+                status = getattr(update, "status", None) or ""
+                total = getattr(update, "total", None)
+                completed = getattr(update, "completed", None)
+                if status != last_status or (total and completed):
+                    last_status = status
+                    if total and completed:
+                        pct = int(completed / total * 100)
+                        if on_progress:
+                            on_progress(f"Downloading Mike's language model — {pct}%")
+                    elif on_progress:
+                        on_progress(f"Downloading Mike's language model — {status}")
+            return None
+        except Exception as exc:
+            return BrainError(
+                kind="model_missing",
+                message=(
+                    f"I couldn't download {self._model} automatically ({exc}). "
+                    f"You can try it yourself: open a terminal and run "
+                    f"`ollama pull {self._model}`."
+                ),
+                detail=str(exc),
+            )
 
     # ── generation ─────────────────────────────────────────
 
@@ -372,10 +411,8 @@ class OllamaProvider(BrainProvider):
             )
         if "not found" in low or "no such model" in low:
             return BrainError(
-                kind="unavailable",
-                message=(
-                    f"The model {model} isn't installed. Run `ollama pull {model}`."
-                ),
+                kind="model_missing",
+                message=f"The model {model} isn't downloaded yet.",
                 detail=text,
             )
         if "timeout" in low or "deadline" in low:
