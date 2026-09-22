@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from PySide6.QtGui import QColor, QFont
 
+from ui.instrument import tokens as _tokens
+
 # ── Ground: a warm-dark surface, faintly translucent so it reads as a
 #    system layer over whatever you were doing, not an opaque app window. ──
 GROUND = "#15161A"          # the panel body
@@ -70,26 +72,29 @@ def qaccent() -> QColor:
 # ── Type. System sans throughout — this is a desktop app, not a web page.
 #    Mike's voice a touch larger; labels small and quietly spaced. Mono only
 #    for genuinely technical detail (a path, a command) shown on demand.
-_UI = ".AppleSystemUIFont"
-_MONO = "SF Mono, Menlo, monospace"
+#
+#    Resolved once per platform by ui.instrument.tokens, which already knows
+#    how to pick a real installed font on Windows/Linux and how to hand back
+#    Qt's private San Francisco alias on macOS without probing for it (the
+#    probe would wrongly reject it — it isn't a real QFontDatabase entry).
 
 
 def voice(size: int = 15) -> QFont:
     """What Mike says, and what you type — the reading size."""
-    f = QFont(_UI, size)
+    f = QFont(_tokens.ui_sans_family(), size)
     f.setWeight(QFont.Weight.Normal)
     return f
 
 
 def label(size: int = 11, weight: QFont.Weight = QFont.Weight.DemiBold) -> QFont:
-    f = QFont(_UI, size)
+    f = QFont(_tokens.ui_sans_family(), size)
     f.setWeight(weight)
     return f
 
 
 def mono_family() -> str:
-    return _MONO
+    return _tokens.mono_family()
 
 
 def ui_family() -> str:
-    return "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+    return _tokens.label_family()
