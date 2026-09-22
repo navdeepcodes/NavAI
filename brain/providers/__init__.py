@@ -113,6 +113,7 @@ def get_provider(
             model=model,
             host=ollama_config.OLLAMA_HOST,
             num_ctx=getattr(ollama_config, "NUM_CTX", 8192),
+            keep_alive=getattr(ollama_config, "KEEP_ALIVE", "5m"),
             vision_model=vision_model,
         )
     elif provider in _ENDPOINTS:

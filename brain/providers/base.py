@@ -303,10 +303,24 @@ class BrainProvider(ABC):
         transport failure; yield a StreamEvent(kind="error") instead."""
 
     @abstractmethod
-    def complete(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResult:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
         """One-shot reply, for callers that don't stream (summarisation,
         wrap-up). Providers without streaming may implement stream() on top
-        of this so the runtime keeps working either way."""
+        of this so the runtime keeps working either way.
+
+        max_tokens caps this one request's generation, overriding the
+        provider's configured limit. It exists for a caller that wants the
+        model to *process* a prompt without paying to generate a reply it
+        will throw away -- CoreRuntime.warm() sends the shared prefix purely
+        to get it into the KV cache, and without a cap it would sit there
+        generating up to the full num_predict budget for nobody.
+        """
 
     @abstractmethod
     def health(self) -> BrainError | None:

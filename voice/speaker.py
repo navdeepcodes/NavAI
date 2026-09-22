@@ -289,6 +289,71 @@ def _humanize_path(path: str) -> str:
     return " ".join(parts)
 
 
+_LIST_ITEM_RE = re.compile(r'^\s*(?:[-*+]|\d+[.)])\s+(.*\S)\s*$')
+
+
+def _lists_to_prose(text: str) -> str:
+    """Rewrite runs of list items as something a person would say.
+
+    Each consecutive run becomes one sentence: "a, b, and c." A run of one
+    is just that item, since "and" needs something to join. Any lead-in line
+    ending in a colon loses the colon, because "here's what I can do: open
+    websites, ..." reads naturally while the colon does not survive being
+    spoken.
+
+    Item text is left alone otherwise -- this is about the shape of the
+    delivery, not about rewording what Mike actually said.
+    """
+    lines = text.split("\n")
+    out: list[str] = []
+    run: list[str] = []
+
+    def flush() -> None:
+        if not run:
+            return
+        items = [i.rstrip(".;,") for i in run]
+        if len(items) == 1:
+            joined = items[0]
+        elif len(items) == 2:
+            joined = f"{items[0]} and {items[1]}"
+        else:
+            joined = ", ".join(items[:-1]) + f", and {items[-1]}"
+        # Attach to a lead-in ("Here's what I can do:") rather than leaving
+        # it stranded as its own fragment before the sentence it introduces.
+        # The lead-in is usually separated from the list by a blank line, so
+        # look past those -- without this the colon line is never found and
+        # the result is a dangling "...things:." before the sentence.
+        target = len(out) - 1
+        while target >= 0 and not out[target].strip():
+            target -= 1
+        if target >= 0 and out[target].rstrip().endswith(":"):
+            # The colon stays. Speech engines read it as a short pause, which
+            # is exactly right here; removing it ran the lead-in straight
+            # into the first item ("a bunch of things open websites...").
+            # Item capitalisation is left alone on purpose -- it is inaudible,
+            # and lowercasing blindly would mangle "PDFs" and proper nouns.
+            out[target] = f"{out[target].rstrip()} {joined}"
+            del out[target + 1:]
+            index = target
+        else:
+            out.append(joined)
+            index = len(out) - 1
+        if not out[index].endswith((".", "!", "?")):
+            out[index] += "."
+        run.clear()
+
+    for line in lines:
+        match = _LIST_ITEM_RE.match(line)
+        if match:
+            run.append(match.group(1))
+            continue
+        flush()
+        out.append(line)
+    flush()
+
+    return "\n".join(out)
+
+
 def clean_for_speech(text: str) -> str:
     """Transform UI text into natural spoken text."""
     t = text.strip()
@@ -320,9 +385,18 @@ def clean_for_speech(text: str) -> str:
     # Markdown headings
     t = re.sub(r'^#{1,6}\s+', '', t, flags=re.MULTILINE)
 
-    # Markdown list markers
-    t = re.sub(r'^\s*[-*+]\s+', '', t, flags=re.MULTILINE)
-    t = re.sub(r'^\s*\d+\.\s+', '', t, flags=re.MULTILINE)
+    # Lists become sentences, not a column of stripped fragments.
+    #
+    # Removing the "- " alone was not enough and was the actual cause of a
+    # complaint that Mike "reads like a newspaper, not like a normal convo".
+    # A list keeps its *shape* after the markers are gone -- each item lands
+    # as its own clipped, subjectless line, and read aloud that is a news
+    # reader going through headlines, not a person answering a question.
+    # The prompt asks the model not to produce lists at all, and mostly it
+    # doesn't; but for list-shaped questions ("what can you do") the prior
+    # is strong enough to override the instruction, so speech cannot depend
+    # on the model having complied.
+    t = _lists_to_prose(t)
 
     # Markdown links
     t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)

@@ -42,6 +42,11 @@ hiddenimports = [
     "voice.recognizer.windows",
     "voice.providers.windows",
     "win32com.client",
+    # main.py imports these only when the exe is sitting outside its install
+    # location, so nothing on the static import graph reaches them -- and a
+    # missing installer is invisible until a real user unzips the release.
+    "installer.core",
+    "installer.window",
     *collect_submodules("faster_whisper"),
 ]
 
@@ -52,7 +57,16 @@ analysis = Analysis(
     [os.path.join(REPO_ROOT, "main.py")],
     pathex=[REPO_ROOT],
     binaries=[],
-    datas=[],
+    datas=[
+        (os.path.join(REPO_ROOT, "packaging", "icon.ico"), "packaging"),
+        # The VS Code bridge extension. Without this the editor integration
+        # is unreachable for anyone who didn't clone the repo: ide/bridge.py
+        # starts, listens on 8787, and nothing ever connects, because the
+        # .vsix that the other half of the protocol lives in was never
+        # shipped. Bundling it is what lets Mike offer to install it.
+        (os.path.join(REPO_ROOT, "vscode-extension", "mike-bridge-0.1.0.vsix"),
+         "vscode-extension"),
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -106,6 +120,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=os.path.join(REPO_ROOT, "packaging", "icon.ico"),
 )
 
 coll = COLLECT(

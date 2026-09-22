@@ -66,10 +66,48 @@ def describe() -> str:
 
 # ── Control ──────────────────────────────────────────────────
 
+def _not_connected_reason() -> str:
+    """Why the editor isn't reachable, in terms the user can act on.
+
+    "No editor is connected" is true and useless -- it gives someone whose
+    VS Code is open, with the extension installed, nothing to do. There are
+    only a few real causes, and they have different fixes, so the message
+    names the one that actually applies.
+
+    Restricted Mode is called out first because it is the one that looks
+    least like a problem: VS Code is running, the extension is installed and
+    listed, and it simply never activates, because an untrusted folder
+    disables extensions silently. That cost a long debugging session here --
+    everything appeared correct and nothing connected -- and a user hitting
+    it has no reason to suspect a trust setting.
+    """
+    from ide.install import find_vscode_cli, already_installed
+
+    cli = find_vscode_cli()
+    if cli is None:
+        return (
+            "I can't see VS Code on this machine. If it's installed, open a "
+            "file in it once and I'll pick it up."
+        )
+    if not already_installed(cli):
+        return (
+            "VS Code is here but my editor extension isn't installed yet. "
+            "I can install it for you -- just ask."
+        )
+    return (
+        "VS Code is open but isn't talking to me. This is almost always "
+        "Restricted Mode: if the folder is untrusted, VS Code silently "
+        "disables extensions including mine. Click 'Trust' in the banner at "
+        "the top (or Manage Workspace Trust), then reload VS Code and I'll "
+        "connect. If it was only just installed, VS Code needs a restart to "
+        "pick it up."
+    )
+
+
 def _require_adapter():
     adapter = active_adapter()
     if adapter is None:
-        return None, {"ok": False, "error": "No editor is connected to Mike right now."}
+        return None, {"ok": False, "error": _not_connected_reason()}
     return adapter, None
 
 

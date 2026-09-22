@@ -17,11 +17,13 @@ from __future__ import annotations
 import platform
 from html import escape
 
-from PySide6.QtCore import Qt, QObject, QTimer, Signal
+from PySide6.QtCore import (
+    Qt, QEasingCurve, QObject, QPointF, QPropertyAnimation, QTimer, Signal,
+)
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QKeyEvent
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
+    QPushButton, QScrollArea, QVBoxLayout, QWidget,
 )
 
 from ui.panel import style
@@ -180,6 +182,153 @@ class _Turn(QLabel):
         self._render()
 
 
+# ══ the wait ═══════════════════════════════════════════════
+
+#: What Mike says he's doing while you wait.
+#:
+#: A local model on a laptop takes real seconds to answer, and a single
+#: frozen "Thinking…" for all of them reads as a hang -- the user cannot
+#: tell a model that is working from one that has died. Rotating the word
+#: is the cheapest honest signal that something is still happening: it
+#: changes because time is passing, which is exactly what it claims.
+#:
+#: Chosen to sound like Mike rather than like a loading bar -- the register
+#: is a person half-answering you from the next room, not a system reporting
+#: status. Deliberately no ironic or cutesy entries: this shows up when
+#: somebody is waiting, and a joke wears out on the fourth reading.
+THINKING_WORDS = (
+    "Thinking",
+    "Having a think",
+    "Working it out",
+    "Turning it over",
+    "Piecing it together",
+    "Mulling it over",
+    "Chewing on it",
+    "Following the thread",
+    "Getting there",
+    "Nearly there",
+)
+
+
+class _Thinking(QWidget):
+    """The gap between asking and answering, made to feel inhabited.
+
+    Three things move, on purpose, at three different rates:
+
+    - the word, every few seconds, so a long wait visibly progresses rather
+      than repeating;
+    - the ellipsis, about twice a second, the small constant tick that says
+      the process is alive between word changes;
+    - the accent dot, breathing on a slow sine, which is the same living
+      mark the ledger already uses for a step in flight.
+
+    The last two words of THINKING_WORDS ("Getting there", "Nearly there")
+    are held back for waits long enough to need reassurance rather than
+    novelty, so the copy tracks the actual situation instead of cycling
+    forever through synonyms.
+    """
+
+    _WORD_MS = 2800
+    _TICK_MS = 440
+    _LONG_WAIT_MS = 11_000
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._index = 0
+        self._dots = 0
+        self._phase = 0.0
+        self._elapsed = 0
+        self.setFixedHeight(30)
+
+        self._tick = QTimer(self)
+        self._tick.timeout.connect(self._on_tick)
+        self._tick.start(self._TICK_MS)
+
+        self._rotate = QTimer(self)
+        self._rotate.timeout.connect(self._next_word)
+        self._rotate.start(self._WORD_MS)
+
+    def stop(self) -> None:
+        """Animations hold a timer against a widget the panel is about to
+        delete; stopping them explicitly keeps a timeout from firing into a
+        half-torn-down widget."""
+        self._tick.stop()
+        self._rotate.stop()
+
+    def _on_tick(self) -> None:
+        self._dots = (self._dots + 1) % 4
+        self._phase += 0.34
+        self._elapsed += self._TICK_MS
+        self.update()
+
+    def _next_word(self) -> None:
+        if self._elapsed >= self._LONG_WAIT_MS:
+            # Past the point where novelty stops helping: stay on the
+            # reassuring tail rather than implying fresh activity.
+            tail = len(THINKING_WORDS) - 2
+            self._index = tail + (self._index + 1) % 2 if self._index >= tail else tail
+        else:
+            self._index = (self._index + 1) % (len(THINKING_WORDS) - 2)
+        self.update()
+
+    def paintEvent(self, _e) -> None:
+        import math
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+
+        # The breathing accent dot, matching the ledger's running mark.
+        breath = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(self._phase))
+        dot = style.qaccent()
+        dot.setAlphaF(breath)
+        p.setBrush(dot)
+        p.setPen(Qt.NoPen)
+        radius = 3.0
+        p.drawEllipse(QPointF(6.0, self.height() / 2), radius, radius)
+
+        p.setFont(style.voice(15))
+        p.setPen(QColor(style.INK_MUTE))
+        text = THINKING_WORDS[self._index] + "." * self._dots
+        p.drawText(
+            int(6 + radius * 2 + 10), 0,
+            self.width(), self.height(),
+            int(Qt.AlignVCenter | Qt.AlignLeft), text,
+        )
+
+
+def _animate_entry(widget: QWidget) -> None:
+    """Fade a new line in instead of having it appear between frames.
+
+    The panel grows to fit its content, so without this every message is a
+    hard cut: the window jumps taller and fully-formed text is simply
+    present. A short fade (and a few pixels of rise) makes it read as
+    arriving, which is the same reason MikeWindow animates the panel itself
+    in rather than showing it. Kept under 200ms -- this is meant to soften a
+    transition, never to make anyone wait for it.
+
+    The effect and animation are parented to the widget so they live exactly
+    as long as it does.
+    """
+    try:
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        fade = QPropertyAnimation(effect, b"opacity", widget)
+        fade.setDuration(180)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.OutCubic)
+        # Parented to the widget, so the widget owns it and it dies with it.
+        # Deliberately NOT DeleteWhenStopped: combining the two gives the
+        # animation two owners, and the second delete is an access violation
+        # with no Python traceback -- which is exactly how this first
+        # shipped, crashing the moment a test pumped the event loop while a
+        # panel was being torn down.
+        fade.start()
+    except Exception:
+        # A missing animation must never cost the message itself.
+        pass
+
+
 # ══ activity ledger ════════════════════════════════════════
 
 class _Ledger(QFrame):
@@ -219,6 +368,14 @@ class _Ledger(QFrame):
         if 0 <= index < len(self._rows):
             self._rows[index] = (self._rows[index][0], status)
             self._sync_timer()
+            self._render()
+
+    def set_text(self, index: int, text: str) -> None:
+        """Updates a row's own label in place — for a step whose duration
+        is real and worth narrating (a multi-minute model download) rather
+        than one whose name is decided once at the start and never changes."""
+        if 0 <= index < len(self._rows):
+            self._rows[index] = (text, self._rows[index][1])
             self._render()
 
     def _sync_timer(self) -> None:
@@ -276,6 +433,10 @@ class _ActionHandle:
 
     def mark_done(self, success: bool = True) -> None:
         self._ledger.set_status(self._index, "done" if success else "failed")
+
+    def update_text(self, text: str) -> None:
+        self._label = _PlainText(text)
+        self._ledger.set_text(self._index, text)
 
 
 class _PlainText:
@@ -394,6 +555,76 @@ class _Confirm(QFrame):
     def hide(self) -> None:  # noqa: A003 - matches the controller contract
         super().hide()
         self.visibility_changed.emit()
+
+
+# ══ first run: something to actually try ═══════════════════
+
+#: Four things a new user can click on their first launch.
+#:
+#: Chosen against one rule: every one of these has been verified working
+#: end-to-end on Windows. A starter suggestion that fails is worse than no
+#: suggestion at all -- it is the first thing the user ever asks Mike to do,
+#: and it decides whether they believe the rest of the claims. So no wake
+#: word (not implemented on Windows), no scrolling or dragging (honestly
+#: unsupported), nothing destructive, and nothing that opens a paid app.
+#:
+#: They are also deliberately a spread rather than four of the same thing:
+#: something visible happens on screen, something shows he can see, something
+#: shows he writes real code, something shows he remembers. Between them
+#: they answer "what is this?" far better than a paragraph of prose does.
+STARTERS = (
+    ("Open YouTube", "open youtube.com"),
+    ("What's on my screen?", "what's on my screen right now?"),
+    ("Write me a script", "write a python script that renames every .txt "
+                          "file in a folder to add today's date, and save it "
+                          "to my desktop"),
+    ("Remember something", "remember that I'm learning Python this term"),
+)
+
+
+class _Starters(QWidget):
+    """Clickable openers, shown once, on the first launch only.
+
+    The panel already had a `suggestion_clicked` signal wired all the way
+    through to the controller's process_message -- and nothing that ever
+    emitted it. This is the missing half: the wiring was built for a feature
+    that was never given a face.
+
+    They disappear the moment one is used or anything is typed, because
+    their whole job is to get the first message sent. After that they would
+    just be clutter in a surface whose entire design is "exactly as large as
+    the moment needs".
+    """
+
+    picked = Signal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        row = QVBoxLayout(self)
+        row.setContentsMargins(0, 10, 0, 2)
+        row.setSpacing(7)
+
+        line = QHBoxLayout()
+        line.setSpacing(7)
+        line.setContentsMargins(0, 0, 0, 0)
+        for index, (label, prompt) in enumerate(STARTERS):
+            chip = QPushButton(label)
+            chip.setObjectName("starter")
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.setFont(style.label(11))
+            chip.clicked.connect(lambda _=False, p=prompt: self.picked.emit(p))
+            line.addWidget(chip, 0, Qt.AlignLeft)
+            # Two per line: four chips in a row would each be too narrow to
+            # read at this panel's width.
+            if index % 2 == 1:
+                line.addStretch(1)
+                row.addLayout(line)
+                line = QHBoxLayout()
+                line.setSpacing(7)
+                line.setContentsMargins(0, 0, 0, 0)
+        if line.count():
+            line.addStretch(1)
+            row.addLayout(line)
 
 
 # ══ thin façades the controller connects signals to ═══════
@@ -554,12 +785,26 @@ class _SettingsView(QScrollArea):
                 return f"{speaker} — a natural neural voice, running locally."
         except Exception:
             pass
-        return "Samantha — the built-in system voice. Always available."
+        # "Samantha" is macOS's own native voice; naming it unconditionally
+        # here on Windows told a real user their voice was still "Samantha"
+        # when it was actually SAPI5 -- a name that means nothing on this
+        # platform and reads as broken, not just wrong. voice.providers
+        # already knows which native backend this machine actually has and
+        # can describe it (name and all); ask it rather than hardcode
+        # either platform's answer here.
+        try:
+            from voice.providers import native_provider_class
+            ok, why = native_provider_class()().available()
+            if ok:
+                return f"{why}. Always available."
+        except Exception:
+            pass
+        return "The built-in system voice. Always available."
 
     def _model_line(self) -> str:
         try:
             from config.ollama import OLLAMA_CHAT_MODEL
-            return f"Recommended for this Mac. Running {OLLAMA_CHAT_MODEL}, entirely on-device."
+            return f"Recommended for {_this_machine()}. Running {OLLAMA_CHAT_MODEL}, entirely on-device."
         except Exception:
             return "Running a local model, entirely on-device."
 
@@ -589,6 +834,15 @@ class MikePanel(QWidget):
     #: ambient signal (a menu-bar notification) when something happens while
     #: the panel is hidden.
     state_changed = Signal(str)
+
+    #: Emitted when the user clicks the close button in the header. The
+    #: panel itself has no title bar (it's frameless -- see
+    #: MikeWindow._configure_window) and, before this button existed, the
+    #: only way to put it away was the global hotkey or Escape-cancelling
+    #: active work -- neither discoverable to someone who just summoned Mike
+    #: by typing. MikeWindow owns what "close" actually does (the same fade
+    #: -out used when the hotkey dismisses it), so this only asks.
+    dismiss_requested = Signal()
 
     def __init__(self, settings_hooks: dict | None = None) -> None:
         super().__init__()
@@ -642,6 +896,19 @@ class MikePanel(QWidget):
         self._menu_btn.setFixedSize(28, 24)
         self._menu_btn.clicked.connect(self._toggle_settings)
         hb.addWidget(self._menu_btn, 0, Qt.AlignVCenter)
+
+        # A real close button. The window is frameless (no OS title bar, no
+        # OS close box), and the only other way to put Mike away -- the
+        # global hotkey -- is invisible unless you already know it exists.
+        # Every other control on this surface is reached by clicking
+        # something; closing shouldn't be the one exception.
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setObjectName("close")
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setFixedSize(28, 24)
+        self._close_btn.setToolTip(f"Close ({_hotkey_hint()} to bring Mike back)")
+        self._close_btn.clicked.connect(self.dismiss_requested.emit)
+        hb.addWidget(self._close_btn, 0, Qt.AlignVCenter)
         outer.addWidget(header)
 
         # stage: the scrollable conversation + activity. Height follows content
@@ -720,7 +987,25 @@ class MikePanel(QWidget):
         self._resting.setStyleSheet("padding-top:2px;")
         self._insert(self._resting)
         if first_run:
+            # Telling someone what Mike can do is weaker than letting them
+            # find out in one click, so the first launch offers openers that
+            # actually run rather than a longer paragraph about capabilities.
+            self._starters = _Starters()
+            self._starters.picked.connect(self._on_starter)
+            self._insert(self._starters)
             preferences.set_value("onboarding_complete", True)
+
+    def _on_starter(self, prompt: str) -> None:
+        self._drop_starters()
+        self.conversation.suggestion_clicked.emit(prompt)
+
+    def _drop_starters(self) -> None:
+        starters = getattr(self, "_starters", None)
+        if starters is not None:
+            starters.hide()
+            self._stage.removeWidget(starters)
+            starters.deleteLater()
+            self._starters = None
 
     def _greeting(self) -> str:
         from datetime import datetime
@@ -736,6 +1021,11 @@ class MikePanel(QWidget):
             self._stage.removeWidget(r)
             r.deleteLater()
             self._resting = None
+        # The starters exist only to get the first message sent. Once the
+        # user has typed or spoken one themselves they are answered, and
+        # leaving them on screen would be clutter in a panel whose whole
+        # design is being exactly as large as the moment needs.
+        self._drop_starters()
 
     # ── sizing: the panel is as tall as its content, up to a cap ──────
     CAP_HEIGHT = 520
@@ -797,6 +1087,7 @@ class MikePanel(QWidget):
     # ── column helpers ────────────────────────────────────
     def _insert(self, widget: QWidget) -> None:
         self._stage.insertWidget(self._stage.count() - 1, widget)
+        _animate_entry(widget)
         self.conversation.scroll_to_bottom()
         QTimer.singleShot(0, self._fit)
 
@@ -828,12 +1119,16 @@ class MikePanel(QWidget):
     def show_thinking(self) -> None:
         self.hide_thinking()
         self._drop_resting()
-        self._thinking = _Turn("Thinking…", "mike")
-        self._thinking.setStyleSheet(f"color:{style.INK_MUTE};")
+        self._thinking = _Thinking()
         self._insert(self._thinking)
 
     def hide_thinking(self) -> None:
         if self._thinking is not None:
+            # Stop its timers before the widget goes: a rotation firing into
+            # a widget mid-deleteLater is a crash with no useful traceback.
+            stop = getattr(self._thinking, "stop", None)
+            if stop is not None:
+                stop()
             self._thinking.hide()
             self._stage.removeWidget(self._thinking)
             self._thinking.deleteLater()
@@ -944,6 +1239,23 @@ QPushButton#menu {{
     border: none; font-size: 16px; padding: 0 2px;
 }}
 QPushButton#menu:hover {{ color: {style.INK}; }}
+QPushButton#close {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 13px; padding: 0 2px;
+}}
+QPushButton#close:hover {{ color: {style.STOP}; }}
+QPushButton#starter {{
+    background: {style.GROUND_RAISED};
+    color: {style.INK_SOFT};
+    border: 1px solid {style.HAIRLINE};
+    border-radius: 13px;
+    padding: 6px 13px;
+    text-align: left;
+}}
+QPushButton#starter:hover {{
+    color: {style.INK};
+    border-color: {style.accent()};
+}}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 2px; }}
 QScrollBar::handle:vertical {{
     background: {style.INK_FAINT}; border-radius: 4px; min-height: 28px;

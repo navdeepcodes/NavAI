@@ -6,7 +6,7 @@ handling. Above this file, nothing knows Ollama exists.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 import ollama
 
@@ -40,6 +40,11 @@ USABLE_FRACTION_OF_CTX = 0.75
 # what is sensible to actually allocate on a laptop, so Mike sets num_ctx
 # explicitly rather than inheriting it.
 DEFAULT_NUM_CTX = 8192
+
+# Matches Ollama's own default. The real value Mike runs with is decided in
+# config/ollama.py, which weighs it against the machine's actual headroom;
+# this is only the fallback for a caller that constructs a provider directly.
+DEFAULT_KEEP_ALIVE = "5m"
 
 # How many tokens a single turn may generate. 300 was too few and failed in a
 # specific, damaging way: a model that reasons before acting spends the budget
@@ -94,13 +99,29 @@ class OllamaProvider(BrainProvider):
         host: str,
         *,
         num_ctx: int = DEFAULT_NUM_CTX,
-        temperature: float = 0.4,
+        # 0.4 was making Mike sound like he was reading rather than talking:
+        # at that setting the model takes the highest-probability phrasing
+        # essentially every time, which is exactly the flat, formal, "written
+        # prose" register a user described as reading like a newspaper. It is
+        # also well below what this model is built for -- qwen3.5 ships a
+        # default of 1.0, and 0.7 is the usual recommendation for its
+        # non-thinking mode.
+        #
+        # Raised rather than removed, because temperature is not free here:
+        # Mike sends 44 tool schemas on every turn and needs structured
+        # output back. STRUCTURED_OUTPUT_OPTIONS already exists for exactly
+        # this tension (see its own measurements on presence_penalty), and
+        # tool-calling was re-verified at 0.7 rather than assumed -- the same
+        # bar that setting was held to.
+        temperature: float = 0.7,
         num_predict: int = DEFAULT_NUM_PREDICT,
         vision_model: str | None = None,
+        keep_alive: int | str = DEFAULT_KEEP_ALIVE,
     ) -> None:
         self._model = model
         self._host = host
         self._num_ctx = num_ctx
+        self._keep_alive = keep_alive
         self._vision_model = vision_model or model
         self._options = {
             "temperature": temperature,
@@ -184,10 +205,9 @@ class OllamaProvider(BrainProvider):
             )
         return None
 
-    def pull_model(
-        self, on_progress: Callable[[str], None] | None = None,
-    ) -> BrainError | None:
-        """Downloads self._model, reporting progress through on_progress.
+    def pull_model(self) -> Iterator[str | BrainError]:
+        """Downloads self._model, yielding a human-readable progress string
+        after every point of real change, and a BrainError instead if it fails.
 
         A first-run gap this closes: `health()` could already *detect* a
         missing model, but the only remedy it offered was "run `ollama pull`
@@ -197,24 +217,48 @@ class OllamaProvider(BrainProvider):
         manifest", "pulling <digest>", "verifying sha256 digest", ...); each
         one downloading a layer carries completed/total byte counts, which
         is what turns into a percentage here.
+
+        A generator rather than a callback: a real pull of this model was
+        measured taking over 20 minutes on a slow connection, and the first
+        version of this reported progress through a callback that only ever
+        reached the log file — the on-screen ledger row showed the same
+        static "may take a few minutes" the entire time, which is exactly
+        the silent-multi-minute-wait this feature exists to avoid. Yielding
+        each update lets the caller's own event stream (the same one
+        text/tool_call events already flow through) carry it to the UI.
         """
         try:
-            last_status = None
+            last_reported = None
             for update in self._client.pull(self._model, stream=True):
                 status = getattr(update, "status", None) or ""
                 total = getattr(update, "total", None)
                 completed = getattr(update, "completed", None)
-                if status != last_status or (total and completed):
-                    last_status = status
-                    if total and completed:
-                        pct = int(completed / total * 100)
-                        if on_progress:
-                            on_progress(f"Downloading Mike's language model — {pct}%")
-                    elif on_progress:
-                        on_progress(f"Downloading Mike's language model — {status}")
-            return None
+                if total and completed:
+                    # Ollama reports a completed/total pair on effectively
+                    # every socket read, not on every percentage point --
+                    # this is comparing the same rounded number thousands of
+                    # times over a multi-GB pull. Only report it (and only
+                    # bother computing it) when it has actually changed;
+                    # otherwise this is one UI update per chunk for the
+                    # whole download instead of one per point.
+                    reported = int(completed / total * 100)
+                else:
+                    reported = status
+                if reported == last_reported:
+                    continue
+                last_reported = reported
+                # A plain hyphen, not an em dash: this can reach a file
+                # opened with Windows' default cp1252 handle, which can't
+                # encode U+2014 and mangles the whole line into "�" --
+                # the same class of bug already fixed elsewhere in this
+                # codebase for console/subprocess output, just reached
+                # through the logger this time.
+                if isinstance(reported, int):
+                    yield f"Downloading Mike's language model - {reported}%"
+                else:
+                    yield f"Downloading Mike's language model - {reported}"
         except Exception as exc:
-            return BrainError(
+            yield BrainError(
                 kind="model_missing",
                 message=(
                     f"I couldn't download {self._model} automatically ({exc}). "
@@ -254,6 +298,7 @@ class OllamaProvider(BrainProvider):
                 messages=messages,
                 tools=tools or None,
                 think=False,
+                keep_alive=self._keep_alive,
                 stream=True,
                 options=self._options_for(tools),
             ):
@@ -288,29 +333,48 @@ class OllamaProvider(BrainProvider):
         except Exception as exc:
             yield StreamEvent(kind="error", error=self._to_error(exc))
 
-    def complete(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResult:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
         caps = self.capabilities()
         if tools and not caps.can("tools"):
             tools = None
+        options = self._options_for(tools)
+        if max_tokens is not None:
+            options = {**options, "num_predict": max_tokens}
         try:
             response = self._client.chat(
                 model=self._model,
                 messages=messages,
                 tools=tools or None,
                 think=False,
-                options=self._options_for(tools),
+                keep_alive=self._keep_alive,
+                options=options,
             )
         except Exception as exc:
             return ChatResult(error=self._to_error(exc))
 
         # The streaming path checked this and complete() did not, so a probe or
         # benchmark could read a severed reply as a finished one.
+        #
+        # Reported against the limit this request actually ran under, not the
+        # configured default: a caller passing max_tokens gets a reply that
+        # stops at *its* cap, and blaming the 8192 default for it is simply
+        # untrue. CoreRuntime.warm() asks for one token on purpose, and the
+        # first version of this logged "stopped at the 8192-token generation
+        # limit" on every single startup -- a false alarm that would send
+        # whoever read it looking for a truncation bug that isn't there.
         truncated = response.get("done_reason") == "length"
         if truncated:
+            effective = self._options["num_predict"] if max_tokens is None else max_tokens
             logger.warning(
                 "%s stopped at the %d-token generation limit; the turn was cut "
                 "off before it finished.",
-                self._model, self._options["num_predict"],
+                self._model, effective,
             )
 
         calls: list[ToolCall] = []
@@ -338,6 +402,7 @@ class OllamaProvider(BrainProvider):
                 model=self._vision_model,
                 messages=[{"role": "user", "content": prompt, "images": [image_path]}],
                 think=False,
+                keep_alive=self._keep_alive,
                 # Vision latency is almost entirely generation: measured at a
                 # flat ~16 tok/s, so the caller's budget is the one setting
                 # that decides whether a look at the screen costs 3s or 10s.

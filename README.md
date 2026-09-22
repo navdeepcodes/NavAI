@@ -1,10 +1,35 @@
 # Mike
 
-A local-first desktop AI assistant for macOS — runs on-device, listens for a
-wake word, sees the screen when asked, and can act: read and write files, run
-commands, drive other applications through the accessibility layer, work on
-spreadsheets, send mail, and edit code through an editor bridge. The reasoning
-never leaves the machine.
+A local-first desktop AI assistant for **Windows and macOS** — runs
+on-device, sees the screen when asked, and can act: read and write files, run
+commands, drive other applications, work on spreadsheets, send mail, and edit
+code through an editor bridge. The reasoning never leaves the machine.
+
+## Install on Windows
+
+1. Download `Mike-windows-<version>.zip` and unzip it.
+2. Double-click **Install Mike**.
+3. That's it — Mike is in your Start Menu. Press **Ctrl+Shift+Space** any
+   time to call him.
+
+The installer is per-user, so it never asks for an administrator. It copies
+Mike into `%LOCALAPPDATA%\Programs\Mike`, makes Start Menu and Desktop
+shortcuts, and checks for [Ollama](https://ollama.com/download) — the one
+thing Mike genuinely cannot run without. Mike downloads his own model on
+first run and shows the progress while it happens.
+
+Windows SmartScreen will warn that the app is unrecognised, because this
+early-access build is unsigned: choose **More info → Run anyway**.
+
+### If Mike can't see your code in VS Code
+
+He installs his own VS Code extension the first time he runs. If the editor
+still isn't connected, it is almost always **Restricted Mode**: with an
+untrusted folder, VS Code silently disables every extension, including
+Mike's. Nothing looks wrong — VS Code is open, the extension is installed and
+listed — and nothing connects. Click **Trust** in the banner at the top of
+VS Code (or *Manage Workspace Trust*), reload the window, and Mike will pick
+it up. A freshly installed extension also needs VS Code restarted once.
 
 ## Stack
 
@@ -12,10 +37,12 @@ never leaves the machine.
   `QPainter` rendering — no Electron)
 - [Ollama](https://ollama.com), running `qwen3.5:9b` locally, for reasoning,
   tool-calling, and vision — one model serves as both brain and eyes
-- macOS accessibility (`AXUIElement`) and synthetic input (`CGEvent`) for
-  operating other applications
-- macOS-native audio/speech (`say`, `SFSpeechRecognizer` / `NSSpeechRecognizer`,
-  Carbon global hotkeys) — no cloud TTS/STT
+- Per-OS computer control behind one contract: UI Automation + `SendInput`
+  on Windows, accessibility (`AXUIElement`) + `CGEvent` on macOS
+- Per-OS speech, no cloud TTS/STT: SAPI5 and local Whisper
+  (faster-whisper) on Windows; `say` and `SFSpeechRecognizer` on macOS
+- Native global hotkeys: `RegisterHotKey` (Ctrl+Shift+Space) on Windows,
+  Carbon (⌘⇧Space) on macOS
 - SQLite for memory, activity, and situation state
 - openpyxl for spreadsheets
 

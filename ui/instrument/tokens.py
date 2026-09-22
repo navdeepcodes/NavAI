@@ -14,6 +14,8 @@ instrument's are.
 """
 from __future__ import annotations
 
+import platform
+
 from PySide6.QtGui import QColor, QFont, QFontDatabase
 
 # ── Housing (dark metal) ─────────────────────────────────
@@ -57,7 +59,11 @@ INK_ACCENT = "#B8571F"
 
 # ── Type ──────────────────────────────────────────────────
 
-_MONO_CANDIDATES = ("SF Mono", "SFMono-Regular", "Menlo", "Monaco")
+_MONO_CANDIDATES = (
+    ("Cascadia Mono", "Consolas", "Courier New")
+    if platform.system() == "Windows"
+    else ("SF Mono", "SFMono-Regular", "Menlo", "Monaco")
+)
 _SERIF_CANDIDATES = ("Georgia", "New York", "Times New Roman")
 
 _mono_cached: str | None = None
@@ -87,12 +93,14 @@ def serif_family() -> str:
     return _serif_cached
 
 
-LABEL_SANS = ".AppleSystemUIFont"
+LABEL_SANS = "Segoe UI" if platform.system() == "Windows" else ".AppleSystemUIFont"
 
 
 def label_family() -> str:
     """The instrument's engraved-label typeface, for rich-text spans that need
     to name it explicitly rather than take it from a QFont."""
+    if platform.system() == "Windows":
+        return "'Segoe UI', Arial, sans-serif"
     return "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
 
 

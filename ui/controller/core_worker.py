@@ -12,6 +12,7 @@ class CoreRuntimeWorker(QObject):
 
     token = Signal(str)
     tool_start = Signal(str)
+    tool_progress = Signal(str)
     tool_end = Signal(str)
     finished = Signal()
     error = Signal(str)
@@ -49,6 +50,8 @@ class CoreRuntimeWorker(QObject):
                     self.token.emit(payload)
                 elif event_type == "tool_start":
                     self.tool_start.emit(payload)
+                elif event_type == "tool_progress":
+                    self.tool_progress.emit(payload)
                 elif event_type == "tool_end":
                     self.tool_end.emit(payload)
 

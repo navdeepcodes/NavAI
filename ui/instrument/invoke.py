@@ -5,6 +5,7 @@ a dial standing in for the mic/send icon, a single line to type into.
 """
 from __future__ import annotations
 
+import platform
 import random
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QRect, Qt, QTimer, Signal
@@ -15,6 +16,13 @@ from ui.instrument import tokens
 from ui.instrument.aura import Aura
 from ui.instrument.dial import Dial
 from ui.instrument.widgets import EngravedLabel, InkFact
+
+
+def _hotkey_hint() -> str:
+    """The summon hotkey, as this platform's own hardware actually shows it
+    -- no Windows keyboard has a Cmd key, so the Mac glyph means nothing
+    there. Mirrors ui.panel.mike_panel's own _hotkey_hint()."""
+    return "Ctrl+Shift+Space" if platform.system() == "Windows" else "⌘⇧Space"
 
 # A short, honest greeting on each fresh summon — rotated so it never reads
 # as a canned line you've memorized by the tenth time you see it.
@@ -86,7 +94,7 @@ class InvokeLine(QWidget):
         )
         line.addWidget(self.field, 1)
 
-        self._keys = EngravedLabel("⌘⇧space", colour=tokens.FAINT, size=10)
+        self._keys = EngravedLabel(_hotkey_hint().lower(), colour=tokens.FAINT, size=10)
         line.addWidget(self._keys, 0, Qt.AlignVCenter)
         col.addLayout(line)
 

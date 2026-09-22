@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+
 from PySide6.QtCore import QObject, QThread, QTimer
 
 from brain import activity_store, projects
@@ -107,6 +109,16 @@ class UIController(QObject):
         if preferences.get("wake_word_enabled", True):
             self._wake.start()
 
+        # Pay the model's cold prefill now, off the GUI thread, while the
+        # user is still reading the greeting -- see CoreRuntime.warm(). On a
+        # machine with no GPU offload path this is the difference between a
+        # first reply that lands in seconds and one that takes minutes.
+        # Daemon so it can never hold up quitting, and it touches nothing
+        # the UI owns.
+        threading.Thread(
+            target=self._runtime.warm, name="model-warm", daemon=True,
+        ).start()
+
     def _on_floating_submit(self, text: str) -> None:
         self._floating.clear_response()
         self._floating.set_state("thinking")
@@ -156,6 +168,7 @@ class UIController(QObject):
 
         self._worker.token.connect(self._on_token)
         self._worker.tool_start.connect(self._on_tool_start)
+        self._worker.tool_progress.connect(self._on_tool_progress)
         self._worker.tool_end.connect(self._on_tool_end)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
@@ -283,6 +296,19 @@ class UIController(QObject):
         # workspace root), so this can be filtered per-project later without
         # a second table — untagged rows just mean "no project was open".
         self._activity_row = activity_store.begin(description, project_id=projects.current())
+
+        if self._floating and self._floating.isVisible():
+            self._floating.show_tool_status(description)
+
+    def _on_tool_progress(self, description: str) -> None:
+        """Updates the current row's own text in place -- for a step like a
+        model download, whose duration is real (minutes, not the second or
+        two most tool calls take) and worth narrating as it goes, rather
+        than a card whose label is fixed the moment it appears."""
+        if self._action_card is not None and hasattr(self._action_card, "update_text"):
+            self._action_card.update_text(description)
+
+        self._mirror_edge("working", description)
 
         if self._floating and self._floating.isVisible():
             self._floating.show_tool_status(description)
@@ -605,6 +631,7 @@ class UIController(QObject):
         for signal, slot in (
             (old_worker.token, self._on_token),
             (old_worker.tool_start, self._on_tool_start),
+            (old_worker.tool_progress, self._on_tool_progress),
             (old_worker.finished, self._on_finished),
             (old_worker.error, self._on_error),
             (old_worker.confirmation_needed, self._show_confirmation),

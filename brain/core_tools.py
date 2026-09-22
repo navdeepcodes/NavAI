@@ -239,9 +239,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="open_application",
         description=(
-            "Open or focus an application on the user's Mac. Use this only "
-            "when the user asked to open or switch to an app — not when they "
-            "are asking a question about apps."
+            "Open or focus an application on the user's computer. Use this "
+            "only when the user asked to open or switch to an app — not "
+            "when they are asking a question about apps."
         ),
         parameters_json_schema={
             "type": "object",
@@ -249,8 +249,8 @@ TOOL_DECLARATIONS = [
                 "name": {
                     "type": "string",
                     "description": (
-                        "Application name as macOS knows it, e.g. "
-                        "'Visual Studio Code', 'Safari', 'Terminal'"
+                        "The application's common name, e.g. 'Visual Studio "
+                        "Code', 'notepad', 'Calculator', 'chrome'"
                     ),
                 },
                 "path": {

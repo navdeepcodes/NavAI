@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import sys
 
 from PySide6.QtCore import Qt, QEvent, QPropertyAnimation, QEasingCurve, QPoint
@@ -18,6 +19,28 @@ from ui.system.global_hotkey import GlobalHotkey
 from ui.panel.mike_panel import MikePanel
 from ui.theme.stylesheet import GLOBAL_STYLESHEET
 from ui.instrument.invoke import InvokeLine
+
+
+def _app_icon() -> QIcon:
+    """Mike's real mark — the same rounded-square glyph served as
+    huddlecode.com's own favicon — used wherever Windows needs a *file*
+    icon rather than something QPainter can draw on demand: the taskbar
+    entry, Alt+Tab, the window's title-bar corner. The PyInstaller build
+    already bakes packaging/icon.ico into the .exe's own resources (so
+    Explorer and the taskbar have it before Qt ever paints a frame); this
+    loads the same file for Qt's own icon calls, checking next to the
+    frozen executable first and falling back to the source tree so this
+    also works from `python main.py` during development.
+    """
+    candidates = [
+        os.path.join(getattr(sys, "_MEIPASS", ""), "packaging", "icon.ico"),
+        os.path.join(os.path.dirname(sys.executable), "packaging", "icon.ico"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packaging", "icon.ico"),
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return QIcon(path)
+    return QIcon()
 
 
 def _tray_icon() -> QIcon:
@@ -104,6 +127,12 @@ class MikeWindow(QMainWindow):
         # connects, or if the port is already taken.
         _optional("the IDE bridge", ide_manager.start)
 
+        # The bridge is only half the editor integration; the other half is
+        # an extension inside VS Code, which a user who downloaded a zip has
+        # no way to know about. Offered once, in the background so a slow
+        # `code --install-extension` can never delay the window appearing.
+        _optional("the VS Code extension", self._offer_vscode_extension)
+
         self._build_tray()
         self._torn_down = False
         self._quitting = False
@@ -113,6 +142,8 @@ class MikeWindow(QMainWindow):
         # macOS-native, unmistakable way to say "Mike needs you" or "Mike
         # finished" without stealing focus from what you were doing.
         self.page.state_changed.connect(self._ambient_signal)
+
+        self.page.dismiss_requested.connect(self._animate_out)
 
         self.controller.startup()
 
@@ -153,6 +184,28 @@ class MikeWindow(QMainWindow):
         self.tray.setToolTip("Mike")
         self.tray.setContextMenu(self._tray_menu)
         self.tray.show()
+
+    def _offer_vscode_extension(self) -> bool:
+        """Put Mike's editor extension in place, off the startup path.
+
+        In a thread because `code --install-extension` shells out to Node and
+        takes seconds; nothing about it should stand between the user and a
+        window. Once per machine, and silent when VS Code isn't installed --
+        which is the common case, not a failure.
+        """
+        import threading
+
+        def _run() -> None:
+            try:
+                from ide.install import ensure_installed
+                changed, reason = ensure_installed()
+                if changed:
+                    logger.info("VS Code extension: %s", reason)
+            except Exception:
+                logger.debug("VS Code extension check failed.", exc_info=True)
+
+        threading.Thread(target=_run, name="vscode-extension", daemon=True).start()
+        return True
 
     def _show_main_window(self) -> None:
         self.show()
@@ -204,12 +257,18 @@ class MikeWindow(QMainWindow):
             activated=self.page.clear,
         )
 
-        # QKeySequence.Quit resolves to the platform's real quit shortcut
-        # (Cmd+Q on macOS). Bound explicitly rather than relying on Qt's
-        # implicit default app menu, so it's unambiguous which path a real
-        # quit takes.
+        # QKeySequence.Quit resolves to the platform's real quit shortcut on
+        # macOS (Cmd+Q) -- but on Windows it resolves to "Exit", a physical
+        # key that exists on essentially no real keyboard, verified directly
+        # (QKeySequence(QKeySequence.Quit).toString() == "Exit", not
+        # "Ctrl+Q"). Found because it left the tray icon's "Quit Mike" as
+        # the *only* working way to close the app, and Windows commonly
+        # collapses a new app's tray icon behind the notification area's
+        # overflow arrow -- a real user had no way to quit at all. Ctrl+Q is
+        # bound explicitly on Windows/Linux, matching what quits a browser,
+        # Slack, or VS Code; macOS keeps the platform-native binding.
         QShortcut(
-            QKeySequence.Quit,
+            QKeySequence.Quit if platform.system() == "Darwin" else QKeySequence("Ctrl+Q"),
             self,
             activated=self._request_quit,
         )
@@ -397,6 +456,8 @@ def run():
     app = QApplication(sys.argv)
 
     app.setApplicationName("Mike")
+
+    app.setWindowIcon(_app_icon())
 
     app.setStyleSheet(GLOBAL_STYLESHEET)
 

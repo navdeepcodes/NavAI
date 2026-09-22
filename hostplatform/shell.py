@@ -43,6 +43,81 @@ def _run_checked(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
+_BROWSER_EXE_NAMES = {
+    "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
+}
+
+
+def _bring_browser_forward() -> None:
+    """Best-effort: raise whichever browser just received an open request.
+
+    os.startfile hands a URL to the OS shell, which -- when a browser is
+    already running -- typically opens it as a new background tab without
+    giving that window focus. Verified directly: asking Mike to open a URL
+    left the browser exactly where it was, with nothing on screen suggesting
+    anything had happened, even though the tab genuinely opened. A real
+    action that produces no visible sign of having happened reads as a
+    failure regardless of what actually occurred underneath.
+
+    Windows refuses a bare SetForegroundWindow from a process it doesn't
+    consider to have "input permission" -- computer/windows.py's
+    activate_app already found and verified the fix (attach this thread's
+    input queue to the target window's thread first); mirrored here rather
+    than imported, since hostplatform sits below computer/ in this
+    codebase's layering and importing upward would invert that.
+    """
+    try:
+        import ctypes
+
+        import win32api
+        import win32con
+        import win32gui
+        import win32process
+
+        def _proc_name(pid: int) -> str:
+            try:
+                handle = win32api.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+                try:
+                    path = win32process.GetModuleFileNameEx(handle, 0)
+                finally:
+                    win32api.CloseHandle(handle)
+                return path.rsplit("\\", 1)[-1].lower()
+            except Exception:
+                return ""
+
+        found: list[int] = []
+
+        def _visit(hwnd, _):
+            if not win32gui.IsWindowVisible(hwnd) or not win32gui.GetWindowText(hwnd):
+                return True
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if _proc_name(pid) in _BROWSER_EXE_NAMES:
+                found.append(hwnd)
+                return False
+            return True
+
+        win32gui.EnumWindows(_visit, None)
+        if not found:
+            return
+
+        hwnd = found[0]
+        if win32gui.IsIconic(hwnd):
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
+        current_thread = win32api.GetCurrentThreadId()
+        attached = False
+        try:
+            if target_thread != current_thread:
+                attached = bool(ctypes.windll.user32.AttachThreadInput(
+                    current_thread, target_thread, True))
+            win32gui.SetForegroundWindow(hwnd)
+        finally:
+            if attached:
+                ctypes.windll.user32.AttachThreadInput(current_thread, target_thread, False)
+    except Exception:
+        pass
+
+
 def normalize_url(url: str) -> str:
     url = url.strip()
     if not urlparse(url).scheme:
@@ -66,14 +141,28 @@ def open_application(name: str, path: str | None = None) -> None:
             raise ShellError(message or f"Could not open {name!r}. Is it installed?")
         return
     if system == "Windows":
-        raise NotImplementedError(
-            "Opening an application by name is not implemented on Windows "
-            "yet. Windows has no single mechanism equivalent to macOS "
-            "LaunchServices for resolving a friendly app name to an "
-            "executable; a real implementation needs one of the Start Menu "
-            "shortcut index or the registry's App Paths, verified on the "
-            "physical machine — not shipped as a guess."
-        )
+        import os
+        # The previous version of this comment assumed Windows had no
+        # equivalent to LaunchServices and refused every call. Verified
+        # directly, on the physical machine, that assumption was simply
+        # wrong: os.startfile resolves a bare name through the same App
+        # Paths registry and PATH search Explorer's Run box uses, and it
+        # opened Notepad, Calculator, Paint, VS Code, and Chrome by their
+        # common names on the first try, no shortcut-index search needed.
+        # `path`, if given, is passed as the argument the app is opened
+        # with (a file/folder to open in it) rather than joined into `name`,
+        # matching the macOS branch above.
+        try:
+            if path:
+                os.startfile(name, arguments=f'"{path}"')  # type: ignore[call-arg]
+            else:
+                os.startfile(name)  # type: ignore[attr-defined]
+            return
+        except FileNotFoundError:
+            raise ShellError(
+                f"Could not find an application named {name!r}. Check the "
+                "spelling, or that it's installed."
+            )
     raise NotImplementedError(f"Opening applications is not implemented for {system}.")
 
 
@@ -89,6 +178,7 @@ def open_url(url: str) -> None:
     if system == "Windows":
         import os
         os.startfile(url)  # type: ignore[attr-defined]
+        _bring_browser_forward()
         return
     _run_checked(["xdg-open", url])
 
@@ -123,6 +213,7 @@ def open_browser() -> None:
         # on DEFAULT_BROWSER (whose "Opera" default most machines don't
         # have installed) or any specific browser being present.
         os.startfile("about:blank")  # type: ignore[attr-defined]
+        _bring_browser_forward()
         return
     from config.settings import DEFAULT_BROWSER
     _run_checked([DEFAULT_BROWSER])
@@ -145,6 +236,13 @@ def sleep_now() -> None:
     system = _system()
     if system == "Darwin":
         _run_checked(["pmset", "sleepnow"])
+        return
+    if system == "Windows":
+        # SetSuspendState's second argument (Force) is 0 here on purpose --
+        # forcing would skip apps that refuse the suspend (unsaved work in
+        # another app), which is not a call Mike gets to make on the user's
+        # behalf.
+        _run_checked(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
         return
     raise NotImplementedError(f"Sleep is not implemented for {system}.")
 

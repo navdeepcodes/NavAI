@@ -35,6 +35,7 @@ def test_tool_end_after_retirement_still_completes_activity_row():
     class FakeWorker(QObject):
         token = Signal(str)
         tool_start = Signal(str)
+        tool_progress = Signal(str)
         tool_end = Signal(str)
         finished = Signal()
         error = Signal(str)
@@ -101,6 +102,7 @@ def test_denied_confirmation_after_retirement_marks_row_failed_not_stuck():
     class FakeWorker(QObject):
         token = Signal(str)
         tool_start = Signal(str)
+        tool_progress = Signal(str)
         tool_end = Signal(str)
         finished = Signal()
         error = Signal(str)

@@ -212,12 +212,12 @@ class OpenAICompatibleProvider(BrainProvider):
 
     # ── request building ───────────────────────────────────
 
-    def _payload(self, messages, tools, stream: bool) -> dict:
+    def _payload(self, messages, tools, stream: bool, max_tokens: int | None = None) -> dict:
         body: dict[str, Any] = {
             "model": self._model,
             "messages": [self._to_openai_message(m) for m in messages],
             "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
+            "max_tokens": self._max_tokens if max_tokens is None else max_tokens,
             "stream": stream,
         }
         if tools:
@@ -376,7 +376,13 @@ class OpenAICompatibleProvider(BrainProvider):
 
         yield StreamEvent(kind="done", truncated=truncated)
 
-    def complete(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResult:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
         caps = self.capabilities()
         if tools and not caps.can("tools"):
             tools = None
@@ -385,7 +391,7 @@ class OpenAICompatibleProvider(BrainProvider):
             response = requests.post(
                 f"{self._base_url}/chat/completions",
                 headers=self._auth_headers(),
-                json=self._payload(messages, tools, stream=False),
+                json=self._payload(messages, tools, stream=False, max_tokens=max_tokens),
                 timeout=self._timeout,
             )
         except Exception as exc:

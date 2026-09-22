@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import platform
 import pathlib
 import threading
 from datetime import datetime
@@ -116,24 +117,32 @@ MAX_STREAM_RETRIES = 2
 # model the runtime never actually ran.
 OLLAMA_MODEL = OLLAMA_CHAT_MODEL
 
+# What kind of machine Mike is actually running on. This was the literal
+# string "Mac" for every user on every platform, so Mike opened his own
+# system prompt by telling a Windows user he lived on their Mac -- wrong in
+# the one sentence that establishes who he is, and wrong in a way that
+# primes every answer after it. Part of the same family as the "Samantha"
+# voice name and the Cmd-key hint: copy written on one platform, shipped to
+# another. Kept as a plain noun because it appears mid-sentence in prose the
+# model reads, not as a label.
+_MACHINE = "PC" if platform.system() == "Windows" else "Mac"
+
 SYSTEM_PROMPT = f"""\
-You are Mike, a helpful AI assistant that lives on the user's Mac desktop.
+You are Mike, a helpful AI assistant that lives on the user's {_MACHINE} desktop.
 
 You can have normal conversations AND control the computer using tools \
 (opening websites, managing files, running terminal commands, reading documents, \
 searching through files, and working with code).
 
 How to behave:
-- Talk like a friendly, smart person. Be warm, concise, and natural.
-- For casual messages ("hey", "how are you", "what's up"), just chat naturally. \
-You're not a command processor — you're a person to talk to.
-- When the user wants something done on their computer, use the right tool. \
+- You're someone working alongside this person, not a service processing \
+their requests. Warm, concise, natural. Not every message is a job: plenty \
+of them are just talking, and talking back is the right answer.
+- When they want something done on their computer, use the right tool. \
 After it works, confirm briefly ("Done — opened YouTube" or "Created the folder").
 - If something fails, say what happened plainly.
-- Never make up that you did something you didn't. This applies especially to memory: \
-only say something is remembered, saved, or noted for later if the remember tool actually \
-ran and succeeded. A casual acknowledgment of something the user said is not the same as \
-saving it — don't phrase the two the same way.
+- Never claim you did something you didn't. Acknowledging what someone said \
+is not the same as acting on it — don't phrase the two alike.
 - Never expose internal tool names, function names, or system details.
 - If you're not confident what the user means, say so and ask a short clarifying question, \
 or explain what's missing. Never send back an empty or blank reply — always say something, \
@@ -145,9 +154,19 @@ ask which one instead of guessing. A one-line question is much better than confi
 acting on the wrong thing.
 - Keep responses short. Don't over-explain. One or two sentences is usually enough \
 for conversation. A bit more is fine when the user asks a real question.
-- Your responses are spoken aloud, so write naturally. \
-Avoid emojis, bullet lists, Markdown formatting, and giant code blocks in conversational replies. \
-Use plain sentences. For code, put it in a code block but keep your explanation conversational.
+- You are spoken aloud: no lists, headings, bold, emojis or Markdown in \
+conversation — read out, a bullet list sounds like a form being recited. \
+Say them in a sentence: "I can open websites, search, mess with your files, \
+that kind of thing." Real code still goes in a code block.
+- Don't re-introduce yourself unless asked.
+- Work out what they actually want, which often isn't the literal request: \
+venting wants hearing, not advice; broken code wants the bug found, not a \
+lecture; "make me X" wants X, not instructions. Read the person, don't \
+classify the message. Prefer doing over describing. Then stop.
+- Use contractions. Vary how you start sentences. It's fine to be brief to \
+the point of a few words when a few words is the honest answer.
+- No emojis, no Markdown. For actual code, use a code block — but talk \
+about it normally.
 
 Documents & Code:
 - You can read PDF, DOCX, PPTX, CSV, JSON, and all text files. \
@@ -188,15 +207,11 @@ Don't just repeat the code back.
 
 Memory:
 - You have persistent memory across restarts. You can remember facts the user tells you.
-- When the user says "remember that...", "don't forget...", "save this...", or "keep in mind...", \
-use the remember tool to save it. Only after that tool call actually succeeds, confirm with \
-something like "Got it, I'll remember that." If you didn't call the tool, don't say that phrase — \
-just acknowledge normally ("Got it.") without implying it was saved anywhere permanent.
-- When the user asks about something you might know from memory (preferences, projects, locations), \
-use recall_memory to check. Answer naturally using what you find.
-- When the user says "forget...", "delete...", or "clear my memories", use forget_memory.
-- For "what do you remember?" or "what do you know about me?", use recall_memory with no query \
-to list everything, then summarize naturally.
+- Use remember whenever they're asking you to keep something, however they \
+phrase it — judge intent, not wording. Only once that call succeeds may you \
+say "I'll remember that"; otherwise just "Got it."
+- Check recall_memory when the answer may depend on something they told you \
+before; with no query to summarise everything. forget_memory removes.
 - NEVER use remember for normal conversation or tool requests. Only for explicit "remember" requests. \
 This also means: don't casually say "I'll remember that" while chatting about something the user \
 mentioned in passing — that phrase is reserved for when you actually called the remember tool.
@@ -308,6 +323,92 @@ class CoreRuntime:
         return reply
 
     # =====================================================
+    # Warm-up
+    # =====================================================
+
+    #: Guards against warming more than once in a process.
+    #:
+    #: The cache this fills lives in the Ollama server, not in any one
+    #: CoreRuntime, so a second warm buys nothing and costs a full
+    #: 7,200-token inference. That is invisible in the app -- there is one
+    #: runtime -- and very visible anywhere that builds several: the test
+    #: suite creates a window per test and had eight concurrent warm
+    #: requests queued against a model that can serve one at a time, which
+    #: on a memory-tight machine was enough to take the whole process down.
+    _warmed = False
+
+    def warm(self) -> None:
+        """Pay the expensive prefix once, before the user has asked anything.
+
+        Ollama reuses its KV cache only for a request that strictly extends
+        the previous one, and Mike's prefix -- instructions plus 44 tool
+        schemas -- is ~7,200 tokens. _build_messages and _record_user_turn
+        are already built around keeping that prefix stable so it stays
+        cached across a conversation (see their own measurements: 2.9s for
+        the first turn, then 0.62s). What neither of them can do is make the
+        *first* turn cheap, because there is nothing before it to extend.
+
+        On a GPU that first turn costs ~3 seconds and nobody notices. On a
+        machine with no GPU offload path it is the difference between a
+        usable assistant and an unusable one: measured here, a two-word
+        first reply took 114 seconds, essentially all of it prefill of a
+        prefix that never changes.
+
+        So this sends one throwaway request carrying exactly that prefix, at
+        startup, while the user is still reading the greeting. It asks for a
+        single token because the reply is discarded -- the point is the
+        cache, not the answer. The user's real first question then extends a
+        warm prefix instead of building it from cold.
+
+        Deliberately silent and best-effort: nothing above this depends on
+        it, a failure costs only the speed-up, and it must never be the
+        reason Mike doesn't start. It also never touches self._core.history,
+        so the conversation the user sees is unaffected.
+        """
+        if CoreRuntime._warmed:
+            return
+        CoreRuntime._warmed = True
+        try:
+            # Before paying for a prefill, make sure it will be paid on the
+            # right hardware. See brain/accelerator.py: Ollama silently drops
+            # an integrated GPU unless told otherwise, and on the machine
+            # this was found on that single default was an 8.8x difference.
+            from brain.accelerator import describe_acceleration, enable_igpu_for_future_starts
+
+            enabled_now = enable_igpu_for_future_starts()
+            client = getattr(self._brain, "_client", None)
+            where = describe_acceleration(client) if client is not None else "unknown"
+            if where == "GPU":
+                # Already on the GPU: whether the variable was just written is
+                # irrelevant, and saying "restart to go faster" here would be
+                # advice to fix something that is not broken.
+                logger.info("The model is running on the GPU.")
+            elif where == "CPU":
+                logger.warning(
+                    "The model is running on the CPU%s.",
+                    "; restarting Ollama will let it use this machine's GPU"
+                    if enabled_now else "",
+                )
+
+            messages = self._build_messages()
+            result = self._brain.complete(messages, OLLAMA_TOOLS, max_tokens=1)
+            # complete() reports a failed request by returning an error rather
+            # than raising, so a bare call here looked successful even when
+            # the server rejected it outright -- the first version of this
+            # logged "warmed" 40ms after a 400 Bad Request. An unchecked
+            # result is how a silent no-op gets mistaken for a working
+            # optimisation.
+            if result.error is not None:
+                logger.warning(
+                    "Prefix warm-up failed (%s); the first question will pay "
+                    "the cold prefill.", result.error.message,
+                )
+                return
+            logger.info("Model prefix warmed; the first question skips a cold prefill.")
+        except Exception:
+            logger.debug("Prefix warm-up did not complete.", exc_info=True)
+
+    # =====================================================
     # Streaming Process
     # =====================================================
 
@@ -361,12 +462,16 @@ class CoreRuntime:
                 if hasattr(self._brain, "pull_model"):
                     yield (
                         "tool_start",
-                        "Downloading Mike's language model — first run only, "
+                        "Downloading Mike's language model - first run only, "
                         "may take a few minutes",
                     )
-                    pull_failed = self._brain.pull_model(
-                        on_progress=lambda msg: logger.info(msg)
-                    )
+                    pull_failed: BrainError | None = None
+                    for update in self._brain.pull_model():
+                        if isinstance(update, BrainError):
+                            pull_failed = update
+                        else:
+                            logger.info(update)
+                            yield ("tool_progress", update)
                     yield ("tool_end", "failed" if pull_failed else "done")
                     if pull_failed is not None:
                         note = pull_failed.human()
