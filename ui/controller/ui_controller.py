@@ -353,6 +353,15 @@ class UIController(QObject):
             if self._floating and self._floating.isVisible():
                 self._floating.show_tool_done(label or status[:40], success=not is_error)
 
+        # The dead gap. A finished step settles to a static tick, and the
+        # model then takes seconds-to-a-minute composing what it will say
+        # about it -- during which nothing on screen moved at all. Watching a
+        # motionless "done" row for a minute reads as a hang, which is the
+        # exact thing the thinking animation exists to prevent; it was just
+        # never brought back after the first tool call took it away.
+        # _on_token hides it again the instant the reply starts arriving.
+        self._page.show_thinking()
+
     def _finalize_retired_activity(self, row_id: int, status: str) -> None:
         """
         Same bookkeeping as _on_tool_end, for a tool_start that already fired

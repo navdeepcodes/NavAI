@@ -198,16 +198,31 @@ class _Turn(QLabel):
 #: somebody is waiting, and a joke wears out on the fourth reading.
 THINKING_WORDS = (
     "Thinking",
-    "Having a think",
-    "Working it out",
-    "Turning it over",
-    "Piecing it together",
+    "Pondering",
+    "Percolating",
+    "Triangulating",
+    "Noodling",
+    "Untangling",
+    "Ruminating",
     "Mulling it over",
-    "Chewing on it",
+    "Piecing it together",
     "Following the thread",
+    "Turning it over",
+    "Chewing on it",
+    "Puzzling it out",
+    "Marinating",
+    "Cogitating",
+    "Wrangling",
+    "Tinkering",
+    "Simmering",
+    # The tail: held back for waits long enough that novelty stops helping
+    # and reassurance starts. Kept last on purpose -- see _next_word.
     "Getting there",
     "Nearly there",
 )
+
+#: How many of the above are the reassuring tail rather than the playful body.
+_REASSURING_TAIL = 2
 
 
 class _Thinking(QWidget):
@@ -262,13 +277,21 @@ class _Thinking(QWidget):
         self.update()
 
     def _next_word(self) -> None:
+        body = len(THINKING_WORDS) - _REASSURING_TAIL
         if self._elapsed >= self._LONG_WAIT_MS:
             # Past the point where novelty stops helping: stay on the
             # reassuring tail rather than implying fresh activity.
-            tail = len(THINKING_WORDS) - 2
-            self._index = tail + (self._index + 1) % 2 if self._index >= tail else tail
+            self._index = body + ((self._index + 1) % _REASSURING_TAIL)
         else:
-            self._index = (self._index + 1) % (len(THINKING_WORDS) - 2)
+            # Shuffled rather than sequential, so two waits in a row don't
+            # read as the same canned loop -- but never repeating the word
+            # currently on screen, which would look like it had frozen.
+            import random
+
+            choice = self._index
+            while choice == self._index and body > 1:
+                choice = random.randrange(body)
+            self._index = choice
         self.update()
 
     def paintEvent(self, _e) -> None:
@@ -574,11 +597,10 @@ class _Confirm(QFrame):
 #: they answer "what is this?" far better than a paragraph of prose does.
 STARTERS = (
     ("Open YouTube", "open youtube.com"),
-    ("What's on my screen?", "what's on my screen right now?"),
-    ("Write me a script", "write a python script that renames every .txt "
-                          "file in a folder to add today's date, and save it "
-                          "to my desktop"),
-    ("Remember something", "remember that I'm learning Python this term"),
+    ("Look at my screen", "what's on my screen right now?"),
+    ("Write me something", "write me a short study plan for this week and "
+                           "save it on my desktop"),
+    ("Remember this", "remember that I'm learning Python this term"),
 )
 
 
@@ -601,8 +623,17 @@ class _Starters(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         row = QVBoxLayout(self)
-        row.setContentsMargins(0, 10, 0, 2)
+        row.setContentsMargins(0, 12, 0, 2)
         row.setSpacing(7)
+
+        # Without this the chips read as buttons whose purpose is unclear.
+        # Naming them as an invitation is what turns "what is this app?" into
+        # a first message being sent.
+        prompt = QLabel("Try one —")
+        prompt.setFont(style.label(10))
+        prompt.setStyleSheet(
+            f"color:{style.INK_MUTE};background:transparent;padding-bottom:2px;")
+        row.addWidget(prompt)
 
         line = QHBoxLayout()
         line.setSpacing(7)
@@ -969,14 +1000,35 @@ class MikePanel(QWidget):
 
     # ── resting composition ───────────────────────────────
     def _intro(self) -> str:
+        """The first thing anyone ever reads. Four questions, in order.
+
+        Rewritten after reading it as someone who knows nothing: the old
+        version was a four-line paragraph that answered "what can you do"
+        with "read and write files, run commands" — mechanisms, and
+        developer ones. Someone who has just installed this does not want a
+        command runner, and would not know they wanted one.
+
+        So: who he is, then what that means in things they'd actually ask
+        for, then how to reach him. Short enough to be read rather than
+        skimmed past, because the starter chips underneath are doing the
+        real explaining.
+        """
         return (
-            f"I'm Mike. I live on {_this_machine()} — not in a browser tab — and I "
-            "stay here in the background. I can read and write files, run commands, "
-            "use your browser and see your screen when you ask; anything that "
-            "changes something, I check with you first. Nothing leaves this "
-            "machine.\n\n"
-            f"Ask me anything below, or press {_hotkey_hint()} to talk from anywhere."
+            f"I'm Mike. I live on {_this_machine()} — and unlike a chat "
+            "window, I can actually use it.\n\n"
+            "Open things, find files, write something, fix code that won't "
+            "work. I check before changing anything, and nothing leaves "
+            "this machine."
         )
+
+    def _how_to_reach(self) -> str:
+        """Said separately and quietly, because it's reference, not welcome.
+
+        Three ways in, and the old intro mentioned two -- typing and the
+        hotkey -- while the mic sat in the input bar unexplained. "Hold to
+        talk" is not obvious if you have never seen it.
+        """
+        return f"Type below · hold the mic to talk · {_hotkey_hint()} anywhere"
 
     def _show_resting(self) -> None:
         from config import preferences
@@ -993,6 +1045,18 @@ class MikePanel(QWidget):
             self._starters = _Starters()
             self._starters.picked.connect(self._on_starter)
             self._insert(self._starters)
+
+            reach = QLabel(self._how_to_reach())
+            reach.setFont(style.label(10))
+            # Wraps rather than running under the scrollbar: without this the
+            # line was clipped mid-word on first run, which is a poor first
+            # impression from the one line that explains how to talk to him.
+            reach.setWordWrap(True)
+            reach.setStyleSheet(
+                f"color:{style.INK_MUTE};background:transparent;padding-top:4px;")
+            self._reach = reach
+            self._insert(reach)
+
             preferences.set_value("onboarding_complete", True)
 
     def _on_starter(self, prompt: str) -> None:
@@ -1000,12 +1064,13 @@ class MikePanel(QWidget):
         self.conversation.suggestion_clicked.emit(prompt)
 
     def _drop_starters(self) -> None:
-        starters = getattr(self, "_starters", None)
-        if starters is not None:
-            starters.hide()
-            self._stage.removeWidget(starters)
-            starters.deleteLater()
-            self._starters = None
+        for name in ("_starters", "_reach"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.hide()
+                self._stage.removeWidget(widget)
+                widget.deleteLater()
+                setattr(self, name, None)
 
     def _greeting(self) -> str:
         from datetime import datetime

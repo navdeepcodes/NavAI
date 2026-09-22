@@ -187,7 +187,11 @@ VISION_RESOLUTION = 640
 
 # Prose description, for "what's on my screen" — the answer is read by a
 # person, so it can afford to be longer.
-VISION_NUM_PREDICT = 96
+# 64, not 96. A screen description is read aloud and glanced at, not
+# studied, and latency tracks output tokens almost exactly -- the last third
+# of a 96-token description was costing real seconds on a first-run starter
+# ("Look at my screen") where the wait is the whole impression.
+VISION_NUM_PREDICT = 64
 
 # UI perception for computer control. Short on purpose: the answer feeds the
 # next action, not a reader.

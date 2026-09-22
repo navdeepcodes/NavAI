@@ -403,10 +403,25 @@ class OllamaProvider(BrainProvider):
                 messages=[{"role": "user", "content": prompt, "images": [image_path]}],
                 think=False,
                 keep_alive=self._keep_alive,
-                # Vision latency is almost entirely generation: measured at a
-                # flat ~16 tok/s, so the caller's budget is the one setting
-                # that decides whether a look at the screen costs 3s or 10s.
-                options={"temperature": 0.1, "num_predict": int(max_tokens or 96)},
+                # num_ctx must match what the chat path already loaded.
+                #
+                # This used to be omitted, and omitting it is not "use the
+                # default" -- Ollama treats a different context size as a
+                # different runner and reloads the whole multi-gigabyte model
+                # to serve the request, then reloads it back for the next
+                # chat turn. Measured: "what's on my screen" took 65 seconds,
+                # almost none of it generation. Passing the same num_ctx the
+                # provider is already configured with means the resident
+                # model answers directly.
+                #
+                # Vision generation itself is the remaining cost, and it
+                # tracks output tokens almost exactly, so the caller's budget
+                # is the other lever.
+                options={
+                    "temperature": 0.1,
+                    "num_ctx": self._num_ctx,
+                    "num_predict": int(max_tokens or 96),
+                },
             )
             return (response.message.content or ""), None
         except Exception as exc:
