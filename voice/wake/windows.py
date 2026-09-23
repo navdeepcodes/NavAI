@@ -103,6 +103,12 @@ class WindowsWakeWord(WakeWordBackend):
     def stop(self) -> None:
         self._stop.set()
         self._close_stream()
+        # Let the worker finish its current window and exit, so a rapid
+        # restart doesn't stack detached transcription threads. Bounded, since
+        # the loop only ever blocks for one short transcription.
+        worker, self._worker = self._worker, None
+        if worker is not None and worker.is_alive() and worker is not threading.current_thread():
+            worker.join(timeout=2.0)
         self._active = False
         self._suppressed = False
         logger.info("Wake word detector stopped")

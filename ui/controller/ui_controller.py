@@ -52,6 +52,13 @@ class UIController(QObject):
 
         self._wake = WakeWordDetector(on_wake=self._on_wake_word)
 
+        # Lets the speech-to-text prewarm's initial wait be cut short on
+        # shutdown, so a window torn down within a few seconds of opening
+        # doesn't leave a thread sleeping — which a rapid open/close cycle
+        # otherwise accumulates one at a time.
+        self._prewarm_stop = threading.Event()
+        self._prewarm_thread: threading.Thread | None = None
+
         self._connect()
 
     def _connect(self) -> None:
@@ -127,14 +134,18 @@ class UIController(QObject):
         # someone who has turned voice off.
         if preferences.get("voice_enabled", True) or preferences.get("wake_word_enabled", True):
             def _prewarm_stt() -> None:
-                import time as _t
-                _t.sleep(3)
+                # Interruptible wait: if the window is torn down first, this
+                # returns immediately instead of holding a sleeping thread.
+                if self._prewarm_stop.wait(3):
+                    return
                 try:
                     from voice.recognizer import get_recognizer
                     get_recognizer().prewarm()
                 except Exception:
                     logger.exception("Speech-to-text prewarm failed.")
-            threading.Thread(target=_prewarm_stt, name="stt-prewarm", daemon=True).start()
+            self._prewarm_thread = threading.Thread(
+                target=_prewarm_stt, name="stt-prewarm", daemon=True)
+            self._prewarm_thread.start()
 
     def _on_floating_submit(self, text: str) -> None:
         self._floating.clear_response()
@@ -780,6 +791,12 @@ class UIController(QObject):
 
         self._speaker.stop()
         self._wake.stop()
+
+        # Cut the speech-to-text prewarm's wait short and let the thread go.
+        self._prewarm_stop.set()
+        if self._prewarm_thread is not None and self._prewarm_thread.is_alive():
+            self._prewarm_thread.join(timeout=0.5)
+        self._prewarm_thread = None
 
         if self._worker is not None:
             self._worker.cancel()

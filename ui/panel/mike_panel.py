@@ -20,7 +20,9 @@ from html import escape
 from PySide6.QtCore import (
     Qt, QEasingCurve, QObject, QPointF, QPropertyAnimation, QTimer, Signal,
 )
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QKeyEvent
+from PySide6.QtGui import (
+    QBrush, QColor, QLinearGradient, QPainter, QPainterPath, QPen, QKeyEvent,
+)
 from PySide6.QtWidgets import (
     QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QScrollArea, QVBoxLayout, QWidget,
@@ -129,6 +131,70 @@ class _InputBar(QFrame):
         self._hint.setStyleSheet(f"color:{style.INK_FAINT};background:transparent;")
         row.addWidget(self._hint, 0, Qt.AlignVCenter)
 
+        # A breathing line of light along the bottom edge — the panel's one
+        # calm, always-there sign of life. It rests as a slow, faint breath;
+        # brightens and quickens while listening (you're being heard); and
+        # flows left-to-right while Mike is answering (something is arriving).
+        # One element carries both sides of the exchange so input and output
+        # feel like the same living surface rather than two states bolted on.
+        self._state = "idle"        # idle | listening | responding
+        self._t = 0.0
+        self._glow = QTimer(self)
+        self._glow.timeout.connect(self._on_glow_frame)
+        self._glow.start(16)        # ~60fps
+
+    def _on_glow_frame(self) -> None:
+        self._t += 0.016
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        # Let the stylesheet paint the rounded inset surface first, then lay the
+        # breathing line over it.
+        super().paintEvent(event)
+        import math
+
+        w = self.width()
+        y = self.height() - 3.0
+        accent = QColor(style.accent())
+
+        if self._state == "responding":
+            # A soft highlight travels the width — a current, not a pulse.
+            span = max(1.0, float(w - 32))
+            head = (self._t * 0.55) % 1.5      # 0..1.5, the tail is a brief rest
+            intensity = 0.7
+        else:
+            head = None
+            # A slow breath at rest; a fuller, quicker one while listening.
+            if self._state == "listening":
+                intensity = 0.30 + 0.45 * (0.5 + 0.5 * math.sin(self._t * 3.2))
+            else:
+                intensity = 0.06 + 0.10 * (0.5 + 0.5 * math.sin(self._t * 1.3))
+
+        grad = QLinearGradient(16.0, 0.0, float(w - 16), 0.0)
+        edge = QColor(accent); edge.setAlphaF(0.0)
+        if head is not None:
+            centre = min(max(head, 0.0), 1.0)
+            lit = QColor(accent); lit.setAlphaF(intensity if head <= 1.0 else 0.0)
+            grad.setColorAt(0.0, edge)
+            lo = max(0.001, centre - 0.22)
+            hi = min(0.999, centre + 0.22)
+            mid = min(max(centre, lo + 0.001), hi - 0.001)
+            grad.setColorAt(lo, edge)
+            grad.setColorAt(mid, lit)
+            grad.setColorAt(hi, edge)
+            grad.setColorAt(1.0, edge)
+        else:
+            mid = QColor(accent); mid.setAlphaF(intensity)
+            grad.setColorAt(0.0, edge)
+            grad.setColorAt(0.5, mid)
+            grad.setColorAt(1.0, edge)
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        pen = QPen(QBrush(grad), 1.6)
+        p.setPen(pen)
+        p.drawLine(QPointF(16.0, y), QPointF(float(w - 16), y))
+
     def _emit(self) -> None:
         text = self._field.text().strip()
         if text:
@@ -145,6 +211,14 @@ class _InputBar(QFrame):
 
     def set_listening(self, on: bool) -> None:
         self._field.setPlaceholderText("Listening…" if on else "Ask Mike, or hold to talk")
+        self._state = "listening" if on else "idle"
+
+    def set_responding(self, on: bool) -> None:
+        """Mike is answering: the line flows rather than breathes."""
+        if on:
+            self._state = "responding"
+        elif self._state == "responding":
+            self._state = "idle"
 
 
 # ══ streamed reply ═════════════════════════════════════════
@@ -244,20 +318,19 @@ class _Thinking(QWidget):
     """
 
     _WORD_MS = 2800
-    _TICK_MS = 440
+    _FRAME_MS = 16          # ~60fps, so nothing about this reads as stepping
     _LONG_WAIT_MS = 11_000
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._index = 0
-        self._dots = 0
-        self._phase = 0.0
+        self._t = 0.0          # seconds, continuous — every motion derives from this
         self._elapsed = 0
         self.setFixedHeight(30)
 
-        self._tick = QTimer(self)
-        self._tick.timeout.connect(self._on_tick)
-        self._tick.start(self._TICK_MS)
+        self._frame = QTimer(self)
+        self._frame.timeout.connect(self._on_frame)
+        self._frame.start(self._FRAME_MS)
 
         self._rotate = QTimer(self)
         self._rotate.timeout.connect(self._next_word)
@@ -267,13 +340,12 @@ class _Thinking(QWidget):
         """Animations hold a timer against a widget the panel is about to
         delete; stopping them explicitly keeps a timeout from firing into a
         half-torn-down widget."""
-        self._tick.stop()
+        self._frame.stop()
         self._rotate.stop()
 
-    def _on_tick(self) -> None:
-        self._dots = (self._dots + 1) % 4
-        self._phase += 0.34
-        self._elapsed += self._TICK_MS
+    def _on_frame(self) -> None:
+        self._t += self._FRAME_MS / 1000.0
+        self._elapsed += self._FRAME_MS
         self.update()
 
     def _next_word(self) -> None:
@@ -292,7 +364,8 @@ class _Thinking(QWidget):
             while choice == self._index and body > 1:
                 choice = random.randrange(body)
             self._index = choice
-        self.update()
+        # word swap is not a paint trigger on its own -- the frame timer already
+        # repaints ~60x/s, so there is nothing to force here.
 
     def paintEvent(self, _e) -> None:
         import math
@@ -300,23 +373,65 @@ class _Thinking(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
 
-        # The breathing accent dot, matching the ledger's running mark.
-        breath = 0.45 + 0.55 * (0.5 + 0.5 * math.sin(self._phase))
-        dot = style.qaccent()
-        dot.setAlphaF(breath)
-        p.setBrush(dot)
-        p.setPen(Qt.NoPen)
-        radius = 3.0
-        p.drawEllipse(QPointF(6.0, self.height() / 2), radius, radius)
+        cx, cy = 7.0, self.height() / 2.0
+        accent = style.qaccent()
 
-        p.setFont(style.voice(15))
-        p.setPen(QColor(style.INK_MUTE))
-        text = THINKING_WORDS[self._index] + "." * self._dots
-        p.drawText(
-            int(6 + radius * 2 + 10), 0,
-            self.width(), self.height(),
-            int(Qt.AlignVCenter | Qt.AlignLeft), text,
-        )
+        # A soft sonar pulse: a ring that expands and fades on a loop, so the
+        # presence mark feels like it's emitting thought rather than just
+        # sitting there blinking. Smooth because it's driven off continuous t.
+        period = 2.4
+        ph = (self._t % period) / period                 # 0..1
+        ring = QColor(accent)
+        ring.setAlphaF(max(0.0, 0.30 * (1.0 - ph)))
+        pen = QPen(ring)
+        pen.setWidthF(1.4)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        rr = 3.0 + ph * 7.0
+        p.drawEllipse(QPointF(cx, cy), rr, rr)
+
+        # The breathing core dot.
+        breath = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(self._t * 2.1))
+        core = QColor(accent)
+        core.setAlphaF(breath)
+        p.setPen(Qt.NoPen)
+        p.setBrush(core)
+        p.drawEllipse(QPointF(cx, cy), 3.2, 3.2)
+
+        # The word, lit by a highlight that sweeps across it left-to-right --
+        # muted ink at rest, a brief brightening as the light passes, then
+        # muted again, with a beat of pause before it comes round. It reads as
+        # a thought moving through, not a spinner, and stays smooth because the
+        # band's position is a continuous function of t.
+        word = THINKING_WORDS[self._index]
+        font = style.voice(15)
+        p.setFont(font)
+        fm = p.fontMetrics()
+        tx = cx + 3.2 + 12.0
+        tw = max(1.0, float(fm.horizontalAdvance(word)))
+        baseline = cy + (fm.ascent() - fm.descent()) / 2.0
+
+        base = QColor(style.INK_MUTE)
+        bright = QColor(style.INK)
+        sweep = (self._t * 0.55) % 1.7          # 0..1.7: the >1 tail is the pause
+        grad = QLinearGradient(tx, 0.0, tx + tw, 0.0)
+        grad.setColorAt(0.0, base)
+        if 0.0 <= sweep <= 1.0:
+            half = 0.16
+            lo = max(0.001, sweep - half)
+            hi = min(0.999, sweep + half)
+            mid = min(max(sweep, lo + 0.001), hi - 0.001)
+            grad.setColorAt(lo, base)
+            grad.setColorAt(mid, bright)
+            grad.setColorAt(hi, base)
+        grad.setColorAt(1.0, base)
+
+        # Filled as a path, not drawn with a pen: text drawn through a gradient
+        # pen is silently flat on some Qt builds, but a filled glyph path takes
+        # the gradient reliably.
+        path = QPainterPath()
+        path.addText(QPointF(tx, baseline), font, word)
+        p.fillPath(path, QBrush(grad))
 
 
 def _animate_entry(widget: QWidget) -> None:
@@ -1206,6 +1321,11 @@ class MikePanel(QWidget):
         self._state_lbl.setText(STATE_WORD.get(state, "").upper())
         self._stop.setVisible(state in ("thinking", "working", "responding", "speaking"))
         self.input.set_listening(state == "listening")
+        # The input's breathing line flows while Mike is producing anything —
+        # thinking, working a tool, or speaking — so output has its own calm
+        # sign of life, the same element that breathes for input.
+        self.input.set_responding(
+            state in ("thinking", "working", "responding", "speaking"))
         self.state_changed.emit(state)
 
     def state(self) -> str:

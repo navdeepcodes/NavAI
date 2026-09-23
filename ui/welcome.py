@@ -187,7 +187,11 @@ class WelcomeWindow(QWidget):
         self.setWindowTitle("Welcome to Mike")
         self.setFixedSize(self.WIDTH, self.HEIGHT)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
+        # Qt.Tool keeps the tour out of the taskbar and the alt-tab list, the
+        # same as the main panel — it's a summoned overlay, not a window you
+        # switch to, and it should never leave a stray entry in the dock.
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self._build()
         self._render()
 

@@ -19,19 +19,111 @@ import platform
 
 from PySide6.QtGui import QColor, QFont
 
-# ── Ground: the site's own "paper" system -- huddlecode.com/styles.css
-#    :root { --paper / --paper-dim / --paper-dim-2 / --mist }, read directly
-#    rather than re-guessed here.
-GROUND = "#FAF9F7"          # the panel body (--paper)
-GROUND_RAISED = "#F1EFEB"   # inset surfaces (input, confirmation) (--paper-dim)
-GROUND_SUNK = "#EBE9E4"     # the deepest recesses (--paper-dim-2)
-HAIRLINE = "#DEDCD6"        # the only borders that exist, and only where earned (--mist)
+# ── Two grounds, one language. Light is the site's own "paper" system
+#    (huddlecode.com/styles.css --paper/--mist/--ink), read directly. Dark is
+#    its inverse in the same warm key — a dim-lit room, not cold black, so the
+#    product still reads as paper-and-ink after dark rather than as a different
+#    app. The module-level tokens below are set from whichever is active; every
+#    widget reads style.GROUND / style.INK etc. at paint or build time, so
+#    apply_theme() before the UI is built is all it takes to dress the whole
+#    surface either way.
+_LIGHT = {
+    "GROUND": "#FAF9F7", "GROUND_RAISED": "#F1EFEB", "GROUND_SUNK": "#EBE9E4",
+    "HAIRLINE": "#DEDCD6",
+    "INK": "#0D0D0C", "INK_SOFT": "#55534F", "INK_MUTE": "#79766F",
+    "INK_FAINT": "#CECBC3",
+}
+_DARK = {
+    "GROUND": "#1A1917", "GROUND_RAISED": "#232220", "GROUND_SUNK": "#131210",
+    "HAIRLINE": "#322F2A",
+    "INK": "#F3F1EC", "INK_SOFT": "#BEB9B0", "INK_MUTE": "#8C877E",
+    "INK_FAINT": "#46433D",
+}
 
-# ── Ink: the site's own --ink/--graphite/--graphite-2/--mist-2.
-INK = "#0D0D0C"             # what Mike says; what you type (--ink)
-INK_SOFT = "#55534F"        # secondary text (--graphite)
-INK_MUTE = "#79766F"        # labels, timestamps, the quiet layer (--graphite-2)
-INK_FAINT = "#CECBC3"       # the faintest structural marks (--mist-2)
+# Set at import to light, replaced by apply_theme() at startup. Declared here so
+# every `style.GROUND` reference has something to bind to before apply runs.
+GROUND = _LIGHT["GROUND"]
+GROUND_RAISED = _LIGHT["GROUND_RAISED"]
+GROUND_SUNK = _LIGHT["GROUND_SUNK"]
+HAIRLINE = _LIGHT["HAIRLINE"]
+INK = _LIGHT["INK"]
+INK_SOFT = _LIGHT["INK_SOFT"]
+INK_MUTE = _LIGHT["INK_MUTE"]
+INK_FAINT = _LIGHT["INK_FAINT"]
+
+_ACTIVE_THEME = "light"
+
+
+def _os_theme() -> str:
+    """'dark' or 'light' from the operating system, best-effort.
+
+    Qt 6.5+ exposes the OS setting directly; older Qt (or a headless read)
+    falls back to the Windows registry, then to light. Never raises — a theme
+    guess must not be able to stop the app from starting.
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtCore import Qt as _Qt
+
+        hints = QGuiApplication.styleHints()
+        scheme = getattr(hints, "colorScheme", None)
+        if scheme is not None:
+            value = scheme()
+            if value == _Qt.ColorScheme.Dark:
+                return "dark"
+            if value == _Qt.ColorScheme.Light:
+                return "light"
+    except Exception:
+        pass
+    if platform.system() == "Windows":
+        try:
+            import winreg
+
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            winreg.CloseKey(key)
+            return "light" if value else "dark"
+        except Exception:
+            pass
+    return "light"
+
+
+def resolve_theme() -> str:
+    """The theme to use: the user's explicit choice, or else the OS setting."""
+    try:
+        from config import preferences
+
+        pref = str(preferences.get("theme", "system") or "system").strip().lower()
+        if pref in ("light", "dark"):
+            return pref
+    except Exception:
+        pass
+    return _os_theme()
+
+
+def apply_theme(name: str | None = None) -> str:
+    """Dress the whole surface light or dark. Returns the theme applied.
+
+    Reassigns the module-level tokens, so any widget built or repainted after
+    this reads the active palette. Call it once before the UI is built, and
+    again (followed by a repaint) if the OS theme changes while Mike is open.
+    """
+    global _ACTIVE_THEME
+    name = (name or resolve_theme())
+    palette = _DARK if name == "dark" else _LIGHT
+    globals().update(palette)
+    _ACTIVE_THEME = name
+    return name
+
+
+def active_theme() -> str:
+    return _ACTIVE_THEME
+
+
+def is_dark() -> bool:
+    return _ACTIVE_THEME == "dark"
 
 # ── The accent: warm, living, personal. Read from preferences everywhere so
 #    a user's chosen colour flows through the whole surface from one setting.

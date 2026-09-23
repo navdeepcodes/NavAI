@@ -502,6 +502,13 @@ def run():
 
     app.setApplicationName("Mike")
 
+    # Dress the surface light or dark before a single widget is built, so every
+    # panel widget reads the right palette as it constructs. Follows the OS by
+    # default (or the user's explicit choice); re-applied live if the OS theme
+    # changes while Mike is open.
+    from ui.panel import style
+    style.apply_theme()
+
     app.setWindowIcon(_app_icon())
 
     app.setStyleSheet(GLOBAL_STYLESHEET)

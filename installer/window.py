@@ -60,7 +60,11 @@ class InstallerWindow(QWidget):
         self.setWindowTitle("Install Mike")
         self.setFixedSize(520, 330)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setWindowFlags(Qt.FramelessWindowHint)
+        # Out of the taskbar and alt-tab: the installer is a one-off card, not
+        # an app you keep in the dock. StaysOnTop so it isn't lost behind a
+        # browser while it's the only thing the user needs to act on.
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
         self._worker: _Worker | None = None
         self._build()
 
