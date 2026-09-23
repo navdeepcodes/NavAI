@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 import time
 
+from brain.reply_style import humanize_reply
 from logs.logger import logger
 from voice import diagnostics
 from voice.providers import VoiceProvider, get_provider, native_provider_class
@@ -356,7 +357,10 @@ def _lists_to_prose(text: str) -> str:
 
 def clean_for_speech(text: str) -> str:
     """Transform UI text into natural spoken text."""
-    t = text.strip()
+    # First enforce the persona the prompt asks for but the model doesn't
+    # always deliver — drop the "or should I distract you?" support-menu and
+    # any stray emoji — so Mike says the human version, not just the tidy one.
+    t = humanize_reply(text).strip()
 
     # Remove code blocks entirely, replace with spoken note
     has_code = bool(re.search(r'```[\s\S]*?```', t))

@@ -390,6 +390,18 @@ class UIController(QObject):
 
         self._page.hide_thinking()
 
+        # The reply is complete, so the shape-level tells can be seen and
+        # removed: the "or should I distract you?" support-menu and stray
+        # emoji the model adds against instructions. Rewrite the bubble only
+        # when this actually changes something, so an ordinary reply — which
+        # is almost all of them — never flickers. Voice is cleaned separately,
+        # in clean_for_speech, since it speaks sentence by sentence.
+        from brain.reply_style import humanize_reply
+        humanized = humanize_reply(self._response_text)
+        if self._stream_bubble is not None and humanized != self._response_text:
+            self._stream_bubble.set_text(humanized)
+            self._response_text = humanized
+
         remainder = self._response_text[self._spoken_up_to:].strip()
         if remainder and self._speech_allowed():
             self._speaker.speak_sentence(remainder)
