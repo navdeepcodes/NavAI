@@ -26,6 +26,7 @@ worse than an honest gap.
 """
 from __future__ import annotations
 
+import json
 import platform
 import subprocess
 from urllib.parse import urlparse
@@ -142,16 +143,22 @@ def open_application(name: str, path: str | None = None) -> None:
         return
     if system == "Windows":
         import os
-        # The previous version of this comment assumed Windows had no
-        # equivalent to LaunchServices and refused every call. Verified
-        # directly, on the physical machine, that assumption was simply
-        # wrong: os.startfile resolves a bare name through the same App
-        # Paths registry and PATH search Explorer's Run box uses, and it
-        # opened Notepad, Calculator, Paint, VS Code, and Chrome by their
-        # common names on the first try, no shortcut-index search needed.
-        # `path`, if given, is passed as the argument the app is opened
-        # with (a file/folder to open in it) rather than joined into `name`,
-        # matching the macOS branch above.
+        # Two mechanisms, tried in order, because neither alone is general.
+        #
+        # os.startfile resolves a bare name through the App Paths registry and
+        # PATH the way Explorer's Run box does, so it opens things with a
+        # registered executable -- "notepad", "calc", "mspaint", "chrome",
+        # "code" -- and is the only path that can also open `path` *in* the app.
+        # But it does NOT resolve friendly display names ("Calculator" raises
+        # FileNotFoundError, verified) and cannot reach Store/UWP apps at all,
+        # which have no executable on disk to point at.
+        #
+        # So on FileNotFoundError, fall back to how the Start menu itself
+        # launches everything: Get-StartApps lists every installed app, Win32
+        # and UWP, by display name with a launchable AppID, and
+        # shell:AppsFolder\<AppID> starts it. That is what makes "open
+        # Calculator" / "open Spotify" work without this file knowing a single
+        # app by name.
         try:
             if path:
                 os.startfile(name, arguments=f'"{path}"')  # type: ignore[call-arg]
@@ -159,11 +166,64 @@ def open_application(name: str, path: str | None = None) -> None:
                 os.startfile(name)  # type: ignore[attr-defined]
             return
         except FileNotFoundError:
+            app_id = _resolve_start_app(name)
+            if app_id:
+                try:
+                    subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
+                    return
+                except Exception as exc:
+                    raise ShellError(f"Found {name!r} but could not launch it: {exc}")
             raise ShellError(
                 f"Could not find an application named {name!r}. Check the "
                 "spelling, or that it's installed."
             )
     raise NotImplementedError(f"Opening applications is not implemented for {system}.")
+
+
+def _resolve_start_app(name: str) -> str | None:
+    """The AppID of the installed app whose Start-menu name best matches `name`,
+    or None. Covers Win32 and Store apps alike -- this is the same catalogue the
+    Start menu searches, so nothing here is hard-coded to a particular app.
+
+    Match precedence: exact display name, then starts-with, then contains, then
+    a substring of the AppID (so "calc" still finds Calculator's AUMID). The
+    first, most specific hit wins, which keeps "Calculator" off "Calculator
+    Plus" when the real one is present.
+    """
+    wanted = (name or "").strip().casefold()
+    if not wanted:
+        return None
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "Get-StartApps | Select-Object Name,AppID | ConvertTo-Json -Compress"],
+            capture_output=True, text=True, timeout=12,
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if isinstance(data, dict):
+        data = [data]
+    apps = [(str(a.get("Name", "")), str(a.get("AppID", "")))
+            for a in data if a.get("AppID")]
+
+    def pick(predicate):
+        for disp, app_id in apps:
+            if predicate(disp.casefold(), app_id.casefold()):
+                return app_id
+        return None
+
+    return (
+        pick(lambda d, i: d == wanted)
+        or pick(lambda d, i: d.startswith(wanted))
+        or pick(lambda d, i: wanted in d)
+        or pick(lambda d, i: wanted in i)
+    )
 
 
 def open_url(url: str) -> None:

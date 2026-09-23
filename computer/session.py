@@ -424,6 +424,10 @@ class ComputerSession:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
+        # Scroll goes to the foreground window, so the same precondition that
+        # click and type_text enforce applies here: scroll the application that
+        # was observed, not whatever happens to be in front now.
+        note = self._ensure_front()
         x = y = None
         if ref:
             element, problem = self.element(ref)
@@ -431,9 +435,12 @@ class ComputerSession:
                 return {"status": "error", "error": problem, "retry_safe": True}
             x, y = element.bounds.center
         try:
-            return self.controller().scroll(dx, dy, x, y).as_dict()
+            result = self.controller().scroll(dx, dy, x, y).as_dict()
         except ComputerError as exc:
             return {"status": "error", "error": str(exc)}
+        if note and result.get("status") == "success":
+            result["result"] = result.get("result", "") + note
+        return result
 
     def list_windows(self) -> dict:
         ok, why = self.availability()

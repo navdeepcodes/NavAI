@@ -900,7 +900,12 @@ TOOL_DECLARATIONS = [
             "Click a control. Give the 'ref' from see_ui whenever you can — it is "
             "checked against a real element and fails clearly if the interface "
             "moved. Coordinates are a fallback for things the accessibility tree "
-            "cannot see. Observe again afterwards to confirm what changed."
+            "cannot see. Observe again afterwards to confirm what changed.\n"
+            "Do NOT click on-screen keys to enter data — a calculator's digits, "
+            "an on-screen keyboard, letter tiles. Typing them with type_text is "
+            "one step instead of many, and a click per character is slow and "
+            "easy to get wrong. Use click for controls the keyboard cannot reach: "
+            "buttons, menu items, tabs, checkboxes, links, list items."
         ),
         parameters_json_schema={
             "type": "object",
@@ -917,10 +922,18 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="type_text",
         description=(
-            "Type text into whatever currently has keyboard focus. Click the "
-            "field first. This types characters exactly as given, including "
-            "accents and other scripts; for keys with no character such as Enter "
-            "or Tab use press_keys."
+            "Type text or numbers with the keyboard. This is how you enter data, "
+            "and it is far faster and more reliable than clicking on-screen keys "
+            "one at a time — prefer it over click_element for anything you can "
+            "type: digits and operators into a calculator, a query into a search "
+            "box, text into a field or a document. Many apps (a calculator, a "
+            "game, a canvas) take keystrokes with no field to click first; a form "
+            "field usually needs one click to focus it. It types characters "
+            "exactly as given, including accents and other scripts. After typing, "
+            "observe to confirm — some apps show what you typed in a display "
+            "rather than a text field, so a 'not a text field' note is not by "
+            "itself a failure; check the result. For keys with no character such "
+            "as Enter or Tab, use press_keys."
         ),
         parameters_json_schema={
             "type": "object",
@@ -934,9 +947,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="press_keys",
         description=(
-            "Press a named key, optionally with modifiers — Enter, Tab, Escape, "
-            "arrows, or a shortcut like cmd+s. Use type_text for ordinary "
-            "characters."
+            "Press a named key, optionally with modifiers — Enter to confirm (a "
+            "calculator's =, a search), Tab to move between fields, Escape, the "
+            "arrows, or a shortcut like ctrl+s. Use type_text for ordinary "
+            "characters and numbers."
         ),
         parameters_json_schema={
             "type": "object",

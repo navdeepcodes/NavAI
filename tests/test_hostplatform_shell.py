@@ -57,6 +57,68 @@ def test_open_application_reports_an_unknown_name_clearly():
 
 
 @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only behaviour")
+def test_open_application_resolves_a_friendly_name_startfile_cannot():
+    """The regression this guards: a live model run asked to open the
+    'Calculator' app and got 'Could not find an application named
+    Calculator'. os.startfile resolves 'calc' but not the friendly display
+    name, and cannot reach Store/UWP apps at all -- so the Start-menu
+    catalogue fallback has to take over. This opens the app by the exact name
+    a user or the model would say."""
+    import subprocess
+    import time
+
+    subprocess.run(["taskkill", "/IM", "CalculatorApp.exe", "/F"],
+                   capture_output=True)
+    shell.open_application("Calculator")
+
+    appeared = False
+    for _ in range(20):
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-Command",
+             "if (Get-Process | Where-Object {$_.MainWindowTitle -eq "
+             "'Calculator'}) { 'yes' } else { 'no' }"],
+            capture_output=True, text=True,
+        )
+        if "yes" in result.stdout.lower():
+            appeared = True
+            break
+        time.sleep(0.3)
+    subprocess.run(["taskkill", "/IM", "CalculatorApp.exe", "/F"],
+                   capture_output=True)
+    assert appeared, "Calculator did not open by its friendly name"
+
+
+def test_resolve_start_app_matching_precedence(monkeypatch):
+    """The resolver ranks matches so the most specific one wins: an exact
+    display name beats a prefix, which beats a substring, which beats a match
+    that is only in the AppID. Pure logic, so it runs on any platform with the
+    Start-menu listing stubbed -- what it protects is that 'Calculator' does
+    not get shadowed by 'Calculator Plus' when the real one is installed, and
+    that 'calc' still finds the Calculator AUMID."""
+    import json as _json
+    import subprocess as _sp
+
+    catalogue = [
+        {"Name": "Calculator Plus", "AppID": "Some.CalculatorPlus_x!App"},
+        {"Name": "Calculator", "AppID": "Microsoft.WindowsCalculator_8wekyb!App"},
+        {"Name": "Notepad", "AppID": "notepad.exe"},
+    ]
+
+    class _Fake:
+        returncode = 0
+        stdout = _json.dumps(catalogue)
+
+    monkeypatch.setattr(_sp, "run", lambda *a, **k: _Fake())
+
+    # exact name beats the prefix "Calculator Plus"
+    assert shell._resolve_start_app("Calculator") == "Microsoft.WindowsCalculator_8wekyb!App"
+    # only in the AppID -- "calc" is nowhere in a display name here
+    assert shell._resolve_start_app("calc") == "Some.CalculatorPlus_x!App"
+    # nothing matches -> None, so the caller raises a clear error
+    assert shell._resolve_start_app("nonexistent-zzz") is None
+
+
+@pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only behaviour")
 def test_open_browser_does_not_depend_on_default_browser_setting(monkeypatch):
     """The regression: DEFAULT_BROWSER defaults to "Opera", which most
     Windows machines don't have, and open_browser used to pass it straight
