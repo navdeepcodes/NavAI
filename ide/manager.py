@@ -95,13 +95,33 @@ def _not_connected_reason() -> str:
             "I can install it for you -- just ask."
         )
     return (
-        "VS Code is open but isn't talking to me. This is almost always "
-        "Restricted Mode: if the folder is untrusted, VS Code silently "
-        "disables extensions including mine. Click 'Trust' in the banner at "
-        "the top (or Manage Workspace Trust), then reload VS Code and I'll "
-        "connect. If it was only just installed, VS Code needs a restart to "
-        "pick it up."
+        "VS Code is in Restricted Mode, so it has switched my extension off "
+        "along with all the others — that's why I can't see your editor. "
+        "Click Trust in the yellow bar at the top of VS Code (or the "
+        "'Restricted Mode' button in its bottom-left corner), and I'll "
+        "connect straight away. Tell the user this in your reply; they "
+        "cannot fix it without being told. If it was only just installed, "
+        "VS Code needs restarting once instead."
     )
+
+
+def connection_hint() -> str | None:
+    """A line worth volunteering when Mike is about to do editor work.
+
+    Told, rather than discovered. Restricted Mode is the one failure here
+    that looks like nothing is wrong: VS Code is open, the extension is
+    installed and listed, and it simply never runs -- VS Code's own trust
+    screen says "15 extensions are disabled or have limited functionality",
+    which the user never sees unless they go looking. Waiting for a command
+    to fail first means the user's first experience of coding help is it
+    not working for no visible reason.
+
+    Returns None when the editor is connected, which is the common case, so
+    a working setup never pays for this.
+    """
+    if is_connected():
+        return None
+    return _not_connected_reason()
 
 
 def _require_adapter():

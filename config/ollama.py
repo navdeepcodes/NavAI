@@ -181,17 +181,30 @@ OLLAMA_EMBED_MODEL = "nomic-embed-text"
 # length is the lever. Preprocessing is not: capture, resize and encode total
 # 0.23s together, against 3-10s of inference.
 #
-# Image size barely matters below 640: 448px halves the prompt tokens (281 ->
-# 147) and did not go faster. 640 stays.
-VISION_RESOLUTION = 640
+# Image size barely matters below 640 *on a GPU with its own memory*: there,
+# 448px halves the prompt tokens (281 -> 147) and did not go faster, which is
+# why 640 stood for so long. That does not hold on an integrated GPU sharing
+# system memory, where image prefill is a real cost. Measured here, same
+# screen, same model:
+#
+#   640px, predict 64  ->  25.5s
+#   512px, predict 64  ->  21.5s
+#   448px, predict 56  ->  16.6s
+#   384px, predict 48  ->  14.9s
+#
+# 448 is the point where it comes in under twenty seconds while the answer is
+# still specific -- at 448 it still identified the IDE on screen by name. 384
+# buys three more seconds and starts losing that, which is the whole value of
+# looking.
+VISION_RESOLUTION = 448
 
 # Prose description, for "what's on my screen" — the answer is read by a
 # person, so it can afford to be longer.
-# 64, not 96. A screen description is read aloud and glanced at, not
-# studied, and latency tracks output tokens almost exactly -- the last third
-# of a 96-token description was costing real seconds on a first-run starter
-# ("Look at my screen") where the wait is the whole impression.
-VISION_NUM_PREDICT = 64
+# 56, down from 96. A screen description is read aloud and glanced at, not
+# studied, and latency tracks output tokens almost exactly -- the tail of a
+# 96-token description was costing real seconds on a first-run starter
+# ("Look at my screen"), where the wait is the whole impression.
+VISION_NUM_PREDICT = 56
 
 # UI perception for computer control. Short on purpose: the answer feeds the
 # next action, not a reader.

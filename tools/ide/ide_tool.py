@@ -94,11 +94,12 @@ class IDETool(BaseTool):
     def _get_context(self, **kwargs) -> tuple[str, bool]:
 
         if not manager.is_connected():
-            return (
-                "No editor is connected. The user may not have VS Code open, "
-                "or the Mike extension isn't running.",
-                False,
-            )
+            # Was a guess ("may not have VS Code open, or the extension isn't
+            # running") that left the user nothing to act on. manager knows
+            # which of the three real causes applies -- no VS Code, no
+            # extension, or Restricted Mode -- and only the last one looks
+            # like nothing is wrong, so it has to be said out loud.
+            return (manager.connection_hint() or "No editor is connected.", False)
 
         described = manager.describe()
         return (described or "An editor is connected but nothing is open in it.", True)

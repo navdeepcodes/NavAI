@@ -207,6 +207,18 @@ class MikeWindow(QMainWindow):
         threading.Thread(target=_run, name="vscode-extension", daemon=True).start()
         return True
 
+    def _summon_after_tour(self) -> None:
+        """Hand the user straight to the panel, focused and ready to type.
+
+        The tour ends on "Start using Mike", so ending it anywhere other
+        than in front of a cursor would be a dead end.
+        """
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.page.input.focus()
+        self._tour = None
+
     def _show_main_window(self) -> None:
         self.show()
         self.raise_()
@@ -451,6 +463,39 @@ class MikeWindow(QMainWindow):
         self.floating.close()
 
 
+def _maybe_show_welcome(window) -> None:
+    """The first-install tour, shown exactly once per machine.
+
+    Held on the window so Python doesn't collect it while it's on screen --
+    a frameless top-level with no parent is otherwise only referenced by the
+    local that created it, and it would vanish mid-animation.
+
+    The flag is written when it opens, not when it finishes: someone who
+    closes it immediately has still been offered it, and a tour that
+    reappears because you dismissed it is worse than no tour at all.
+    """
+    from config import preferences
+
+    if preferences.get("welcome_tour_shown", False):
+        return
+    try:
+        from ui.welcome import WelcomeWindow
+
+        preferences.set_value("welcome_tour_shown", True)
+        tour = WelcomeWindow()
+        window._tour = tour
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        tour.move(screen.center().x() - tour.width() // 2,
+                  screen.center().y() - tour.height() // 2 - 30)
+        tour.finished.connect(window._summon_after_tour)
+        tour.show()
+        tour.raise_()
+        tour.activateWindow()
+    except Exception:
+        logger.exception("The welcome tour could not open; Mike continues without it.")
+
+
 def run():
 
     app = QApplication(sys.argv)
@@ -470,12 +515,25 @@ def run():
 
     window = MikeWindow()
 
+    # The one-time tour. Gated on its own preference rather than
+    # onboarding_complete, so the two can never be confused: the panel's
+    # starter chips are "try something now", this is "what is this and why
+    # is it on my computer". Shown once per machine, before the panel is
+    # touched, and skippable from the first card.
+    _maybe_show_welcome(window)
+
     # The one real shutdown path — fires on every genuine quit (tray Quit,
     # Cmd+Q, or any other route to QApplication.quit()) regardless of which
     # one triggered it, and never fires from just closing the window.
     app.aboutToQuit.connect(window._teardown)
 
-    window.show()
+    # Not while the tour is up. Both are always-on-top frameless windows, so
+    # showing the panel here put it straight through the middle of the
+    # welcome card -- two surfaces fighting for the same pixels on the one
+    # screen that is supposed to explain the product. The tour hands over to
+    # the panel itself when it closes (_summon_after_tour).
+    if getattr(window, "_tour", None) is None:
+        window.show()
 
     code = app.exec()
 

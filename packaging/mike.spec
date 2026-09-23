@@ -41,6 +41,12 @@ hiddenimports = [
     "computer.windows",
     "voice.recognizer.windows",
     "voice.providers.windows",
+    # The wake word ("Hey Mike") and the first-run tour are reached the same
+    # way -- a platform dispatch and a lazy import inside run() -- so they are
+    # invisible to the static graph and, without these, the packaged app would
+    # silently have no wake word and no welcome on a machine that isn't this one.
+    "voice.wake.windows",
+    "ui.welcome",
     "win32com.client",
     # main.py imports these only when the exe is sitting outside its install
     # location, so nothing on the static import graph reaches them -- and a
