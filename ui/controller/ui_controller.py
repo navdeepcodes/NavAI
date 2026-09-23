@@ -426,9 +426,12 @@ class UIController(QObject):
         # in clean_for_speech, since it speaks sentence by sentence.
         from brain.reply_style import humanize_reply
         humanized = humanize_reply(self._response_text)
-        if self._stream_bubble is not None and humanized != self._response_text:
+        self._response_text = humanized
+        # Always finalise the bubble: set_text does the full, syntax-highlighted
+        # Markdown render (streaming only ever did the fast plain pass), and it
+        # applies the humanised text whether or not the guard changed anything.
+        if self._stream_bubble is not None:
             self._stream_bubble.set_text(humanized)
-            self._response_text = humanized
 
         remainder = self._response_text[self._spoken_up_to:].strip()
         if remainder and self._speech_allowed():

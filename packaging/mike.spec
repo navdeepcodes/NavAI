@@ -48,6 +48,12 @@ hiddenimports = [
     "voice.wake.windows",
     "ui.welcome",
     "win32com.client",
+    # Pygments loads lexers and styles by name at runtime (get_lexer_by_name,
+    # the "one-dark"/"friendly" styles), which the static graph never sees --
+    # without these the packaged app would render every code block as plain,
+    # uncoloured text. markdown_it's rules load the same way.
+    *collect_submodules("pygments"),
+    *collect_submodules("markdown_it"),
     # main.py imports these only when the exe is sitting outside its install
     # location, so nothing on the static import graph reaches them -- and a
     # missing installer is invisible until a real user unzips the release.

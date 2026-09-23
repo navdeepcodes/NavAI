@@ -24,11 +24,12 @@ from PySide6.QtGui import (
     QBrush, QColor, QLinearGradient, QPainter, QPainterPath, QPen, QKeyEvent,
 )
 from PySide6.QtWidgets import (
-    QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QLineEdit,
-    QPushButton, QScrollArea, QVBoxLayout, QWidget,
+    QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QScrollArea, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from ui.panel import style
+from ui.panel import richtext
 from ui.panel.mark import PresenceMark
 
 def _hotkey_hint() -> str:
@@ -254,6 +255,88 @@ class _Turn(QLabel):
     def append_text(self, chunk: str) -> None:
         self._raw += chunk
         self._render()
+
+
+class _RichTurn(QTextBrowser):
+    """Mike's message, rendered rather than escaped.
+
+    A QTextBrowser (Qt's own rich-text engine, no web view) showing the
+    Markdown Mike actually writes -- headings, lists, tables, and
+    syntax-highlighted code with a one-click copy link. Sizes itself to its
+    content so it sits in the conversation column like any other block, with no
+    inner scrollbar of its own.
+    """
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self._raw = text
+        self._codes: list[str] = []
+        self.setOpenLinks(False)
+        self.setOpenExternalLinks(False)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.setStyleSheet("QTextBrowser{background:transparent;border:none;}")
+        self.document().setDocumentMargin(0)
+        self.anchorClicked.connect(self._on_anchor)
+        # A short coalescing timer so a burst of tokens is one repaint, not one
+        # per character; the trailing render always lands.
+        self._pending = QTimer(self)
+        self._pending.setSingleShot(True)
+        self._pending.setInterval(70)
+        self._pending.timeout.connect(lambda: self._render(do_highlight=False))
+        self._render()
+
+    def _render(self, do_highlight: bool = True) -> None:
+        html, self._codes = richtext.render(self._raw, do_highlight=do_highlight)
+        self.setHtml(html)
+        self._fit_height()
+
+    def _fit_height(self) -> None:
+        doc = self.document()
+        # Before the first layout the viewport has no real width; a fallback
+        # near the column's own width keeps the initial height estimate sane so
+        # the panel doesn't jump from a one-pixel-wide, very tall guess.
+        width = self.viewport().width()
+        if width < 50:
+            width = 560
+        doc.setTextWidth(width)
+        self.setFixedHeight(int(doc.size().height()) + 2)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def append_text(self, chunk: str) -> None:
+        # Streaming: coalesce, and skip highlighting until the reply settles.
+        self._raw += chunk
+        if not self._pending.isActive():
+            self._pending.start()
+
+    def set_text(self, text: str) -> None:
+        # The final word: stop any pending stream render and do the full,
+        # syntax-highlighted pass.
+        self._raw = text
+        self._pending.stop()
+        self._render(do_highlight=True)
+
+    def text(self) -> str:
+        return self._raw
+
+    def _on_anchor(self, url) -> None:
+        scheme = url.scheme()
+        if scheme == "copy":
+            try:
+                index = int(url.toString().split("copy://", 1)[1])
+            except (ValueError, IndexError):
+                return
+            if 0 <= index < len(self._codes):
+                QApplication.clipboard().setText(self._codes[index])
+        elif scheme in ("http", "https"):
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(url)
 
 
 # ══ the wait ═══════════════════════════════════════════════
@@ -989,6 +1072,11 @@ class MikePanel(QWidget):
     #: by typing. MikeWindow owns what "close" actually does (the same fade
     #: -out used when the hotkey dismisses it), so this only asks.
     dismiss_requested = Signal()
+    #: The window (MikeWindow) owns what these do; the panel only asks, so the
+    #: frameless surface gets the same minimise / maximise the OS chrome would
+    #: give a normal window.
+    minimise_requested = Signal()
+    maximise_requested = Signal()
 
     def __init__(self, settings_hooks: dict | None = None) -> None:
         super().__init__()
@@ -1042,6 +1130,25 @@ class MikePanel(QWidget):
         self._menu_btn.setFixedSize(28, 24)
         self._menu_btn.clicked.connect(self._toggle_settings)
         hb.addWidget(self._menu_btn, 0, Qt.AlignVCenter)
+
+        # Minimise and maximise. The surface is frameless, so it carries its own
+        # window controls the way the OS chrome would -- a matched set with the
+        # close box, in the same quiet weight so they read as chrome, not action.
+        self._min_btn = QPushButton("–")     # en dash: a calm minus, not a hyphen
+        self._min_btn.setObjectName("winctl")
+        self._min_btn.setCursor(Qt.PointingHandCursor)
+        self._min_btn.setFixedSize(28, 24)
+        self._min_btn.setToolTip("Minimise")
+        self._min_btn.clicked.connect(self.minimise_requested.emit)
+        hb.addWidget(self._min_btn, 0, Qt.AlignVCenter)
+
+        self._max_btn = QPushButton("▢")     # a light square: maximise / restore
+        self._max_btn.setObjectName("winctl")
+        self._max_btn.setCursor(Qt.PointingHandCursor)
+        self._max_btn.setFixedSize(28, 24)
+        self._max_btn.setToolTip("Maximise")
+        self._max_btn.clicked.connect(self.maximise_requested.emit)
+        hb.addWidget(self._max_btn, 0, Qt.AlignVCenter)
 
         # A real close button. The window is frameless (no OS title bar, no
         # OS close box), and the only other way to put Mike away -- the
@@ -1258,11 +1365,27 @@ class MikePanel(QWidget):
                 + conf + self.INPUT_H)
 
     def _fit(self) -> None:
-        """Ask the top-level window to match the content height."""
+        """Keep the window sized to the content — until the user takes over.
+
+        Uses resize(), not setFixedHeight(), so the window stays draggable from
+        its edges; and backs off entirely once the user has resized or
+        maximised (the window flips its own auto_height off), so the fit never
+        yanks a height the user chose back to the content's.
+        """
         win = self.window()
-        if win is not None and win is not self:
-            h = self.desired_height()
-            win.setFixedHeight(h)
+        if win is None or win is self:
+            return
+        if not getattr(win, "_auto_height", True) or win.isMaximized():
+            return
+        h = self.desired_height()
+        if win.height() == h:
+            return
+        # Flag it as ours so the window doesn't mistake this for a user resize.
+        try:
+            win._programmatic_resize = True
+            win.resize(win.width(), h)
+        finally:
+            win._programmatic_resize = False
 
     # ── column helpers ────────────────────────────────────
     def _insert(self, widget: QWidget) -> None:
@@ -1279,13 +1402,13 @@ class MikePanel(QWidget):
 
     def begin_mike_stream(self):
         self._drop_resting()
-        self._stream = _Turn("", "mike")
+        self._stream = _RichTurn("")
         self._insert(self._stream)
         return self._stream
 
     def add_mike_message(self, text: str) -> None:
         self._drop_resting()
-        self._insert(_Turn(text, "mike"))
+        self._insert(_RichTurn(text))
 
     def add_action_card(self, text: str):
         self._drop_resting()
@@ -1331,6 +1454,12 @@ class MikePanel(QWidget):
     def state(self) -> str:
         return self._state
 
+    def set_maximised(self, on: bool) -> None:
+        """Reflect the window's maximise state on the button, so it reads as a
+        toggle: a single square to grow, an overlapped pair to bring back."""
+        self._max_btn.setText("❐" if on else "▢")
+        self._max_btn.setToolTip("Restore" if on else "Maximise")
+
     def window(self):  # noqa: A003
         return super().window()
 
@@ -1348,8 +1477,16 @@ class MikePanel(QWidget):
         self.confirm.hide()
         self._settings_view.show()
         win = self.window()
-        if win is not None and win is not self:
-            win.setFixedHeight(self.CAP_HEIGHT)
+        # Grow to show the settings, but with resize() rather than a fixed
+        # height, so the window stays draggable and the user's own larger size
+        # is left alone.
+        if (win is not None and win is not self
+                and not win.isMaximized() and win.height() < self.CAP_HEIGHT):
+            try:
+                win._programmatic_resize = True
+                win.resize(win.width(), self.CAP_HEIGHT)
+            finally:
+                win._programmatic_resize = False
 
     def showing_overlay(self) -> bool:
         return getattr(self, "_overlay_open", False)
@@ -1424,6 +1561,11 @@ QPushButton#menu {{
     border: none; font-size: 16px; padding: 0 2px;
 }}
 QPushButton#menu:hover {{ color: {style.INK}; }}
+QPushButton#winctl {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 13px; padding: 0 2px;
+}}
+QPushButton#winctl:hover {{ color: {style.INK}; }}
 QPushButton#close {{
     background: transparent; color: {style.INK_MUTE};
     border: none; font-size: 13px; padding: 0 2px;

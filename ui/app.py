@@ -144,6 +144,8 @@ class MikeWindow(QMainWindow):
         self.page.state_changed.connect(self._ambient_signal)
 
         self.page.dismiss_requested.connect(self._animate_out)
+        self.page.minimise_requested.connect(self._minimise)
+        self.page.maximise_requested.connect(self._toggle_maximise)
 
         self.controller.startup()
 
@@ -240,26 +242,132 @@ class MikeWindow(QMainWindow):
 
     PANEL_WIDTH = 620
 
+    #: The smallest Mike is still usable at. Below this the header controls and
+    #: the input crowd each other.
+    MIN_WIDTH = 460
+    MIN_HEIGHT = 240
+
     def _configure_window(self):
-        # A summoned presence, not a window you live in: frameless, floating,
-        # translucent so the panel's own rounded surface reads as a system
-        # layer over whatever you were doing. Tool-window so it stays out of
-        # the dock and app switcher -- Mike is reached by the hotkey, not by
-        # hunting for a window. Height follows the panel's content; width is
-        # fixed at a comfortable reading measure.
+        # A real window: frameless so it keeps its own rounded, translucent
+        # surface rather than a grey OS title bar, but a proper top-level one --
+        # it lives in the taskbar, it minimises and maximises, and it resizes
+        # from any edge. The chrome (minimise / maximise / close) is drawn into
+        # the panel's own header; the move-and-resize is native, via
+        # WM_NCHITTEST below, so it behaves exactly like an OS window would.
         self.setWindowTitle("Mike")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        self.setWindowFlags(Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setStyleSheet("QMainWindow { background: transparent; }")
 
-        self.setFixedWidth(self.PANEL_WIDTH)
-        self.setFixedHeight(self.page.desired_height())
+        # True until the user takes over the height by dragging or maximising;
+        # while true the panel keeps the window sized to its content.
+        self._auto_height = True
+        self._programmatic_resize = False
+        self.setMinimumSize(self.MIN_WIDTH, self.MIN_HEIGHT)
+
+        self._programmatic_resize = True
+        self.resize(self.PANEL_WIDTH, self.page.desired_height())
+        self._programmatic_resize = False
 
         try:
             screen = QApplication.primaryScreen().availableGeometry()
             self.move(screen.center().x() - self.PANEL_WIDTH // 2, screen.top() + 130)
         except Exception:
             pass
+
+    # ── window controls: minimise / maximise / native move+resize ──────
+
+    def _minimise(self) -> None:
+        self.showMinimized()
+
+    def _toggle_maximise(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+            self.page.set_maximised(False)
+        else:
+            # Maximising and resizing both mean "I'll manage the size now", so
+            # the content-fit stops fighting the user for the height.
+            self._auto_height = False
+            self.showMaximized()
+            self.page.set_maximised(True)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        # A resize the user drove (not one _fit asked for, and not the maximise)
+        # hands them the height for good.
+        if (not self._programmatic_resize and not self.isMaximized()
+                and event.oldSize().height() > 0
+                and event.oldSize().height() != event.size().height()):
+            self._auto_height = False
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        # Keep the maximise glyph honest if the state changes by any route
+        # (double-click the header, the OS snap keys, restore-down).
+        if event.type() == QEvent.WindowStateChange:
+            self.page.set_maximised(self.isMaximized())
+
+    _RESIZE_MARGIN = 6      # logical px; scaled to the display below
+    _HEADER_H = 46          # logical px of draggable header
+    _CTRL_L = 60            # logical px on the left kept clickable (the mark)
+    _CTRL_R = 180           # logical px on the right kept clickable (the buttons)
+
+    def nativeEvent(self, event_type, message):
+        # Native move and resize for a frameless window: answer WM_NCHITTEST
+        # with the border / caption codes Windows expects, and it drives the
+        # move and resize loops itself -- correct cursors, edge snapping and
+        # aero-snap all for free, and it works even though the panel covers the
+        # whole client area (this is resolved before Qt's child hit-testing).
+        #
+        # Everything here is in PHYSICAL pixels. WM_NCHITTEST's coordinates are
+        # physical screen pixels; comparing them to Qt's logical width() is what
+        # made the whole window read as a resize border on a scaled display, so
+        # the window's own physical rect (GetWindowRect) and a DPI-scaled margin
+        # are used instead.
+        if event_type == "windows_generic_MSG":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                msg = wintypes.MSG.from_address(int(message))
+                if msg.message == 0x0084:  # WM_NCHITTEST
+                    gx = ctypes.c_short(msg.lParam & 0xFFFF).value
+                    gy = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+
+                    rect = wintypes.RECT()
+                    ctypes.windll.user32.GetWindowRect(
+                        int(self.winId()), ctypes.byref(rect))
+                    x = gx - rect.left
+                    y = gy - rect.top
+                    w = rect.right - rect.left
+                    h = rect.bottom - rect.top
+
+                    dpr = self.devicePixelRatioF() or 1.0
+                    m = max(4, int(self._RESIZE_MARGIN * dpr))
+
+                    on_left, on_right = x < m, x > w - m
+                    on_top, on_bottom = y < m, y > h - m
+
+                    if not self.isMaximized():
+                        if on_top and on_left:      return True, 13  # HTTOPLEFT
+                        if on_top and on_right:     return True, 14  # HTTOPRIGHT
+                        if on_bottom and on_left:   return True, 16  # HTBOTTOMLEFT
+                        if on_bottom and on_right:  return True, 17  # HTBOTTOMRIGHT
+                        if on_left:                 return True, 10  # HTLEFT
+                        if on_right:                return True, 11  # HTRIGHT
+                        if on_top:                  return True, 12  # HTTOP
+                        if on_bottom:               return True, 15  # HTBOTTOM
+
+                    # The header's empty span is a drag handle (and double-click
+                    # to maximise), but not where the mark or the buttons sit,
+                    # so those still take clicks.
+                    if (y < self._HEADER_H * dpr
+                            and self._CTRL_L * dpr < x < w - self._CTRL_R * dpr):
+                        return True, 2                              # HTCAPTION
+                    return True, 1                                  # HTCLIENT
+            except Exception:
+                pass
+        return super().nativeEvent(event_type, message)
 
     def _configure_shortcuts(self):
 
