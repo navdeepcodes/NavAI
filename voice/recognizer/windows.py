@@ -51,6 +51,19 @@ class WhisperRecognizer(SpeechRecognizer):
             return False, f"faster-whisper is not installed ({exc})"
         return True, f"local Whisper ({self._model_size}, CPU)"
 
+    def prewarm(self) -> None:
+        """Load (downloading on first ever run) the model now.
+
+        medium.en is ~1.5GB; loading it lazily on the first spoken command
+        meant the first "Hey Mike" froze on a multi-minute download showing
+        only "transcribing". Called from a background thread at startup so the
+        model is ready — or well on its way — by the time anyone speaks.
+        """
+        try:
+            self._get_model()
+        except Exception:
+            logger.exception("Whisper prewarm failed; first transcription will load the model.")
+
     def _get_model(self):
         with self._load_lock:
             if self._model is None:

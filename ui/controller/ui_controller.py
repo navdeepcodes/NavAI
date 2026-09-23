@@ -119,6 +119,23 @@ class UIController(QObject):
             target=self._runtime.warm, name="model-warm", daemon=True,
         ).start()
 
+        # Load the speech-to-text model now too, so the first spoken turn
+        # doesn't freeze on a first-run download. Started a few seconds behind
+        # the brain warm so the window paints and the greeting speaks first,
+        # then the (network-bound) model download runs while the user reads.
+        # Only when voice is actually in play — no point pulling ~1.5GB for
+        # someone who has turned voice off.
+        if preferences.get("voice_enabled", True) or preferences.get("wake_word_enabled", True):
+            def _prewarm_stt() -> None:
+                import time as _t
+                _t.sleep(3)
+                try:
+                    from voice.recognizer import get_recognizer
+                    get_recognizer().prewarm()
+                except Exception:
+                    logger.exception("Speech-to-text prewarm failed.")
+            threading.Thread(target=_prewarm_stt, name="stt-prewarm", daemon=True).start()
+
     def _on_floating_submit(self, text: str) -> None:
         self._floating.clear_response()
         self._floating.set_state("thinking")

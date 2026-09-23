@@ -48,7 +48,9 @@ BLOCK_SIZE = 1600                       # 100ms @ 16kHz, matches the recorder
 WINDOW_SECONDS = 2.0                    # how much recent audio each check sees
 CHECK_INTERVAL = 0.7                    # how often a check runs, when there's speech
 MIN_AUDIO_SECONDS = 0.5                 # don't transcribe less than this
-ENERGY_FLOOR = 0.012                    # RMS below this = no speech; skip Whisper
+ENERGY_FLOOR = 0.012                    # absolute minimum RMS to consider at all
+SPEECH_MULTIPLIER = 2.2                 # how far above the room's noise floor speech must sit
+NOISE_ADAPT = 0.08                      # how fast the noise-floor estimate follows the room
 COOLDOWN_SECONDS = 3.0                  # refractory period after a detection
 
 # Whisper's spellings of the name, as whole words. "mic" is deliberately left
@@ -73,6 +75,12 @@ class WindowsWakeWord(WakeWordBackend):
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._last_fire = 0.0
+        # An estimate of the room's steady noise level, so the gate adapts to
+        # the actual room instead of one fixed number. Speech has to sit a
+        # clear margin above this to be worth transcribing — otherwise a fan,
+        # a GPU under load, or ordinary room tone keeps the tiny model
+        # transcribing every second and the machine warm for nothing.
+        self._noise_floor = ENERGY_FLOOR
 
     # -- lifecycle ----------------------------------------------------
     def start(self) -> bool:
@@ -166,9 +174,17 @@ class WindowsWakeWord(WakeWordBackend):
                     continue
                 audio = np.array(self._buf, dtype=np.float32)
 
-            # Energy gate: a quiet window never reaches Whisper, which keeps a
-            # silent room near zero CPU and stops the tiny model inventing words.
-            if float(np.sqrt(np.mean(audio ** 2))) < ENERGY_FLOOR:
+            # Adaptive energy gate. Speech has to rise a clear margin above the
+            # room's own noise floor, which is tracked from the quiet windows.
+            # This is what keeps an always-on recogniser from transcribing every
+            # second in a room that is simply not silent (a fan, the GPU warming)
+            # — the fixed floor alone let ordinary room tone through and pegged a
+            # CPU core. A loud window is treated as possible speech and reaches
+            # Whisper; a quiet one only nudges the noise-floor estimate.
+            rms = float(np.sqrt(np.mean(audio ** 2)))
+            gate = max(ENERGY_FLOOR, self._noise_floor * SPEECH_MULTIPLIER)
+            if rms < gate:
+                self._noise_floor = (1 - NOISE_ADAPT) * self._noise_floor + NOISE_ADAPT * rms
                 continue
 
             try:

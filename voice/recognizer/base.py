@@ -21,6 +21,16 @@ class SpeechRecognizer(ABC):
     def available(self) -> tuple[bool, str]:
         """Can this backend transcribe right now, and if not, why not?"""
 
+    def prewarm(self) -> None:
+        """Do the slow one-time setup now, off the path a user is waiting on.
+
+        Default: nothing. A backend that loads or downloads a model the first
+        time it transcribes overrides this so that cost is paid at startup —
+        while the greeting is on screen — instead of freezing the very first
+        spoken turn. Must never raise; a failed prewarm just means the first
+        real transcription pays what it would have anyway.
+        """
+
     @abstractmethod
     def transcribe_async(
         self,
