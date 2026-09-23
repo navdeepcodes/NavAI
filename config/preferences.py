@@ -46,6 +46,14 @@ DEFAULTS: dict[str, Any] = {
     "edge_enabled": True,
     "reduced_motion": False,
     "onboarding_complete": False,
+
+    # These were read and written all over the app but never declared here, so
+    # set_value() dropped every write silently: the first-run tour reappeared on
+    # every launch because "shown" could never be saved, and a chosen accent or
+    # theme never survived a restart. Declared now so they actually persist.
+    "welcome_tour_shown": False,     # the one-time install tour has run
+    "accent": "",                    # the user's chosen accent, or "" for default
+    "theme": "system",               # "system" | "light" | "dark"
 }
 
 _lock = threading.Lock()
