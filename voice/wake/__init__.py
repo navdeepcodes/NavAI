@@ -23,11 +23,7 @@ def make_backend(on_wake: Callable[[], None]) -> WakeWordBackend:
 
         return MacWakeWord(on_wake)
     if system == "Windows":
-        raise WakeWordUnavailable(
-            "No wake-word backend for Windows yet. NSSpeechRecognizer has no "
-            "direct Windows equivalent; a real implementation needs a "
-            "lightweight always-on keyword spotter (e.g. openWakeWord, or a "
-            "Windows-native voice-activation API), chosen and verified on "
-            "the physical machine rather than added as a guessed dependency."
-        )
+        from voice.wake.windows import WindowsWakeWord
+
+        return WindowsWakeWord(on_wake)
     raise WakeWordUnavailable(f"No wake-word backend for {system}.")
