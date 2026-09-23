@@ -166,25 +166,37 @@ class WindowsWakeWord(WakeWordBackend):
             logger.exception("Wake word: could not load the tiny Whisper model.")
             return
 
+        calibrated = False
         while not self._stop.wait(CHECK_INTERVAL):
             if self._suppressed:
+                calibrated = False        # re-measure the room after a pause
                 continue
             with self._buf_lock:
                 if len(self._buf) < int(MIN_AUDIO_SECONDS * SAMPLE_RATE):
                     continue
                 audio = np.array(self._buf, dtype=np.float32)
 
-            # Adaptive energy gate. Speech has to rise a clear margin above the
-            # room's own noise floor, which is tracked from the quiet windows.
-            # This is what keeps an always-on recogniser from transcribing every
-            # second in a room that is simply not silent (a fan, the GPU warming)
-            # — the fixed floor alone let ordinary room tone through and pegged a
-            # CPU core. A loud window is treated as possible speech and reaches
-            # Whisper; a quiet one only nudges the noise-floor estimate.
             rms = float(np.sqrt(np.mean(audio ** 2)))
+
+            # Adaptive energy gate. Speech has to rise a clear margin above the
+            # room's own noise floor, so an always-on recogniser doesn't
+            # transcribe every second in a room that is simply not silent — a
+            # fan, the GPU under load, room tone. The first window calibrates
+            # the floor directly, so a loud room is handled from the start
+            # rather than after a slow climb; after that every window nudges
+            # the estimate, loud ones only slightly (so a burst of speech
+            # barely moves it) and quiet ones more (so the room settling is
+            # tracked quickly). That "track from every window" is the fix for
+            # the earlier gate, which only lowered the floor and so never
+            # adapted to a room that stayed loud.
+            if not calibrated:
+                self._noise_floor = max(ENERGY_FLOOR, rms)
+                calibrated = True
+                continue
             gate = max(ENERGY_FLOOR, self._noise_floor * SPEECH_MULTIPLIER)
+            adapt = NOISE_ADAPT if rms < gate else NOISE_ADAPT * 0.3
+            self._noise_floor = (1 - adapt) * self._noise_floor + adapt * rms
             if rms < gate:
-                self._noise_floor = (1 - NOISE_ADAPT) * self._noise_floor + NOISE_ADAPT * rms
                 continue
 
             try:
