@@ -483,11 +483,14 @@ def run():
     app._main_thread_gc = MainThreadGC(app)
 
     from ui.panel import style
+    # Mike's typeface (Source Serif 4, bundled) — registered before anything
+    # is built, so every surface is drawn in it from the first frame.
+    style.load_fonts()
     style.apply_theme()
 
     app.setWindowIcon(_app_icon())
-    # The one place the base UI font is set: the platform's own face at the
-    # body size, which any widget without a size of its own inherits.
+    # The one place the base UI font is set: Mike's face at the body size,
+    # which any widget without a size of its own inherits.
     app.setFont(style.font(style.BODY))
     app.setStyleSheet(GLOBAL_STYLESHEET)
 

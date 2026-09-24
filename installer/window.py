@@ -262,8 +262,17 @@ class InstallerWindow(QWidget):
 
 
 def run_installer() -> int:
+    global UI_FONT
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("Install Mike")
+    # The first thing someone sees after unzipping should already look like
+    # Mike: his bundled face if it's there, Segoe UI if it isn't.
+    try:
+        from ui.panel import style as _style
+        if _style.load_fonts():
+            UI_FONT = _style.BRAND_FAMILY
+    except Exception:
+        pass
     window = InstallerWindow()
     screen = app.primaryScreen().availableGeometry()
     window.move(screen.center().x() - window.width() // 2,

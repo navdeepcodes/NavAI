@@ -169,15 +169,19 @@ def qaccent() -> QColor:
     return QColor(accent())
 
 
-# ── Type. Each platform's own native UI font, not the site's Fraunces/
-#    Archivo web fonts — this is a desktop app, not a page rendering them.
-#    ".AppleSystemUIFont" was never a font Windows has; Qt silently
-#    substituted something else for every label in the app, verified
-#    directly on this machine. Segoe UI is Windows' real equivalent of the
-#    system font macOS already got here. Mike's voice a touch larger;
-#    labels small and quietly spaced. Mono only for genuinely technical
-#    detail (a path, a command) shown on demand.
-_UI = "Segoe UI" if platform.system() == "Windows" else ".AppleSystemUIFont"
+# ── Type. Mike speaks in one face: Source Serif 4 (Adobe, SIL Open Font
+#    License), bundled in ui/fonts and registered at startup by load_fonts(),
+#    so it looks the same on every machine rather than depending on what a
+#    user happens to have installed. A calm, bookish serif reads like
+#    something written for you — the register of a thoughtful assistant, not
+#    a control panel. The platform's own UI face stays as the fallback, used
+#    only if the bundled files can't be loaded: Segoe UI on Windows (never
+#    ".AppleSystemUIFont", which Windows doesn't have and silently replaced),
+#    the system face on macOS. Mono only for genuinely technical detail.
+BRAND_FAMILY = "Source Serif 4"
+_SYSTEM_UI = "Segoe UI" if platform.system() == "Windows" else ".AppleSystemUIFont"
+_UI = _SYSTEM_UI
+_FONTS_LOADED = False
 _MONO = (
     "Consolas, 'Cascadia Mono', monospace" if platform.system() == "Windows"
     else "SF Mono, Menlo, monospace"
@@ -199,6 +203,56 @@ def label(size: int = 11, weight: QFont.Weight = QFont.Weight.DemiBold) -> QFont
 
 def mono_family() -> str:
     return _MONO
+
+
+def _fonts_dir():
+    """Where the bundled font files live: beside the frozen app, or in the
+    source tree."""
+    import os
+    import sys
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for base in (os.path.join(getattr(sys, "_MEIPASS", ""), "ui"), here):
+        path = os.path.join(base, "fonts")
+        if base and os.path.isdir(path):
+            return path
+    return None
+
+
+def load_fonts() -> bool:
+    """Register the bundled Source Serif 4 files and make it Mike's face.
+
+    Needs a QApplication. Safe to call more than once. If the files are
+    missing or refused, Mike keeps the platform's UI font — a fallback, never
+    a crash and never a blank label.
+    """
+    global _UI, _FONTS_LOADED
+    if _FONTS_LOADED:
+        return True
+    try:
+        import os
+        from PySide6.QtGui import QFontDatabase
+
+        folder = _fonts_dir()
+        if folder is None:
+            return False
+        families: set[str] = set()
+        for name in sorted(os.listdir(folder)):
+            if name.lower().endswith((".ttf", ".otf")):
+                fid = QFontDatabase.addApplicationFont(os.path.join(folder, name))
+                if fid >= 0:
+                    families.update(QFontDatabase.applicationFontFamilies(fid))
+        if BRAND_FAMILY in families:
+            _UI = BRAND_FAMILY
+            _FONTS_LOADED = True
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def ui_face() -> str:
+    """The family every widget is drawn in right now."""
+    return _UI
 
 
 # ── The type scale. Pixel sizes, not points: Mike's rich text (replies, code,
@@ -243,6 +297,9 @@ def reduced_motion() -> bool:
 
 
 def ui_family() -> str:
-    if platform.system() == "Windows":
-        return "'Segoe UI', Arial, sans-serif"
-    return "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif"
+    """The same face for rich text (Mike's rendered replies), as CSS."""
+    system = ("'Segoe UI', Arial, sans-serif" if platform.system() == "Windows"
+              else "-apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif")
+    if _FONTS_LOADED:
+        return f"'{BRAND_FAMILY}', Georgia, {system}"
+    return system

@@ -83,6 +83,10 @@ analysis = Analysis(
     binaries=[],
     datas=[
         (os.path.join(REPO_ROOT, "packaging", "icon.ico"), "packaging"),
+        # Mike's typeface, Source Serif 4 (SIL Open Font License; OFL.txt ships
+        # with it). Registered at startup by ui.panel.style.load_fonts() --
+        # without these files every surface falls back to Segoe UI.
+        (os.path.join(REPO_ROOT, "ui", "fonts"), os.path.join("ui", "fonts")),
         # The VS Code bridge extension. Without this the editor integration
         # is unreachable for anyone who didn't clone the repo: ide/bridge.py
         # starts, listens on 8787, and nothing ever connects, because the

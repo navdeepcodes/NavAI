@@ -368,3 +368,22 @@ def test_the_answer_bubble_holds_only_its_own_words(monkeypatch):
              if isinstance(lay.itemAt(i).widget(), _RichTurn)]
     assert texts == ["I'll set that up. ", "Done — it's open."], texts
     controller.shutdown()
+
+
+# ── Mike's typeface ───────────────────────────────────────────
+
+def test_the_bundled_serif_loads_and_becomes_mikes_face():
+    """Source Serif 4 ships in ui/fonts (OFL) and is registered at startup, so
+    Mike looks the same on every machine instead of on whatever is installed."""
+    _app()
+    from ui.panel import style
+
+    assert style.load_fonts(), "the bundled Source Serif 4 files must load"
+    assert style.ui_face() == style.BRAND_FAMILY == "Source Serif 4"
+    assert style.font(style.BODY).family() == "Source Serif 4"
+    assert "Source Serif 4" in style.ui_family(), "rich-text replies use it too"
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    assert os.path.isfile(os.path.join(here, "ui", "fonts", "OFL.txt")), (
+        "the font's licence ships with it")
+    spec = open(os.path.join(here, "packaging", "mike.spec")).read()
+    assert '"ui", "fonts"' in spec, "the Windows package must bundle the fonts"
