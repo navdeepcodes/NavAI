@@ -106,7 +106,7 @@ class _Renderer:
             f'<span style="color:{mute}; font-size:11px;">{label}</span>'
             f'&nbsp;&nbsp;<a href="copy://{index}" '
             f'style="color:{accent}; font-size:11px; text-decoration:none;">'
-            f'⧉ copy</a></td></tr>'
+            f'Copy code</a></td></tr>'
             f'<tr><td style="padding:10px 12px;">'
             f'<pre style="margin:0; font-family:Consolas,\'Cascadia Mono\',monospace; '
             f'font-size:12.5px; white-space:pre-wrap;">{body}</pre>'

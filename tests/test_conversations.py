@@ -237,18 +237,19 @@ def test_deleting_a_chat_takes_two_clicks():
     """One stray click must never permanently erase a chat."""
     _app()
     from brain import conversation_store as cs
-    from ui.workspace.pages import HistoryPage, _ConvoRow
+    from ui.workspace.workspace import MikeWorkspace
 
     cid = cs.create()
     cs.add_message(cid, "user", "important revision notes")
-    page = HistoryPage({})
-    rows = [r for r in page.findChildren(_ConvoRow) if r._id == cid]
-    assert rows, "the chat is listed"
-    from PySide6.QtWidgets import QPushButton
-    x = [b for b in rows[0].findChildren(QPushButton) if b.text() == "✕"][0]
+    page = MikeWorkspace({})
+    rows = [r for r in page.sidebar.rows() if r.conversation_id == cid]
+    assert rows, "the chat is listed in the rail"
+    x = rows[0].delete_button
 
     x.click()
     assert cs.get(cid) is not None, "first click only asks"
     assert x.text() == "Delete?"
     x.click()
     assert cs.get(cid) is None, "second click deletes"
+    assert cid not in [r.conversation_id for r in page.sidebar.rows()], (
+        "and it leaves the rail")

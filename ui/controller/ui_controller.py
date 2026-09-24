@@ -45,6 +45,10 @@ class UIController(QObject):
         self._voice = VoiceInputManager()
         self._speaker = Speaker()
         self._response_text = ""
+        # The text of the bubble being streamed right now. A turn can hold
+        # several bubbles (a sentence before a tool, the answer after it), and
+        # each must end holding only its own words.
+        self._bubble_text = ""
         self._spoken_up_to = 0
         self._speech_pump_timer = QTimer()
         self._speech_pump_timer.setInterval(100)
@@ -188,6 +192,7 @@ class UIController(QObject):
             self._conversation_id, "user", message,
             [_os.path.basename(a) for a in attachments],
         )
+        self._notify_conversation()
 
         self._page.show_thinking()
 
@@ -240,17 +245,22 @@ class UIController(QObject):
 
         if self._stream_bubble is None:
             self._stream_bubble = self._page.begin_mike_stream()
+            self._bubble_text = ""
             # Deliberately not suppressing the wake word here — this is what
             # lets "Hey Mike" interrupt him mid-sentence. Verified empirically
             # against this machine's own TTS output (twice, saying the wake
             # phrase itself) with zero false triggers before relying on it.
-            self._page.input.voice.set_state("speaking")
+            # Only shown as speaking when there is actually a voice: with
+            # speech turned off, the mic claiming "speaking" was a small lie.
+            if self._speech_allowed():
+                self._page.input.voice.set_state("speaking")
             self._speech_pump_timer.start()
 
             if self._floating and self._floating.isVisible():
                 self._floating.set_state("speaking")
 
         self._stream_bubble.append_text(text)
+        self._bubble_text += text
         self._response_text += text
         self._try_speak_sentences()
 
@@ -338,7 +348,15 @@ class UIController(QObject):
 
         self._page.hide_thinking()
 
+        # What Mike said before this step is finished: give it its full
+        # render, without the "Copy" a final answer carries.
+        if self._stream_bubble is not None:
+            try:
+                self._stream_bubble.set_text(self._bubble_text, final=False)
+            except TypeError:
+                self._stream_bubble.set_text(self._bubble_text)
         self._stream_bubble = None
+        self._bubble_text = ""
 
         self._action_card = self._page.add_action_card(
             description
@@ -455,8 +473,12 @@ class UIController(QObject):
         # Always finalise the bubble: set_text does the full, syntax-highlighted
         # Markdown render (streaming only ever did the fast plain pass), and it
         # applies the humanised text whether or not the guard changed anything.
+        # It gets its own words only — the whole turn's text here repeated any
+        # sentence Mike said before a tool ("I'll set that up. I'll set that
+        # up. Done — …").
         if self._stream_bubble is not None:
-            self._stream_bubble.set_text(humanized)
+            self._stream_bubble.set_text(humanize_reply(self._bubble_text))
+        self._bubble_text = ""
 
         # The corner streamed the raw tokens, so it still shows the pre-guard
         # text (the "or should I distract you?" menu the humaniser strips). Give
@@ -531,7 +553,9 @@ class UIController(QObject):
 
         readable = _humanize_error(error)
 
-        self._page.add_mike_message(readable)
+        # Shown as what it is — a problem, with its fix — rather than dressed
+        # up as something Mike said.
+        self._add_notice(readable, "error")
         self._page.set_state("error")
         self._mirror_edge("error", readable)
 
@@ -643,7 +667,7 @@ class UIController(QObject):
 
     def _on_voice_error(self, message: str) -> None:
 
-        self._page.add_mike_message(message)
+        self._add_notice(message, "info")
 
         if self._floating and self._floating.isVisible():
             self._floating.set_response(message)
@@ -672,6 +696,19 @@ class UIController(QObject):
     # =====================================================
     # Preferences applied to the live engines
     # =====================================================
+
+    def stop_speaking(self) -> None:
+        """Silence Mike mid-answer without touching anything else."""
+        if not (self._speaker.is_speaking() or self._speech_pump_timer.isActive()):
+            return
+        self._speaker.stop()
+        self._speech_pump_timer.stop()
+        self._page.input.voice.set_state("idle")
+        self._wake.resume()
+        if self._page.state() == "speaking":
+            self._page.set_state("idle")
+        if self._floating and self._floating.isVisible():
+            self._floating.finish()
 
     def set_voice_enabled(self, enabled: bool) -> None:
         """Turning speech off should silence Mike immediately, not next turn."""
@@ -720,7 +757,7 @@ class UIController(QObject):
 
     def new_conversation(self) -> None:
         """Start a fresh chat: new screen, and Mike genuinely forgets the old
-        one (it stays saved in History)."""
+        one (it stays saved in the rail)."""
         self._quiesce()
         self._conversation_id = None
         self._runtime.new_conversation()
@@ -728,6 +765,7 @@ class UIController(QObject):
         self._page.set_state("idle")
         self._page.input.set_enabled(True)
         self._page.input.focus()
+        self._notify_conversation()
 
     def open_conversation(self, conversation_id: int) -> None:
         """Reopen a saved chat and continue it with the context it had."""
@@ -742,6 +780,24 @@ class UIController(QObject):
         self._page.set_state("idle")
         self._page.input.set_enabled(True)
         self._page.input.focus()
+        self._notify_conversation()
+
+    def _notify_conversation(self) -> None:
+        """Let the surface mark the current chat in the rail and title it."""
+        hook = getattr(self._page, "conversation_changed", None)
+        if hook is None:
+            return
+        try:
+            hook(self._conversation_id)
+        except Exception:
+            logger.exception("Could not update the conversation list.")
+
+    def _add_notice(self, text: str, kind: str) -> None:
+        add = getattr(self._page, "add_notice", None)
+        if add is not None:
+            add(text, kind)
+        else:
+            self._page.add_mike_message(text)
 
     def resume_recent_conversation(self) -> None:
         import time as _time
@@ -754,10 +810,27 @@ class UIController(QObject):
         age_h = (_time.time() - float(last.get("updated_at") or 0)) / 3600.0
         if age_h <= self.RESUME_WITHIN_HOURS:
             self.open_conversation(int(last["id"]))
+            # Opening Mike into an earlier chat should say so, rather than
+            # leave someone wondering why old messages are on screen.
+            if hasattr(self._page, "add_notice"):
+                ago = ("a few minutes ago" if age_h < 0.25 else
+                       "earlier" if age_h < 1 else
+                       f"{int(age_h)} hour{'s' if int(age_h) != 1 else ''} ago")
+                self._page.add_notice(
+                    f"Picking up the chat from {ago}. Press Ctrl+N for a fresh one.", "info")
 
     @property
     def conversation_id(self) -> int | None:
         return self._conversation_id
+
+    @property
+    def wake_listening(self) -> bool:
+        """Is "Hey Mike" actually being listened for right now — not just
+        switched on in Settings, but running on this machine?"""
+        try:
+            return bool(self._wake.is_active)
+        except Exception:
+            return False
 
     def reload_voice(self) -> None:
         """A voice picked in settings — rebuild the speaker's provider so it
@@ -862,6 +935,10 @@ class UIController(QObject):
         """
 
         if self._worker is None:
+            # No turn running — but Mike may still be reading a finished
+            # answer aloud. Stop / Esc should silence him too, rather than do
+            # nothing while he talks on.
+            self.stop_speaking()
             return
 
         self._retire_active_worker()
@@ -874,12 +951,19 @@ class UIController(QObject):
         self._action_card = None
 
         self._page.confirm.hide()
-        self._page.add_mike_message("Cancelled.")
+        mark_stopped = getattr(self._page, "mark_stopped", None)
+        if mark_stopped is not None:
+            mark_stopped()
+        if hasattr(self._page, "add_notice"):
+            self._page.add_notice("You stopped Mike. Nothing else from that request will run.",
+                                  "stopped")
+        else:
+            self._page.add_mike_message("Cancelled.")
         self._page.set_state("idle")
         self._mirror_edge("idle")
 
         if self._floating and self._floating.isVisible():
-            self._floating.set_response("Cancelled.")
+            self._floating.set_response("Stopped.")
             self._floating.finish()
 
         self._page.input.set_enabled(True)

@@ -173,9 +173,36 @@ _INLINE_CODE = re.compile(r"(`+)(.+?)\1", re.DOTALL)
 _DISPLAY = re.compile(r"\$\$(.+?)\$\$|\\\[(.+?)\\\]", re.DOTALL)
 _INLINE = re.compile(r"\\\((.+?)\\\)", re.DOTALL)
 # $…$ only when it's unmistakably maths: no space just inside the dollars, not
-# followed by a digit (so "$5 and $10" is money), and holding a TeX command or
-# a ^/_ script.
-_DOLLAR = re.compile(r"(?<![\\$\w])\$(?=\S)([^$\n]*?[\\^_][^$\n]*?)(?<=\S)\$(?![\d$])")
+# followed by a digit (so "$5 and $10" is money), and holding maths — see
+# _is_inline_math for what counts.
+_DOLLAR = re.compile(r"(?<![\\$\w])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$])")
+
+#: Plain algebra with no TeX in it: letters, digits, operators, brackets.
+_ALGEBRA = re.compile(r"[A-Za-z0-9 +\-*/=<>().,'|]+")
+
+
+def _is_inline_math(expr: str) -> bool:
+    """Is the text between two dollars maths, or just money / prose?
+
+    A TeX command or a ^/_ script always is. So is a lone variable ($Q$, $W$,
+    $x'$ — models write these constantly in explanations, and they were left
+    as raw "$Q$"), and short algebra ($x = 3$, $f(x) = 2x + 1$) — provided no
+    word in it is longer than two letters, which keeps "$5 for lunch and
+    the $" style prose out, and it starts with a letter or bracket, which
+    keeps "$5-$" prices out.
+    """
+    if re.search(r"[\\^_]", expr):
+        return True
+    if re.fullmatch(r"[A-Za-z]'?", expr):
+        return True
+    if len(expr) > 40 or not _ALGEBRA.fullmatch(expr):
+        return False
+    if not re.match(r"[A-Za-z(]", expr):
+        return False
+    words = re.findall(r"[A-Za-z]+", expr)
+    if any(len(w) > 2 and w not in _WORDS for w in words):
+        return False
+    return bool(re.search(r"[=+\-*/<>()]", expr)) or bool(re.fullmatch(r"\d*[A-Za-z]{1,2}\d*", expr))
 
 PLACEHOLDER = "\u2063M{}\u2063"
 
@@ -199,7 +226,9 @@ def extract(markdown_text: str) -> tuple[str, list[tuple[bool, str]]]:
         chunk = _INLINE_CODE.sub(keep, chunk)
         chunk = _DISPLAY.sub(lambda m: stash(True, m.group(1) or m.group(2)), chunk)
         chunk = _INLINE.sub(lambda m: stash(False, m.group(1)), chunk)
-        chunk = _DOLLAR.sub(lambda m: stash(False, m.group(1)), chunk)
+        chunk = _DOLLAR.sub(
+            lambda m: stash(False, m.group(1)) if _is_inline_math(m.group(1)) else m.group(0),
+            chunk)
         return re.sub("\u2063C(\\d+)\u2063", lambda m: code[int(m.group(1))], chunk)
 
     parts = _FENCE.split(markdown_text)

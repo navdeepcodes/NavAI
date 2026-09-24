@@ -61,9 +61,9 @@ class ThinkingLine(QWidget):
     _FRAME_MS = 16         # ~60fps; motion never reads as stepping
     _LONG_WAIT_S = 11.0    # past here, stay on the reassuring tail
 
-    def __init__(self, size: int = 15, parent=None) -> None:
+    def __init__(self, size: int = 16, parent=None) -> None:
         super().__init__(parent)
-        self._size = size
+        self._size = size          # pixel size, from the style type scale
         self.setFixedHeight(int(size * 1.9))
         self._t = 0.0                 # continuous clock, seconds
         self._elapsed = 0.0           # total time thinking, for the long-wait bias
@@ -114,9 +114,21 @@ class ThinkingLine(QWidget):
             choice = random.randrange(body)
         self._index = choice
 
+    #: Past this, the wait also shows how long it has been going: a local
+    #: model on a laptop can take a while, and a number that keeps climbing
+    #: is the honest difference between "slow" and "stuck".
+    _SHOW_ELAPSED_S = 8.0
+
     def _on_frame(self) -> None:
         self._t += self._FRAME_MS / 1000.0
         self._elapsed += self._FRAME_MS / 1000.0
+
+        if style.reduced_motion():
+            # Calm mode: one steady line, no typing or fading.
+            self._phase = "hold"
+            self._phase_start = self._t
+            self.update()
+            return
 
         text = THOUGHTS[self._index]
         since = self._t - self._phase_start
@@ -151,17 +163,29 @@ class ThinkingLine(QWidget):
             opacity = max(0.0, 1.0 - since / self._FADE_S)
         else:  # gap
             shown, opacity = 0, 0.0
-        if opacity <= 0.001:
-            return
 
-        visible = text[:shown]
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-
-        font = style.voice(self._size)
+        font = style.font(self._size)
         p.setFont(font)
         fm = p.fontMetrics()
         baseline = self.height() / 2.0 + (fm.ascent() - fm.descent()) / 2.0
+
+        # the elapsed time sits at a fixed place, steady through the thought's
+        # write-and-fade, so the number is always readable
+        if self._elapsed >= self._SHOW_ELAPSED_S:
+            secs = int(self._elapsed)
+            label = f"{secs}s" if secs < 60 else f"{secs // 60}m {secs % 60:02d}s"
+            small = style.font(style.CAPTION)
+            p.setFont(small)
+            p.setPen(QColor(style.INK_MUTE))
+            widest = max(fm.horizontalAdvance(t) for t in THOUGHTS)
+            p.drawText(int(1 + widest + 18), int(baseline), label)
+            p.setFont(font)
+
+        if opacity <= 0.001:
+            return
+        visible = text[:shown]
 
         ink = QColor(style.INK_SOFT)
         ink.setAlphaF(opacity)

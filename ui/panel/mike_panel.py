@@ -46,7 +46,7 @@ def _hotkey_hint() -> str:
 
 def _this_machine() -> str:
     """What to call the machine Mike runs on, in first-person copy."""
-    return "this PC" if platform.system() == "Windows" else "this Mac"
+    return {"Windows": "this PC", "Darwin": "this Mac"}.get(platform.system(), "this computer")
 
 
 STATE_WORD = {
@@ -312,6 +312,11 @@ class _RichTurn(QTextBrowser):
         super().__init__(parent)
         self._raw = text
         self._codes: list[str] = []
+        # A finished reply (not one still streaming) carries a quiet "Copy"
+        # for the whole answer — the thing a student most often wants to do
+        # with it after reading.
+        self._final = bool(text)
+        self._copied = False
         self.setOpenLinks(False)
         self.setOpenExternalLinks(False)
         self.setFrameShape(QFrame.NoFrame)
@@ -332,6 +337,13 @@ class _RichTurn(QTextBrowser):
 
     def _render(self, do_highlight: bool = True) -> None:
         html, self._codes = richtext.render(self._raw, do_highlight=do_highlight)
+        if self._final and self._raw.strip():
+            label = "✓ Copied" if self._copied else "Copy"
+            html += (
+                f'<p style="margin-top:2px; margin-bottom:0;">'
+                f'<a href="copyall://reply" style="color:{style.INK_MUTE}; '
+                f'font-family:{style.ui_family()}; font-size:12px; '
+                f'text-decoration:none;">{label}</a></p>')
         self.setHtml(html)
         self._fit_height()
 
@@ -356,10 +368,12 @@ class _RichTurn(QTextBrowser):
         if not self._pending.isActive():
             self._pending.start()
 
-    def set_text(self, text: str) -> None:
+    def set_text(self, text: str, final: bool = True) -> None:
         # The final word: stop any pending stream render and do the full,
-        # syntax-highlighted pass.
+        # syntax-highlighted pass. `final=False` for a sentence Mike said on
+        # the way to doing something — rendered, but not offered for copying.
         self._raw = text
+        self._final = final
         self._pending.stop()
         self._render(do_highlight=True)
 
@@ -368,6 +382,16 @@ class _RichTurn(QTextBrowser):
 
     def _on_anchor(self, url) -> None:
         scheme = url.scheme()
+        if scheme == "copyall":
+            QApplication.clipboard().setText(self._raw)
+            self._copied = True
+            self._render(do_highlight=True)
+
+            def _reset() -> None:
+                self._copied = False
+                self._render(do_highlight=True)
+            QTimer.singleShot(1600, self, _reset)
+            return
         if scheme == "copy":
             try:
                 index = int(url.toString().split("copy://", 1)[1])

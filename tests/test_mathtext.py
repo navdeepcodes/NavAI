@@ -43,6 +43,16 @@ def test_money_code_and_prose_are_untouched():
     assert found == []
 
 
+def test_plain_variables_and_simple_algebra_are_maths_but_prices_are_not():
+    """Models write "$Q$ — heat added" constantly; it showed as raw "$Q$"."""
+    out, found = extract("- $Q$ — heat added\n- $W$ — work done, where $x = 3$")
+    assert "$" not in out
+    assert [t for _d, t in found] == ["Q", "W", "x = 3"]
+    for prose in ("It costs $5 and $10.", "between $5-$6", "I paid $20 and $ was gone"):
+        _out, found = extract(prose)
+        assert found == [], prose
+
+
 def test_all_delimiters_are_found():
     md = (r"Area is $\pi r^2$, inline \(e^{i\pi}\)." "\n\n"
           r"$$\int_0^1 x\,dx = \frac{1}{2}$$" "\n\n"

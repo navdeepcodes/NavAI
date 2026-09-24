@@ -93,7 +93,7 @@ class MikeWindow(QMainWindow):
         )
 
         self._settings_hooks["on_voice_toggle"] = self.controller.set_voice_enabled
-        self._settings_hooks["on_wake_toggle"] = self.controller.set_wake_word_enabled
+        self._settings_hooks["on_wake_toggle"] = self._set_wake
         self._settings_hooks["on_voice_changed"] = self.controller.reload_voice
         # Conversations: History opens/deletes them, the rail starts new ones.
         self._settings_hooks["new_conversation"] = self.controller.new_conversation
@@ -125,6 +125,11 @@ class MikeWindow(QMainWindow):
         self.corner.dismissed.connect(self._on_corner_dismissed)
 
         self.controller.startup()
+        self.page.set_wake_listening(self.controller.wake_listening)
+
+    def _set_wake(self, enabled: bool) -> None:
+        self.controller.set_wake_word_enabled(enabled)
+        self.page.set_wake_listening(self.controller.wake_listening)
 
     # ── ambient tray notifications while Mike is away ──────
     _AMBIENT = {
@@ -334,8 +339,6 @@ class MikeWindow(QMainWindow):
         self.corner.dismiss()
 
     _RESIZE_MARGIN = 6      # logical px; scaled to the display below
-    _HEADER_H = 44          # logical px of draggable titlebar
-    _CTRL_R = 122           # logical px on the right kept clickable (the buttons)
 
     def nativeEvent(self, event_type, message):
         # Native move and resize for a frameless window via WM_NCHITTEST, in
@@ -376,8 +379,11 @@ class MikeWindow(QMainWindow):
                         if on_bottom:               return True, 15  # HTBOTTOM
 
                     # The titlebar's empty span is a drag handle (double-click to
-                    # maximise), except the right end where the window buttons sit.
-                    if y < self._HEADER_H * dpr and x < w - self._CTRL_R * dpr:
+                    # maximise); its buttons — window controls, the sidebar
+                    # toggle, new chat — stay clickable.
+                    from PySide6.QtCore import QPoint
+                    local = QPoint(int(x / dpr), int(y / dpr))
+                    if self.page.hit_is_caption(local):
                         return True, 2                              # HTCAPTION
                     return True, 1                                  # HTCLIENT
             except Exception:
@@ -390,6 +396,8 @@ class MikeWindow(QMainWindow):
         # kept the whole conversation in context.
         QShortcut(QKeySequence("Ctrl+N"), self, activated=self.controller.new_conversation)
         QShortcut(QKeySequence("Ctrl+L"), self, activated=self.controller.new_conversation)
+        QShortcut(QKeySequence("Ctrl+B"), self, activated=self.page.toggle_sidebar)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.page.open_settings)
         QShortcut(
             QKeySequence.Quit if platform.system() == "Darwin" else QKeySequence("Ctrl+Q"),
             self, activated=self._request_quit,
@@ -403,6 +411,8 @@ class MikeWindow(QMainWindow):
             if self.page.showing_overlay():
                 self.page.close_overlays()
             else:
+                # Stops whatever Mike is doing — a running turn, or just the
+                # voice still reading a finished answer aloud.
                 self.controller.cancel_active()
             return
         super().keyPressEvent(event)
@@ -476,6 +486,9 @@ def run():
     style.apply_theme()
 
     app.setWindowIcon(_app_icon())
+    # The one place the base UI font is set: the platform's own face at the
+    # body size, which any widget without a size of its own inherits.
+    app.setFont(style.font(style.BODY))
     app.setStyleSheet(GLOBAL_STYLESHEET)
 
     # Mike stays present after the window closes (hotkey, wake word, corner,

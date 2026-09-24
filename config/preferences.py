@@ -71,6 +71,9 @@ DEFAULTS: dict[str, Any] = {
     "window_x": -1,
     "window_y": -1,
     "window_maximised": False,
+    # The conversation rail folded away (Ctrl+B / its toggle), remembered so
+    # the workspace reopens the way it was left.
+    "sidebar_collapsed": False,
 
     # Who Mike is talking to. A real profile surface edits these; they're used
     # for a warmer greeting and nothing is sent anywhere.

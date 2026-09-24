@@ -1,25 +1,33 @@
-"""The surfaces behind the sidebar — history, memory, profile, preferences,
-voice, model, privacy, about.
+"""Settings — everything about Mike that isn't the conversation.
 
-Each is a real surface over real state, not a settings screen invented to fill
-a rail: history lists saved conversations (and what Mike did), memory reads and edits the memory
-store, profile and preferences edit what actually persists, voice drives the
-live engines. Built from one small set of primitives (a page frame, cards,
-rows, a painted switch) so the whole product reads as one considered thing.
+One surface, reached from the foot of the rail, with a tab for each concern:
+General (you, and how Mike looks), Voice, Memory, Activity (what Mike has done
+on this computer), Privacy, and About. Each is a real surface over real state,
+not a screen invented to fill a menu: Memory reads and edits the memory store,
+Activity is the actual record of Mike's actions, Voice drives the live
+engines, and every switch is read by the thing it claims to control.
+
+Built from one small set of primitives — a group heading, a card, a setting
+row with its control on the right, a painted switch — so every tab reads as
+part of the same product.
 """
 from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QRectF, Signal
+from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
-    QScrollArea, QVBoxLayout, QWidget,
+    QScrollArea, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from ui.panel import style
-from ui.panel.mike_panel import _Swatch
+from ui.panel.mike_panel import _Swatch, _hotkey_hint, _this_machine
+from ui.workspace.icons import draw
+
+#: The reading column every settings tab is laid out in.
+COLUMN = 720
 
 
 # ══ primitives ═════════════════════════════════════════════
@@ -31,7 +39,7 @@ class Switch(QWidget):
     def __init__(self, on: bool = False, parent=None) -> None:
         super().__init__(parent)
         self._on = on
-        self.setFixedSize(42, 24)
+        self.setFixedSize(40, 24)
         self.setCursor(Qt.PointingHandCursor)
 
     def set_on(self, on: bool) -> None:
@@ -51,147 +59,72 @@ class Switch(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         w, h = self.width(), self.height()
-        track = QColor(style.accent()) if self._on else QColor(style.HAIRLINE)
+        track = QColor(style.accent()) if self._on else QColor(style.INK_FAINT)
         p.setPen(Qt.NoPen)
         p.setBrush(track)
         p.drawRoundedRect(QRectF(0, 0, w, h), h / 2, h / 2)
-        knob = QColor("#FFFFFF") if self._on else QColor(style.INK_MUTE)
-        p.setBrush(knob)
-        d = h - 8
-        x = (w - d - 4) if self._on else 4
-        p.drawEllipse(QRectF(x, 4, d, d))
+        p.setBrush(QColor("#FFFFFF"))
+        d = h - 6
+        x = (w - d - 3) if self._on else 3
+        p.drawEllipse(QRectF(x, 3, d, d))
+
+
+def _label(text: str, px: int = style.BODY, colour: str | None = None,
+           weight: QFont.Weight = QFont.Weight.Normal, wrap: bool = True) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setWordWrap(wrap)
+    lbl.setFont(style.font(px, weight))
+    lbl.setStyleSheet(f"color:{colour or style.INK};background:transparent;")
+    return lbl
+
+
+def _group(title: str) -> QLabel:
+    """The heading above a card: what this group of settings is about."""
+    lbl = _label(title, style.SMALL, style.INK_SOFT, QFont.Weight.DemiBold)
+    lbl.setContentsMargins(4, 10, 0, 2)
+    return lbl
 
 
 def _card() -> tuple[QFrame, QVBoxLayout]:
     card = QFrame()
     card.setObjectName("card")
     col = QVBoxLayout(card)
-    col.setContentsMargins(20, 16, 20, 16)
-    col.setSpacing(4)
+    col.setContentsMargins(20, 6, 20, 6)
+    col.setSpacing(0)
     return card, col
 
 
-def _kicker(text: str) -> QLabel:
-    lbl = QLabel(text.upper())
-    lbl.setFont(style.label(10))
-    lbl.setStyleSheet(
-        f"color:{style.INK_FAINT};background:transparent;letter-spacing:1.6px;")
-    return lbl
+def _rule() -> QFrame:
+    sep = QFrame()
+    sep.setFixedHeight(1)
+    sep.setStyleSheet(f"background:{style.HAIRLINE};border:none;")
+    return sep
 
 
-def _body(text: str, colour: str | None = None, size: int = 14) -> QLabel:
-    lbl = QLabel(text)
-    lbl.setWordWrap(True)
-    lbl.setFont(style.voice(size))
-    lbl.setStyleSheet(
-        f"color:{colour or style.INK_SOFT};background:transparent;line-height:150%;")
-    return lbl
+def _row(title: str, desc: str = "", control: QWidget | None = None) -> QWidget:
+    """A setting: what it is on the left, its control on the right."""
+    w = QWidget()
+    row = QHBoxLayout(w)
+    row.setContentsMargins(0, 14, 0, 14)
+    row.setSpacing(18)
+    text = QVBoxLayout()
+    text.setSpacing(3)
+    text.addWidget(_label(title, style.BODY, style.INK, QFont.Weight.Medium))
+    if desc:
+        text.addWidget(_label(desc, style.SMALL, style.INK_MUTE))
+    row.addLayout(text, 1)
+    if control is not None:
+        row.addWidget(control, 0, Qt.AlignVCenter)
+    return w
 
 
-class Page(QScrollArea):
-    """A scrolling surface with a title and a centred body column."""
-
-    def __init__(self, title: str, subtitle: str = "", parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("page")
-        self.setWidgetResizable(True)
-        self.setFrameShape(QFrame.NoFrame)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-
-        board = QWidget()
-        board.setStyleSheet("background:transparent;")
-        row = QHBoxLayout(board)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addStretch(1)
-
-        column = QWidget()
-        column.setStyleSheet("background:transparent;")
-        column.setMaximumWidth(680)
-        self.body = QVBoxLayout(column)
-        self.body.setContentsMargins(40, 40, 40, 40)
-        self.body.setSpacing(14)
-
-        head = QLabel(title)
-        head.setFont(style.voice(26))
-        head.setStyleSheet(
-            f"color:{style.INK};background:transparent;font-weight:600;")
-        self.body.addWidget(head)
-        if subtitle:
-            sub = _body(subtitle, style.INK_MUTE, 14)
-            self.body.addWidget(sub)
-        self.body.addSpacing(10)
-
-        row.addWidget(column, 1)
-        row.addStretch(1)
-        self.setWidget(board)
-        self.setStyleSheet(_PAGE_QSS())
-
-    def add(self, w: QWidget) -> None:
-        self.body.addWidget(w)
-
-    def _clear_body(self) -> None:
-        """Remove everything below the title and subtitle before a reload.
-
-        Hidden as well as scheduled for deletion: a detached widget stays
-        visible at its old position until the deferred delete runs, and a
-        page that reloads on entry would otherwise paint its stale rows
-        underneath the fresh ones.
-        """
-        while self.body.count() > 3:
-            item = self.body.takeAt(3)
-            w = item.widget()
-            if w is not None:
-                w.hide()
-                w.deleteLater()
-
-    def end(self) -> None:
-        self.body.addStretch(1)
-
-
-def _PAGE_QSS() -> str:
-    return f"""
-QScrollArea#page {{ background: transparent; border: none; }}
-QFrame#card {{
-    background: {style.GROUND_RAISED};
-    border: 1px solid {style.HAIRLINE};
-    border-radius: 14px;
-}}
-QLineEdit#field, QPlainTextEdit#field {{
-    background: {style.GROUND_SUNK};
-    border: 1px solid {style.HAIRLINE};
-    border-radius: 10px;
-    padding: 9px 12px;
-    color: {style.INK};
-    selection-background-color: {style.accent()};
-}}
-QLineEdit#field:focus, QPlainTextEdit#field:focus {{
-    border: 1px solid {style.accent()};
-}}
-QPushButton#pill {{
-    background: {style.accent()}; color: #17140F;
-    border: none; border-radius: 9px; padding: 8px 18px;
-    font-size: 13px; font-weight: 600;
-}}
-QPushButton#ghost {{
-    background: transparent; color: {style.INK_SOFT};
-    border: 1px solid {style.HAIRLINE}; border-radius: 9px;
-    padding: 7px 16px; font-size: 13px;
-}}
-QPushButton#ghost:hover {{ color: {style.INK}; border-color: {style.INK_MUTE}; }}
-QPushButton#iconx {{
-    background: transparent; color: {style.INK_MUTE};
-    border: none; border-radius: 8px; padding: 0; font-size: 12px;
-}}
-QPushButton#iconx:hover {{ color: {style.STOP}; background: {style.GROUND_SUNK}; }}
-QPushButton#danger {{
-    background: {style.STOP}; color: #FFFFFF; border: none;
-    border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 600;
-}}
-QScrollBar:vertical {{ background: transparent; width: 9px; margin: 6px 3px; }}
-QScrollBar::handle:vertical {{ background: {style.INK_FAINT}; border-radius: 4px; min-height: 30px; }}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
-QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
-"""
+def _rows_card(rows: list[QWidget]) -> QFrame:
+    card, col = _card()
+    for i, r in enumerate(rows):
+        if i:
+            col.addWidget(_rule())
+        col.addWidget(r)
+    return card
 
 
 def _rel_time(ts: float) -> str:
@@ -205,7 +138,12 @@ def _rel_time(ts: float) -> str:
         return f"{int(delta // 60)}m ago"
     if delta < 86400:
         return f"{int(delta // 3600)}h ago"
-    return f"{int(delta // 86400)}d ago"
+    if delta < 7 * 86400:
+        return f"{int(delta // 86400)}d ago"
+    try:
+        return datetime.fromtimestamp(float(ts)).strftime("%d %b")
+    except Exception:
+        return ""
 
 
 def _arm(button: QPushButton, confirm_text: str, action, idle_text: str | None = None) -> None:
@@ -213,10 +151,8 @@ def _arm(button: QPushButton, confirm_text: str, action, idle_text: str | None =
 
     First click turns it into a red "Delete?"-style confirm; a second click
     within three seconds acts, otherwise it quietly reverts. One stray click
-    must never permanently erase a chat or everything Mike remembers.
+    must never permanently erase something that matters.
     """
-    from PySide6.QtCore import QTimer
-
     idle = idle_text if idle_text is not None else button.text()
     idle_name = button.objectName()
     min_w, max_w = button.minimumWidth(), button.maximumWidth()
@@ -242,7 +178,7 @@ def _arm(button: QPushButton, confirm_text: str, action, idle_text: str | None =
         button.setText(confirm_text)
         button.setObjectName("danger")
         button.setMaximumWidth(16777215)
-        button.setMinimumWidth(button.fontMetrics().horizontalAdvance(confirm_text) + 24)
+        button.setMinimumWidth(button.fontMetrics().horizontalAdvance(confirm_text) + 28)
         button.style().unpolish(button); button.style().polish(button)
         timer.start(3000)
 
@@ -250,370 +186,210 @@ def _arm(button: QPushButton, confirm_text: str, action, idle_text: str | None =
     button.clicked.connect(clicked)
 
 
-# ══ history ════════════════════════════════════════════════
+def _button(text: str, name: str = "ghost") -> QPushButton:
+    b = QPushButton(text)
+    b.setObjectName(name)
+    b.setCursor(Qt.PointingHandCursor)
+    b.setFont(style.font(style.SMALL, QFont.Weight.Medium))
+    return b
 
-class _ConvoRow(QFrame):
-    """One saved conversation: click to reopen it, ✕ to delete it."""
-    opened = Signal(int)
-    deleted = Signal(int)
 
-    def __init__(self, convo: dict, current: bool, parent=None) -> None:
+def settings_qss() -> str:
+    return f"""
+QWidget#settings {{ background: transparent; }}
+QScrollArea#tabBody {{ background: transparent; border: none; }}
+QFrame#card {{
+    background: {style.GROUND_RAISED};
+    border: 1px solid {style.HAIRLINE};
+    border-radius: 14px;
+}}
+QLineEdit#field, QPlainTextEdit#field {{
+    background: {style.GROUND};
+    border: 1px solid {style.HAIRLINE};
+    border-radius: 10px;
+    padding: 8px 12px;
+    color: {style.INK};
+    selection-background-color: {style.accent()};
+}}
+QLineEdit#field:focus, QPlainTextEdit#field:focus {{
+    border: 1px solid {style.accent()};
+}}
+QPushButton#pill {{
+    background: {style.accent()}; color: #17140F;
+    border: none; border-radius: 9px; padding: 8px 18px;
+}}
+QPushButton#pill:hover {{ background: {QColor(style.accent()).lighter(106).name()}; }}
+QPushButton#ghost {{
+    background: transparent; color: {style.INK_SOFT};
+    border: 1px solid {style.HAIRLINE}; border-radius: 9px;
+    padding: 7px 14px;
+}}
+QPushButton#ghost:hover {{ color: {style.INK}; border-color: {style.INK_MUTE}; }}
+QPushButton#danger {{
+    background: {style.STOP}; color: #FFFFFF; border: none;
+    border-radius: 9px; padding: 7px 14px; font-weight: 600;
+}}
+QPushButton#seg {{
+    background: transparent; color: {style.INK_SOFT};
+    border: 1px solid {style.HAIRLINE}; border-radius: 9px;
+    padding: 6px 14px;
+}}
+QPushButton#seg:hover {{ color: {style.INK}; }}
+QPushButton#seg:checked {{
+    background: {style.INK}; color: {style.GROUND}; border: 1px solid {style.INK};
+}}
+QPushButton#iconx {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; border-radius: 8px; padding: 0 8px;
+}}
+QPushButton#iconx:hover {{ color: {style.STOP}; background: {style.GROUND_SUNK}; }}
+QScrollBar:vertical {{ background: transparent; width: 9px; margin: 6px 3px; }}
+QScrollBar::handle:vertical {{ background: {style.INK_FAINT}; border-radius: 4px; min-height: 30px; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: transparent; }}
+"""
+
+
+def _centred(widget: QWidget, max_width: int = COLUMN, margins=(40, 0, 40, 0)) -> QWidget:
+    """Put `widget` in a column no wider than max_width, centred in the space."""
+    outer = QWidget()
+    row = QHBoxLayout(outer)
+    row.setContentsMargins(*margins)
+    row.setSpacing(0)
+    row.addStretch(1)
+    widget.setMaximumWidth(max_width)
+    row.addWidget(widget, 100)
+    row.addStretch(1)
+    return outer
+
+
+class _Tab(QScrollArea):
+    """One settings tab: a scrolling, centred column of groups and cards."""
+
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._id = int(convo["id"])
-        self.setObjectName("convoRow")
-        self.setCursor(Qt.PointingHandCursor)
-        row = QHBoxLayout(self)
-        row.setContentsMargins(14, 10, 8, 10)
-        row.setSpacing(10)
+        self.setObjectName("tabBody")
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        column = QWidget()
+        self.body = QVBoxLayout(column)
+        self.body.setContentsMargins(0, 18, 0, 40)
+        self.body.setSpacing(8)
+        self.setWidget(_centred(column))
+        self.build()
 
-        text = QVBoxLayout(); text.setSpacing(2)
-        title = QLabel(convo.get("title") or "Untitled chat")
-        title.setFont(style.voice(14))
-        title.setStyleSheet(f"color:{style.INK};background:transparent;")
-        text.addWidget(title)
-        n = int(convo.get("message_count") or 0)
-        meta = f"{n} message{'s' if n != 1 else ''} · {_rel_time(convo.get('updated_at', 0))}"
-        if current:
-            meta = "Current chat · " + meta
-        sub = QLabel(meta)
-        sub.setFont(style.label(10, QFont.Weight.Normal))
-        sub.setStyleSheet(
-            f"color:{style.accent() if current else style.INK_MUTE};background:transparent;")
-        text.addWidget(sub)
-        row.addLayout(text, 1)
+    def build(self) -> None:  # overridden
+        pass
 
-        x = QPushButton("✕")
-        x.setObjectName("iconx")
-        x.setCursor(Qt.PointingHandCursor)
-        x.setFixedSize(28, 28)
-        x.setToolTip("Delete this chat")
-        _arm(x, "Delete?", lambda: self.deleted.emit(self._id))
-        row.addWidget(x, 0, Qt.AlignVCenter)
-
-    def mousePressEvent(self, _e) -> None:
-        self.opened.emit(self._id)
-
-
-class HistoryPage(Page):
-    """Your conversations with Mike — reopen one and carry on where you left
-    off. What Mike actually *did* (files written, apps opened) is kept below,
-    since that's a different, also useful, kind of history."""
-
-    def __init__(self, hooks: dict | None = None, parent=None) -> None:
-        super().__init__("History",
-                         "Your chats with Mike, newest first. Open one to pick "
-                         "up exactly where you left off.", parent)
-        self._hooks = hooks or {}
-        self.setStyleSheet(self.styleSheet() + f"""
-QFrame#convoRow {{ background: transparent; border-radius: 10px; }}
-QFrame#convoRow:hover {{ background: {style.GROUND_SUNK}; }}
-""")
-        self.reload()
+    def add(self, w: QWidget) -> None:
+        self.body.addWidget(w)
 
     def reload(self) -> None:
-        self._clear_body()
-
-        try:
-            from brain import conversation_store
-            convos = conversation_store.recent(limit=100)
-        except Exception:
-            convos = []
-        current = None
-        getter = self._hooks.get("current_conversation")
-        if getter:
-            try:
-                current = getter()
-            except Exception:
-                current = None
-
-        if not convos:
-            self.add(_body("No chats yet. Everything you and Mike talk about "
-                           "is kept here, on this PC, so you can come back to it.",
-                           style.INK_MUTE))
-        else:
-            card, col = _card()
-            col.setContentsMargins(6, 6, 6, 6)
-            col.setSpacing(0)
-            for i, c in enumerate(convos):
-                if i:
-                    sep = QFrame(); sep.setFixedHeight(1)
-                    sep.setStyleSheet(f"background:{style.HAIRLINE};border:none;")
-                    col.addWidget(sep)
-                row = _ConvoRow(c, current is not None and int(c["id"]) == int(current))
-                row.opened.connect(self._open)
-                row.deleted.connect(self._delete)
-                col.addWidget(row)
-            self.add(card)
-
-        self._actions_section()
-        self.end()
-
-    def _actions_section(self) -> None:
-        try:
-            from brain import activity_store
-            rows = activity_store.recent(limit=12)
-        except Exception:
-            rows = []
-        if not rows:
-            return
-        self.body.addSpacing(10)
-        self.add(_kicker("What Mike did"))
-        card, col = _card()
-        col.setSpacing(0)
-        for i, r in enumerate(rows):
-            if i:
-                sep = QFrame(); sep.setFixedHeight(1)
-                sep.setStyleSheet(f"background:{style.HAIRLINE};border:none;")
-                col.addWidget(sep)
-            col.addWidget(self._action_row(r))
-        self.add(card)
-
-    def _action_row(self, r: dict) -> QWidget:
-        ok = bool(r.get("succeeded", 1))
-        w = QWidget(); w.setStyleSheet("background:transparent;")
-        row = QHBoxLayout(w)
-        row.setContentsMargins(0, 8, 0, 8)
-        row.setSpacing(12)
-        tick = QLabel("✓" if ok else "✕")
-        tick.setStyleSheet(
-            f"color:{style.GOOD if ok else style.STOP};background:transparent;font-size:13px;")
-        row.addWidget(tick, 0, Qt.AlignTop)
-        text = QLabel(str(r.get("action", "")))
-        text.setWordWrap(True)
-        text.setFont(style.voice(13))
-        text.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
-        row.addWidget(text, 1)
-        when = QLabel(_rel_time(r.get("started_at", 0)))
-        when.setFont(style.label(10, QFont.Weight.Normal))
-        when.setStyleSheet(f"color:{style.INK_MUTE};background:transparent;")
-        row.addWidget(when, 0, Qt.AlignTop)
-        return w
-
-    def _open(self, conversation_id: int) -> None:
-        hook = self._hooks.get("open_conversation")
-        if hook:
-            hook(conversation_id)
-
-    def _delete(self, conversation_id: int) -> None:
-        try:
-            from brain import conversation_store
-            conversation_store.delete(conversation_id)
-        except Exception:
-            pass
-        # Deleting the chat you're in starts a fresh one, rather than leaving
-        # a conversation on screen that no longer exists to be continued.
-        getter = self._hooks.get("current_conversation")
-        try:
-            is_current = getter is not None and getter() == conversation_id
-        except Exception:
-            is_current = False
-        if is_current and self._hooks.get("new_conversation"):
-            self._hooks["new_conversation"]()
-        self.reload()
+        """Rebuild from live state (memory, activity)."""
+        while self.body.count():
+            item = self.body.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                # Hidden as well as deleted: a detached widget stays painted at
+                # its old position until the deferred delete runs.
+                w.hide()
+                w.deleteLater()
+        self.build()
 
 
-# ══ memory ═════════════════════════════════════════════════
+# ══ General: you, and how Mike looks ═══════════════════════
 
-class MemoryPage(Page):
-    def __init__(self, parent=None) -> None:
-        super().__init__("Memory",
-                         "What Mike remembers about you — kept on this machine, "
-                         "yours to edit.", parent)
-        self.reload()
+class GeneralTab(_Tab):
 
-    def reload(self) -> None:
-        self._clear_body()
-        try:
-            from brain import memory_store
-            rows = memory_store.all_memories(limit=300)
-        except Exception:
-            rows = []
+    def __init__(self, hooks: dict, on_restyle, parent=None) -> None:
+        self._hooks = hooks
+        self._on_restyle = on_restyle
+        super().__init__(parent)
 
-        if not rows:
-            self.add(_body("Nothing kept yet. Tell Mike something worth "
-                           "remembering — “remember that I'm learning Python "
-                           "this term” — and it'll appear here.", style.INK_MUTE))
-            self.end()
-            return
-
-        top = QHBoxLayout()
-        count = QLabel(f"{len(rows)} kept")
-        count.setFont(style.label(11, QFont.Weight.Normal))
-        count.setStyleSheet(f"color:{style.INK_MUTE};background:transparent;")
-        top.addWidget(count)
-        top.addStretch(1)
-        forget = QPushButton("Forget all")
-        forget.setObjectName("ghost")
-        forget.setCursor(Qt.PointingHandCursor)
-        _arm(forget, "Forget everything?", self._forget_all)
-        top.addWidget(forget)
-        holder = QWidget(); holder.setStyleSheet("background:transparent;"); holder.setLayout(top)
-        self.add(holder)
-
-        for r in rows:
-            self.add(self._card(r))
-        self.end()
-
-    def _card(self, r: dict) -> QWidget:
-        card, col = _card()
-        row = QHBoxLayout()
-        row.setSpacing(10)
-        text = QLabel(str(r.get("content", "")))
-        text.setWordWrap(True)
-        text.setFont(style.voice(14))
-        text.setStyleSheet(f"color:{style.INK};background:transparent;")
-        row.addWidget(text, 1)
-        x = QPushButton("✕")
-        x.setObjectName("iconx")
-        x.setCursor(Qt.PointingHandCursor)
-        x.setFixedSize(28, 28)
-        _arm(x, "Forget?", lambda mid=r.get("id"): self._forget_one(mid))
-        row.addWidget(x, 0, Qt.AlignTop)
-        col.addLayout(row)
-        meta = QLabel(str(r.get("category", "") or "").capitalize())
-        meta.setFont(style.label(10, QFont.Weight.Normal))
-        meta.setStyleSheet(f"color:{style.INK_FAINT};background:transparent;")
-        col.addWidget(meta)
-        return card
-
-    def _forget_one(self, mid) -> None:
-        try:
-            from brain import memory_store
-            memory_store.forget(memory_id=mid)
-        except Exception:
-            pass
-        self.reload()
-
-    def _forget_all(self) -> None:
-        try:
-            from brain import memory_store
-            memory_store.forget(query="everything")
-        except Exception:
-            pass
-        self.reload()
-
-
-# ══ profile ════════════════════════════════════════════════
-
-class ProfilePage(Page):
-    def __init__(self, parent=None) -> None:
-        super().__init__("Profile",
-                         "So Mike can talk to you like he knows you. Stays on "
-                         "this machine — nothing is sent anywhere.", parent)
+    def build(self) -> None:
         from config import preferences
-        card, col = _card()
-        col.setSpacing(14)
 
-        col.addWidget(_kicker("Your name"))
+        self.add(_group("You"))
+        card, col = _card()
+        col.setContentsMargins(20, 18, 20, 18)
+        col.setSpacing(8)
+        col.addWidget(_label("What should Mike call you?", style.SMALL, style.INK_SOFT,
+                             QFont.Weight.Medium))
         self._name = QLineEdit(str(preferences.get("profile_name", "") or ""))
         self._name.setObjectName("field")
-        self._name.setFont(style.voice(14))
-        self._name.setPlaceholderText("What should Mike call you?")
+        self._name.setFont(style.font(style.BODY))
+        self._name.setPlaceholderText("Your name")
         col.addWidget(self._name)
-
-        col.addSpacing(4)
-        col.addWidget(_kicker("About you"))
+        col.addSpacing(8)
+        col.addWidget(_label("Anything that helps Mike help you", style.SMALL,
+                             style.INK_SOFT, QFont.Weight.Medium))
         self._about = QPlainTextEdit(str(preferences.get("profile_about", "") or ""))
         self._about.setObjectName("field")
-        self._about.setFont(style.voice(14))
-        self._about.setFixedHeight(96)
+        self._about.setFont(style.font(style.BODY))
+        self._about.setFixedHeight(92)
         self._about.setPlaceholderText(
-            "What you're working on, what you're studying, how you like to "
-            "work — anything that helps Mike be useful.")
+            "What you're studying or working on, how you like things explained…")
         col.addWidget(self._about)
-
         save_row = QHBoxLayout()
-        save_row.addStretch(1)
-        self._saved = QLabel("")
-        self._saved.setFont(style.label(11, QFont.Weight.Normal))
-        self._saved.setStyleSheet(f"color:{style.GOOD};background:transparent;")
+        save_row.setContentsMargins(0, 6, 0, 0)
+        hint = _label(f"Stays on {_this_machine()} — nothing is sent anywhere.",
+                      style.CAPTION, style.INK_MUTE)
+        save_row.addWidget(hint, 1)
+        self._saved = _label("", style.SMALL, style.GOOD, wrap=False)
         save_row.addWidget(self._saved, 0, Qt.AlignVCenter)
-        save = QPushButton("Save")
-        save.setObjectName("pill")
-        save.setCursor(Qt.PointingHandCursor)
+        save = _button("Save", "pill")
         save.clicked.connect(self._save)
-        save_row.addWidget(save)
+        save_row.addWidget(save, 0, Qt.AlignVCenter)
         col.addLayout(save_row)
-
         self.add(card)
-        self.end()
+
+        self.add(_group("Appearance"))
+        theme = QWidget()
+        trow = QHBoxLayout(theme)
+        trow.setContentsMargins(0, 0, 0, 0)
+        trow.setSpacing(6)
+        self._theme_btns: dict[str, QPushButton] = {}
+        current = str(preferences.get("theme", "system") or "system")
+        for key, label in (("system", "System"), ("light", "Light"), ("dark", "Dark")):
+            b = _button(label, "seg")
+            b.setCheckable(True)
+            b.setChecked(key == current)
+            b.clicked.connect(lambda _=False, k=key: self._set_theme(k))
+            self._theme_btns[key] = b
+            trow.addWidget(b)
+
+        swatches = QWidget()
+        arow = QHBoxLayout(swatches)
+        arow.setContentsMargins(0, 0, 0, 0)
+        arow.setSpacing(6)
+        self._swatches: list[_Swatch] = []
+        cur_accent = str(preferences.get("accent", "") or "amber").lower()
+        for name, colour in style.accent_presets().items():
+            sw = _Swatch(name, colour, self._set_accent)
+            sw.set_selected(name == cur_accent)
+            self._swatches.append(sw)
+            arow.addWidget(sw)
+
+        motion = Switch(bool(preferences.get("reduced_motion", False)))
+        motion.toggled.connect(self._set_motion)
+
+        self.add(_rows_card([
+            _row("Theme", "Light, dark, or follow your system.", theme),
+            _row("Accent", "Mike's colour, used sparingly.", swatches),
+            _row("Reduce motion", "Calmer, simpler animations everywhere in Mike.", motion),
+        ]))
+        self.body.addStretch(1)
 
     def _save(self) -> None:
         from config import preferences
         preferences.set_value("profile_name", self._name.text().strip())
         preferences.set_value("profile_about", self._about.toPlainText().strip())
-        self._saved.setText("Saved ✓")
-
-
-# ══ preferences (appearance) ═══════════════════════════════
-
-class PreferencesPage(Page):
-    restyle_needed = Signal()
-
-    def __init__(self, parent=None) -> None:
-        super().__init__("Preferences",
-                         "How Mike looks and feels on your machine.", parent)
-        from config import preferences
-
-        # ── theme ──
-        card, col = _card()
-        col.setSpacing(10)
-        col.addWidget(_kicker("Appearance"))
-        col.addWidget(_body("Light, dark, or follow your system.", style.INK_MUTE, 13))
-        trow = QHBoxLayout()
-        trow.setSpacing(8)
-        self._theme_btns: dict[str, QPushButton] = {}
-        current = str(preferences.get("theme", "system") or "system")
-        for key, label in (("system", "System"), ("light", "Light"), ("dark", "Dark")):
-            b = QPushButton(label)
-            b.setObjectName("seg")
-            b.setCheckable(True)
-            b.setChecked(key == current)
-            b.setCursor(Qt.PointingHandCursor)
-            b.clicked.connect(lambda _=False, k=key: self._set_theme(k))
-            self._theme_btns[key] = b
-            trow.addWidget(b)
-        trow.addStretch(1)
-        holder = QWidget(); holder.setStyleSheet("background:transparent;"); holder.setLayout(trow)
-        col.addWidget(holder)
-        self.add(card)
-
-        # ── accent ──
-        card2, col2 = _card()
-        col2.setSpacing(10)
-        col2.addWidget(_kicker("Accent"))
-        col2.addWidget(_body("Mike's colour, used sparingly across the app.",
-                             style.INK_MUTE, 13))
-        arow = QHBoxLayout(); arow.setSpacing(12)
-        self._swatches: list[_Swatch] = []
-        cur_accent = str(preferences.get("accent", "amber") or "amber").lower()
-        for name, colour in style.accent_presets().items():
-            sw = _Swatch(name, colour, self._set_accent)
-            sw.set_selected(name == cur_accent or (cur_accent == "" and name == "amber"))
-            self._swatches.append(sw)
-            arow.addWidget(sw)
-        arow.addStretch(1)
-        holder2 = QWidget(); holder2.setStyleSheet("background:transparent;"); holder2.setLayout(arow)
-        col2.addWidget(holder2)
-        self.add(card2)
-
-        # ── motion ──
-        card3, col3 = _card()
-        mrow = QHBoxLayout()
-        mtext = QVBoxLayout(); mtext.setSpacing(2)
-        mtext.addWidget(_kicker("Reduced motion"))
-        mtext.addWidget(_body("Calmer animations, if motion bothers you.",
-                              style.INK_MUTE, 13))
-        mrow.addLayout(mtext, 1)
-        self._motion = Switch(bool(preferences.get("reduced_motion", False)))
-        self._motion.toggled.connect(
-            lambda on: __import__("config").preferences.set_value("reduced_motion", on))
-        mrow.addWidget(self._motion, 0, Qt.AlignVCenter)
-        col3.addLayout(mrow)
-        self.add(card3)
-        self.end()
-
-        self._restyle_seg()
+        self._saved.setText("Saved")
+        QTimer.singleShot(2200, lambda: self._saved.setText(""))
+        hook = self._hooks.get("profile_changed")
+        if hook:
+            hook()
 
     def _set_theme(self, key: str) -> None:
         from config import preferences
@@ -621,31 +397,23 @@ class PreferencesPage(Page):
         for k, b in self._theme_btns.items():
             b.setChecked(k == key)
         style.apply_theme()
-        self.restyle_needed.emit()
+        self._on_restyle()
 
     def _set_accent(self, name: str) -> None:
         from config import preferences
         preferences.set_value("accent", name)
         for sw in self._swatches:
             sw.set_selected(sw._name == name)
-        self.restyle_needed.emit()
+        self._on_restyle()
 
-    def _restyle_seg(self) -> None:
-        self.setStyleSheet(_PAGE_QSS() + f"""
-QPushButton#seg {{
-    background: {style.GROUND_SUNK}; color: {style.INK_SOFT};
-    border: 1px solid {style.HAIRLINE}; border-radius: 9px;
-    padding: 8px 18px; font-size: 13px;
-}}
-QPushButton#seg:checked {{
-    background: {style.accent()}; color: #17140F; border: none; font-weight: 600;
-}}
-""")
+    def _set_motion(self, on: bool) -> None:
+        from config import preferences
+        preferences.set_value("reduced_motion", on)
 
 
-# ══ voice ══════════════════════════════════════════════════
+# ══ Voice ══════════════════════════════════════════════════
 
-class _VoiceRow(QFrame):
+class _VoiceRow(QWidget):
     """A selectable voice in the picker."""
     picked = Signal(str)
 
@@ -653,132 +421,136 @@ class _VoiceRow(QFrame):
         super().__init__(parent)
         self._key = key
         self._selected = selected
+        self._label = label
+        self._hover = False
+        self.setFixedHeight(46)
         self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("background:transparent;")
-        row = QHBoxLayout(self)
-        row.setContentsMargins(2, 8, 2, 8)
-        row.setSpacing(12)
-        self._dot = QLabel("◉" if selected else "○")
-        self._dot.setStyleSheet(
-            f"color:{style.accent() if selected else style.INK_MUTE};"
-            f"background:transparent;font-size:15px;")
-        row.addWidget(self._dot, 0, Qt.AlignVCenter)
-        text = QLabel(label)
-        text.setFont(style.voice(14))
-        text.setStyleSheet(f"color:{style.INK};background:transparent;")
-        row.addWidget(text, 1)
+        self.setAccessibleName(label)
 
     def set_selected(self, on: bool) -> None:
         self._selected = on
-        self._dot.setText("◉" if on else "○")
-        self._dot.setStyleSheet(
-            f"color:{style.accent() if on else style.INK_MUTE};"
-            f"background:transparent;font-size:15px;")
+        self.update()
+
+    def enterEvent(self, _e):
+        self._hover = True
+        self.update()
+
+    def leaveEvent(self, _e):
+        self._hover = False
+        self.update()
 
     def mousePressEvent(self, _e) -> None:
         self.picked.emit(self._key)
 
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        h = self.height()
+        cy = h / 2
+        ring = QColor(style.accent() if self._selected else style.INK_MUTE)
+        pen = p.pen()
+        pen.setColor(ring)
+        pen.setWidthF(1.6)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawEllipse(QRectF(1, cy - 8, 16, 16))
+        if self._selected:
+            p.setPen(Qt.NoPen)
+            p.setBrush(ring)
+            p.drawEllipse(QRectF(5, cy - 4, 8, 8))
+        name, _, desc = self._label.partition(" — ")
+        p.setPen(QColor(style.INK))
+        p.setFont(style.font(style.BODY, QFont.Weight.Medium))
+        fm = p.fontMetrics()
+        p.drawText(QRectF(30, 0, 200, h), Qt.AlignVCenter | Qt.AlignLeft, name)
+        if desc:
+            p.setPen(QColor(style.INK_MUTE))
+            p.setFont(style.font(style.SMALL))
+            p.drawText(QRectF(30 + fm.horizontalAdvance(name) + 10, 0, 400, h),
+                       Qt.AlignVCenter | Qt.AlignLeft, desc)
 
-class VoicePage(Page):
-    def __init__(self, hooks: dict | None = None, parent=None) -> None:
-        super().__init__("Voice",
-                         "How Mike listens and speaks. Everything runs locally.",
-                         parent)
-        self._hooks = hooks or {}
+
+class VoiceTab(_Tab):
+
+    def __init__(self, hooks: dict, parent=None) -> None:
+        self._hooks = hooks
         self._rows: list[_VoiceRow] = []
+        super().__init__(parent)
+
+    def build(self) -> None:
         from config import preferences
 
-        # ── engine status ──
+        self.add(_group("Speaking"))
         card, col = _card()
-        col.setSpacing(6)
-        col.addWidget(_kicker("Speaking voice"))
-        self._status_line = _body(self._voice_line(), style.INK, 15)
+        col.setContentsMargins(20, 16, 20, 16)
+        col.setSpacing(4)
+        col.addWidget(_label("Mike's voice", style.SMALL, style.INK_SOFT, QFont.Weight.Medium))
+        self._status_line = _label(self._voice_line(), style.READ, style.INK, QFont.Weight.Medium)
         col.addWidget(self._status_line)
-        col.addWidget(_body(self._voice_detail(), style.INK_MUTE, 13))
+        col.addWidget(_label(
+            f"Generated on {_this_machine()} — fast to start, light on resources, "
+            "and never sent anywhere.", style.SMALL, style.INK_MUTE))
+        picker = self._voice_picker()
+        if picker:
+            col.addSpacing(8)
+            col.addWidget(_rule())
+            col.addSpacing(4)
+            for w in picker:
+                col.addWidget(w)
         self.add(card)
 
-        # ── voice picker ──
-        picker = self._voice_picker()
-        if picker is not None:
-            self.add(picker)
+        speak = Switch(bool(preferences.get("voice_enabled", True)))
+        speak.toggled.connect(lambda on: self._flip("voice_enabled", on, "on_voice_toggle"))
+        self.add(_rows_card([
+            _row("Speak answers aloud",
+                 "Mike reads his replies out. Turn off for a silent, text-only Mike.",
+                 speak),
+        ]))
 
-        # ── speak toggle ──
-        self.add(self._toggle_card(
-            "Speak answers aloud",
-            "Mike reads his replies out. Turn off for a silent, text-only Mike.",
-            "voice_enabled", self._on_voice))
+        self.add(_group("Listening"))
+        wake = Switch(bool(preferences.get("wake_word_enabled", True)))
+        wake.toggled.connect(lambda on: self._flip("wake_word_enabled", on, "on_wake_toggle"))
+        self.add(_rows_card([
+            _row("“Hey Mike”", "Say it from anywhere to start talking, hands-free.", wake),
+            _row("Talk with a click", "Click the mic in the message box, or press F6. "
+                 "Mike stops listening when you pause.", _key_hint("F6")),
+            _row("Interrupt", "Start talking, click the mic, or press Esc — "
+                 "Mike stops speaking straight away.", _key_hint("Esc")),
+        ]))
+        self.body.addStretch(1)
 
-        # ── wake toggle ──
-        self.add(self._toggle_card(
-            "“Hey Mike” wake word",
-            "Say “Hey Mike” from anywhere to start talking, hands-free.",
-            "wake_word_enabled", self._on_wake))
-
-        self.end()
-
-    def _toggle_card(self, title, desc, pref_key, cb) -> QWidget:
+    def _flip(self, key: str, on: bool, hook: str) -> None:
         from config import preferences
-        card, col = _card()
-        row = QHBoxLayout()
-        tcol = QVBoxLayout(); tcol.setSpacing(2)
-        tcol.addWidget(_kicker(title))
-        tcol.addWidget(_body(desc, style.INK_MUTE, 13))
-        row.addLayout(tcol, 1)
-        sw = Switch(bool(preferences.get(pref_key, True)))
-
-        def _flip(on, key=pref_key, callback=cb):
-            preferences.set_value(key, on)
-            callback(on)
-        sw.toggled.connect(_flip)
-        row.addWidget(sw, 0, Qt.AlignVCenter)
-        col.addLayout(row)
-        return card
-
-    def _on_voice(self, on: bool) -> None:
-        h = self._hooks.get("on_voice_toggle")
+        preferences.set_value(key, on)
+        h = self._hooks.get(hook)
         if h:
             h(on)
 
-    def _on_wake(self, on: bool) -> None:
-        h = self._hooks.get("on_wake_toggle")
-        if h:
-            h(on)
-
-    def _voice_picker(self):
+    def _voice_picker(self) -> list[QWidget]:
         try:
             from voice.providers.piper import PiperVoice, VOICES, _piper_home
-            pv = PiperVoice()
-            ok, _ = pv.available()
+            ok, _ = PiperVoice().available()
             if not ok:
-                return None
+                return []
             home = _piper_home()
         except Exception:
-            return None
+            return []
         # Only offer voices whose model is actually bundled on this machine.
         present = {
             k: v for k, v in VOICES.items()
             if home is not None and (home / "voices" / f"{k}.onnx").exists()
         }
         if len(present) < 2:
-            return None
+            return []
         from config import preferences
         current = str(preferences.get("voice_piper_voice", "en_US-amy-medium"))
-        card, col = _card()
-        col.setSpacing(2)
-        col.addWidget(_kicker("Choose a voice"))
-        col.addWidget(_body("Pick the one that sounds most like Mike to you.",
-                            style.INK_MUTE, 13))
-        col.addSpacing(4)
-        for i, (key, label) in enumerate(present.items()):
-            if i:
-                sep = QFrame(); sep.setFixedHeight(1)
-                sep.setStyleSheet(f"background:{style.HAIRLINE};border:none;")
-                col.addWidget(sep)
+        rows: list[QWidget] = []
+        for key, label in present.items():
             row = _VoiceRow(key, label, key == current)
             row.picked.connect(self._pick_voice)
             self._rows.append(row)
-            col.addWidget(row)
-        return card
+            rows.append(row)
+        return rows
 
     def _pick_voice(self, key: str) -> None:
         from config import preferences
@@ -797,12 +569,12 @@ class VoicePage(Page):
             from config import preferences
             p = str(preferences.get("voice_provider", "piper")).lower()
             if p == "piper":
-                from voice.providers.piper import VOICES
-                v = str(preferences.get("voice_piper_voice", "en_US-amy-medium"))
-                label = VOICES.get(v, v)
-                return f"{label} — neural, running on-device."
+                from voice.providers.piper import PiperVoice, VOICES
+                if PiperVoice().available()[0]:
+                    v = str(preferences.get("voice_piper_voice", "en_US-amy-medium"))
+                    return VOICES.get(v, v).split(" — ")[0] + " · neural voice"
             if p == "qwen":
-                return f"{preferences.get('voice_qwen_speaker', 'Ryan')} — neural, local."
+                return f"{preferences.get('voice_qwen_speaker', 'Ryan')} · neural voice"
         except Exception:
             pass
         try:
@@ -812,104 +584,448 @@ class VoicePage(Page):
                 return why
         except Exception:
             pass
-        return "The built-in system voice."
-
-    def _voice_detail(self) -> str:
-        return ("Chosen for this machine: fast to start, light on resources, and "
-                "it never leaves your PC.")
+        return "The built-in system voice"
 
 
-# ══ model ══════════════════════════════════════════════════
+def _key_hint(text: str) -> QLabel:
+    """A keyboard key, drawn as a small keycap."""
+    lbl = QLabel(text)
+    lbl.setFont(style.font(style.CAPTION, QFont.Weight.DemiBold))
+    lbl.setStyleSheet(
+        f"color:{style.INK_SOFT};background:{style.GROUND};"
+        f"border:1px solid {style.HAIRLINE};border-bottom-width:2px;"
+        f"border-radius:6px;padding:3px 8px;")
+    return lbl
 
-class ModelPage(Page):
-    def __init__(self, parent=None) -> None:
-        super().__init__("Model",
-                         "The brain Mike thinks with — running entirely on your "
-                         "machine.", parent)
-        card, col = _card()
-        col.setSpacing(6)
-        col.addWidget(_kicker("Language model"))
+
+# ══ Memory ═════════════════════════════════════════════════
+
+class MemoryTab(_Tab):
+
+    def build(self) -> None:
         try:
-            from config.ollama import OLLAMA_CHAT_MODEL
-            model = OLLAMA_CHAT_MODEL
+            from brain import memory_store
+            rows = memory_store.all_memories(limit=300)
         except Exception:
-            model = "a local model"
-        col.addWidget(_body(model, style.INK, 17))
-        col.addWidget(_body(
-            "Runs through Ollama, on-device. Your conversations, files and "
-            "screen never leave this PC — there is no cloud and no account.",
-            style.INK_MUTE, 13))
+            rows = []
+
+        top = QWidget()
+        trow = QHBoxLayout(top)
+        trow.setContentsMargins(4, 4, 0, 6)
+        trow.addWidget(_label(
+            f"What Mike remembers about you, kept on {_this_machine()}. "
+            "Forget anything you like.", style.BODY, style.INK_SOFT), 1)
+        if rows:
+            forget = _button("Forget all")
+            _arm(forget, "Forget everything?", self._forget_all)
+            trow.addWidget(forget, 0, Qt.AlignVCenter)
+        self.add(top)
+
+        if not rows:
+            self.add(_empty_card(
+                "memory", "Nothing kept yet",
+                "Tell Mike something worth keeping — “remember that my exams "
+                "start on the 12th” — and it will appear here."))
+            self.body.addStretch(1)
+            return
+
+        card, col = _card()
+        for i, r in enumerate(rows):
+            if i:
+                col.addWidget(_rule())
+            col.addWidget(self._memory_row(r))
         self.add(card)
+        self.body.addStretch(1)
 
-        card2, col2 = _card()
-        col2.setSpacing(6)
-        col2.addWidget(_kicker("Vision"))
+    def _memory_row(self, r: dict) -> QWidget:
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 12, 0, 12)
+        row.setSpacing(12)
+        text = QVBoxLayout()
+        text.setSpacing(3)
+        text.addWidget(_label(str(r.get("content", "")), style.BODY, style.INK))
+        meta = str(r.get("category", "") or "").capitalize()
+        when = _rel_time(r.get("updated_at") or r.get("created_at") or 0)
+        text.addWidget(_label(" · ".join(x for x in (meta, when) if x),
+                              style.CAPTION, style.INK_MUTE))
+        row.addLayout(text, 1)
+        x = _button("Forget", "iconx")
+        _arm(x, "Forget?", lambda mid=r.get("id"): self._forget_one(mid))
+        row.addWidget(x, 0, Qt.AlignVCenter)
+        return w
+
+    def _forget_one(self, mid) -> None:
         try:
-            from config.ollama import OLLAMA_VISION_MODEL
-            vm = OLLAMA_VISION_MODEL
+            from brain import memory_store
+            memory_store.forget(memory_id=mid)
         except Exception:
-            vm = "a local vision model"
-        col2.addWidget(_body(f"{vm} — for reading images and your screen.",
-                             style.INK_SOFT, 14))
-        self.add(card2)
-        self.end()
+            pass
+        self.reload()
+
+    def _forget_all(self) -> None:
+        try:
+            from brain import memory_store
+            memory_store.forget(query="everything")
+        except Exception:
+            pass
+        self.reload()
 
 
-# ══ privacy ════════════════════════════════════════════════
+# ══ Activity: what Mike has done ═══════════════════════════
 
-class PrivacyPage(Page):
-    def __init__(self, parent=None) -> None:
-        super().__init__("Privacy",
-                         "Mike is built to stay yours.", parent)
+class ActivityTab(_Tab):
+
+    def build(self) -> None:
+        try:
+            from brain import activity_store
+            rows = activity_store.recent(limit=100)
+        except Exception:
+            rows = []
+        self.add(_label(
+            f"Everything Mike has done on {_this_machine()} — files he wrote, apps "
+            "he opened, commands he ran — newest first.", style.BODY, style.INK_SOFT))
+        if not rows:
+            self.add(_empty_card(
+                "activity", "Nothing yet",
+                "When Mike opens, writes or changes something for you, it's "
+                "recorded here, so you can always see what he did."))
+            self.body.addStretch(1)
+            return
         card, col = _card()
-        col.setSpacing(10)
-        col.addWidget(_body(
-            "Everything Mike does happens on this machine. The model runs "
+        for i, r in enumerate(rows):
+            if i:
+                col.addWidget(_rule())
+            col.addWidget(self._action_row(r))
+        self.add(card)
+        self.body.addStretch(1)
+
+    def _action_row(self, r: dict) -> QWidget:
+        ok = bool(r.get("succeeded", 1))
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 11, 0, 11)
+        row.setSpacing(12)
+        row.addWidget(_StatusDot(ok), 0, Qt.AlignTop)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        text.addWidget(_label(str(r.get("action", "")), style.BODY, style.INK))
+        outcome = str(r.get("outcome") or "").strip()
+        if not ok and outcome:
+            text.addWidget(_label(outcome[:160], style.CAPTION, style.STOP))
+        row.addLayout(text, 1)
+        row.addWidget(_label(_rel_time(r.get("started_at", 0)), style.CAPTION,
+                             style.INK_MUTE, wrap=False), 0, Qt.AlignTop)
+        return w
+
+
+class _StatusDot(QWidget):
+    def __init__(self, ok: bool, parent=None) -> None:
+        super().__init__(parent)
+        self._ok = ok
+        self.setFixedSize(20, 20)
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        col = QColor(style.GOOD if self._ok else style.STOP)
+        tile = QColor(col)
+        tile.setAlpha(40)
+        p.setPen(Qt.NoPen)
+        p.setBrush(tile)
+        p.drawEllipse(QRectF(0, 0, 20, 20))
+        draw(p, "check" if self._ok else "close", QRectF(3, 3, 14, 14), col, 1.8)
+
+
+def _empty_card(icon: str, title: str, body: str) -> QWidget:
+    card, col = _card()
+    col.setContentsMargins(24, 28, 24, 28)
+    col.setSpacing(6)
+    ic = _IconTile(icon)
+    col.addWidget(ic, 0, Qt.AlignHCenter)
+    col.addSpacing(6)
+    t = _label(title, style.BODY, style.INK, QFont.Weight.DemiBold)
+    t.setAlignment(Qt.AlignHCenter)
+    col.addWidget(t)
+    b = _label(body, style.SMALL, style.INK_MUTE)
+    b.setAlignment(Qt.AlignHCenter)
+    col.addWidget(b)
+    return card
+
+
+class _IconTile(QWidget):
+    def __init__(self, icon: str, size: int = 40, parent=None) -> None:
+        super().__init__(parent)
+        self._icon = icon
+        self.setFixedSize(size, size)
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        s = self.width()
+        tile = QColor(style.accent())
+        tile.setAlpha(34)
+        p.setPen(Qt.NoPen)
+        p.setBrush(tile)
+        p.drawRoundedRect(QRectF(0, 0, s, s), 11, 11)
+        draw(p, self._icon, QRectF(s * 0.25, s * 0.25, s * 0.5, s * 0.5),
+             QColor(style.accent()).darker(125) if not style.is_dark() else QColor(style.accent()),
+             1.8)
+
+
+# ══ Privacy ════════════════════════════════════════════════
+
+class PrivacyTab(_Tab):
+
+    def build(self) -> None:
+        self.add(_group("Stays on this machine"))
+        card, col = _card()
+        col.setContentsMargins(20, 16, 20, 16)
+        col.addWidget(_label(
+            f"Everything Mike does happens on {_this_machine()}. The model runs "
             "locally, your files are read locally, and nothing — not your "
-            "messages, not your screen, not your memory — is sent to any "
-            "server. There is no account and no telemetry.", style.INK, 14))
+            "messages, not your screen, not your memory — is sent to a server. "
+            "There is no account and no telemetry.", style.BODY, style.INK))
         self.add(card)
 
+        self.add(_group("Before Mike changes anything"))
         card2, col2 = _card()
-        col2.setSpacing(10)
-        col2.addWidget(_kicker("Before Mike changes anything"))
-        col2.addWidget(_body(
-            "Mike asks first before doing anything it can't quietly undo — "
-            "sending a message, deleting a file, buying something. You approve "
-            "each one, in the moment.", style.INK_SOFT, 13))
+        col2.setContentsMargins(20, 16, 20, 16)
+        col2.addWidget(_label(
+            "Mike asks first before anything he can't quietly undo — deleting "
+            "or overwriting a file, sending a message, running something that "
+            "changes your system. You approve each one, in the moment, and you "
+            "can stop him at any time with Stop or Esc.", style.BODY, style.INK_SOFT))
         self.add(card2)
 
-        card3, col3 = _card()
-        col3.setSpacing(6)
-        col3.addWidget(_kicker("Where your data lives"))
+        self.add(_group("Where your data lives"))
+        rows: list[QWidget] = []
         try:
             from config import preferences
             from brain import memory_store
-            col3.addWidget(_body(f"Preferences · {preferences.path()}", style.INK_MUTE, 12))
-            col3.addWidget(_body(f"Memory · {memory_store.db_path()}", style.INK_MUTE, 12))
+            for title, path in (("Chats, memory and activity", memory_store.db_path()),
+                                ("Preferences", preferences.path())):
+                w = QWidget()
+                c = QVBoxLayout(w)
+                c.setContentsMargins(0, 12, 0, 12)
+                c.setSpacing(3)
+                c.addWidget(_label(title, style.BODY, style.INK, QFont.Weight.Medium))
+                p = _label(path, style.CAPTION, style.INK_MUTE)
+                p.setTextInteractionFlags(Qt.TextSelectableByMouse)
+                c.addWidget(p)
+                rows.append(w)
         except Exception:
             pass
-        self.add(card3)
-        self.end()
+        if rows:
+            self.add(_rows_card(rows))
+        self.body.addStretch(1)
 
 
-# ══ about ══════════════════════════════════════════════════
+# ══ About ══════════════════════════════════════════════════
 
-class AboutPage(Page):
-    def __init__(self, parent=None) -> None:
-        super().__init__("About Mike", "", parent)
+class AboutTab(_Tab):
+
+    def build(self) -> None:
+        from ui.panel.mark import PresenceMark
+        try:
+            from config.settings import VERSION
+        except Exception:
+            VERSION = ""
+
         card, col = _card()
-        col.setSpacing(10)
-        col.addWidget(_body(
-            "Mike is a personal assistant that lives on your computer and can "
-            "actually use it — open apps, find and write files, read your "
-            "screen, fix code, and remember what matters. Not a chat window: a "
-            "presence on your machine.", style.INK, 15))
+        col.setContentsMargins(22, 22, 22, 22)
+        head = QHBoxLayout()
+        head.setSpacing(14)
+        mark = PresenceMark(40)
+        head.addWidget(mark, 0, Qt.AlignVCenter)
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        names.addWidget(_label("Mike", style.TITLE, style.INK, QFont.Weight.DemiBold))
+        import platform
+        plat = {"Windows": "Windows", "Darwin": "macOS"}.get(platform.system(), platform.system())
+        names.addWidget(_label(f"Version {VERSION} · {plat}", style.SMALL, style.INK_MUTE))
+        head.addLayout(names, 1)
+        col.addLayout(head)
+        col.addSpacing(12)
+        col.addWidget(_label(
+            "A personal assistant that lives on your computer and can actually "
+            "use it — open apps, find and write files, read your screen, fix "
+            "code, and remember what matters.", style.BODY, style.INK_SOFT))
         self.add(card)
 
-        card2, col2 = _card()
-        col2.setSpacing(4)
-        col2.addWidget(_kicker("Version"))
-        col2.addWidget(_body("Mike 1.0.0 · Windows", style.INK_SOFT, 14))
-        self.add(card2)
-        self.end()
+        self.add(_group("How Mike thinks"))
+        try:
+            from config.ollama import OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL
+        except Exception:
+            OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL = "a local model", "a local model"
+        self.add(_rows_card([
+            _row("Language model", f"{OLLAMA_CHAT_MODEL} · runs through Ollama, on-device",
+                 None),
+            _row("Vision", f"{OLLAMA_VISION_MODEL} · for images and your screen", None),
+        ]))
+
+        self.add(_group("Keyboard"))
+        self.add(_rows_card([
+            _row("Bring Mike to you, from any app", "", _key_hint(_hotkey_hint())),
+            _row("New chat", "", _key_hint("Ctrl+N")),
+            _row("Show or hide the sidebar", "", _key_hint("Ctrl+B")),
+            _row("Talk to Mike", "", _key_hint("F6")),
+            _row("Stop Mike", "", _key_hint("Esc")),
+            _row("New line in a message", "", _key_hint("Shift+Enter")),
+        ]))
+        self.body.addStretch(1)
+
+
+# ══ the settings surface ═══════════════════════════════════
+
+class _TabBar(QWidget):
+    """Text tabs with an accent underline on the one you're on."""
+
+    selected = Signal(str)
+
+    def __init__(self, tabs: list[tuple[str, str]], parent=None) -> None:
+        super().__init__(parent)
+        self._tabs = tabs
+        self._current = tabs[0][0]
+        self._hover: str | None = None
+        self._rects: dict[str, QRectF] = {}
+        self.setFixedHeight(42)
+        self.setMouseTracking(True)
+        self.setCursor(Qt.PointingHandCursor)
+
+    def set_current(self, key: str) -> None:
+        self._current = key
+        self.update()
+
+    def _layout(self) -> None:
+        f = style.font(style.BODY, QFont.Weight.Medium)
+        from PySide6.QtGui import QFontMetrics
+        fm = QFontMetrics(f)
+        x = 4.0
+        self._rects.clear()
+        for key, label in self._tabs:
+            w = fm.horizontalAdvance(label) + 20
+            self._rects[key] = QRectF(x, 0, w, self.height())
+            x += w + 6
+
+    def mouseMoveEvent(self, e) -> None:
+        self._layout()
+        hit = next((k for k, r in self._rects.items() if r.contains(e.position())), None)
+        if hit != self._hover:
+            self._hover = hit
+            self.update()
+
+    def leaveEvent(self, _e) -> None:
+        self._hover = None
+        self.update()
+
+    def mousePressEvent(self, e) -> None:
+        self._layout()
+        for key, r in self._rects.items():
+            if r.contains(e.position()):
+                self.selected.emit(key)
+                return
+
+    def paintEvent(self, _e) -> None:
+        self._layout()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        h = self.height()
+        rule = QColor(style.HAIRLINE)
+        p.fillRect(QRectF(0, h - 1, self.width(), 1), rule)
+        for key, label in self._tabs:
+            r = self._rects[key]
+            on = key == self._current
+            p.setFont(style.font(style.BODY, QFont.Weight.DemiBold if on else QFont.Weight.Medium))
+            p.setPen(QColor(style.INK if on or key == self._hover else style.INK_MUTE))
+            p.drawText(r.adjusted(0, 0, 0, -4), Qt.AlignCenter, label)
+            if on:
+                p.setPen(Qt.NoPen)
+                p.setBrush(style.qaccent())
+                p.drawRoundedRect(QRectF(r.x() + 8, h - 3, r.width() - 16, 3), 1.5, 1.5)
+
+
+class SettingsPage(QWidget):
+    """The one place for everything that isn't the conversation."""
+
+    restyle_needed = Signal()
+    closed = Signal()
+
+    TABS = [
+        ("general", "General"),
+        ("voice", "Voice"),
+        ("memory", "Memory"),
+        ("activity", "Activity"),
+        ("privacy", "Privacy"),
+        ("about", "About"),
+    ]
+
+    def __init__(self, hooks: dict | None = None, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("settings")
+        self._hooks = hooks or {}
+        self._tabs: dict[str, _Tab] = {}
+        self._current = "general"
+
+        col = QVBoxLayout(self)
+        col.setContentsMargins(0, 0, 0, 0)
+        col.setSpacing(0)
+
+        head = QWidget()
+        hcol = QVBoxLayout(head)
+        hcol.setContentsMargins(0, 8, 0, 0)
+        hcol.setSpacing(10)
+        top = QHBoxLayout()
+        title = _label("Settings", style.DISPLAY, style.INK, QFont.Weight.DemiBold, wrap=False)
+        top.addWidget(title, 1, Qt.AlignVCenter)
+        done = _button("Done")
+        done.setToolTip("Back to the chat (Esc)")
+        done.clicked.connect(self.closed.emit)
+        top.addWidget(done, 0, Qt.AlignVCenter)
+        hcol.addLayout(top)
+        self._bar = _TabBar(self.TABS)
+        self._bar.selected.connect(self.open_tab)
+        hcol.addWidget(self._bar)
+        col.addWidget(_centred(head))
+
+        self._stack = QStackedWidget()
+        col.addWidget(self._stack, 1)
+
+        self.setStyleSheet(settings_qss())
+        self.open_tab("general")
+
+    def _make(self, key: str) -> _Tab:
+        if key == "general":
+            return GeneralTab(self._hooks, self.restyle_needed.emit)
+        if key == "voice":
+            return VoiceTab(self._hooks)
+        if key == "memory":
+            return MemoryTab()
+        if key == "activity":
+            return ActivityTab()
+        if key == "privacy":
+            return PrivacyTab()
+        return AboutTab()
+
+    def open_tab(self, key: str) -> None:
+        if key not in dict(self.TABS):
+            key = "general"
+        tab = self._tabs.get(key)
+        if tab is None:
+            tab = self._make(key)
+            self._tabs[key] = tab
+            self._stack.addWidget(tab)
+        elif key in ("memory", "activity"):
+            tab.reload()
+        self._stack.setCurrentWidget(tab)
+        self._bar.set_current(key)
+        self._current = key
+
+    def current_tab(self) -> str:
+        return self._current
+
+    def reload(self) -> None:
+        """Entering Settings: what Mike remembers and did may have changed."""
+        for key in ("memory", "activity"):
+            if key in self._tabs:
+                self._tabs[key].reload()

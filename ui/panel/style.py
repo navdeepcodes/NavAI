@@ -32,12 +32,15 @@ _LIGHT = {
     "HAIRLINE": "#DEDCD6",
     "INK": "#0D0D0C", "INK_SOFT": "#55534F", "INK_MUTE": "#79766F",
     "INK_FAINT": "#CECBC3",
+    # the lifted surface a hand rests on: the composer, the corner card
+    "SURFACE": "#FFFFFF",
 }
 _DARK = {
     "GROUND": "#1A1917", "GROUND_RAISED": "#232220", "GROUND_SUNK": "#131210",
     "HAIRLINE": "#322F2A",
     "INK": "#F3F1EC", "INK_SOFT": "#BEB9B0", "INK_MUTE": "#8C877E",
     "INK_FAINT": "#46433D",
+    "SURFACE": "#262421",
 }
 
 # Set at import to light, replaced by apply_theme() at startup. Declared here so
@@ -50,6 +53,7 @@ INK = _LIGHT["INK"]
 INK_SOFT = _LIGHT["INK_SOFT"]
 INK_MUTE = _LIGHT["INK_MUTE"]
 INK_FAINT = _LIGHT["INK_FAINT"]
+SURFACE = _LIGHT["SURFACE"]
 
 _ACTIVE_THEME = "light"
 
@@ -195,6 +199,47 @@ def label(size: int = 11, weight: QFont.Weight = QFont.Weight.DemiBold) -> QFont
 
 def mono_family() -> str:
     return _MONO
+
+
+# ── The type scale. Pixel sizes, not points: Mike's rich text (replies, code,
+#    maths) is HTML and speaks px, so widgets sized in px sit on exactly the
+#    same scale as the text beside them. Every surface of the workspace takes
+#    its sizes from here, so hierarchy is a property of the product rather
+#    than of whichever file a label happens to live in.
+DISPLAY = 28      # page titles, the greeting on an empty chat
+TITLE = 20        # a section heading, a dialog title
+READ = 16         # what Mike says, what you said — the reading size
+BODY = 14         # controls, list rows, settings copy
+SMALL = 13        # secondary copy
+CAPTION = 12      # meta: times, counts, hints
+MICRO = 11        # section labels
+
+
+def font(px: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    """The UI face at a pixel size from the scale above."""
+    f = QFont(_UI)
+    f.setPixelSize(int(px))
+    f.setWeight(weight)
+    return f
+
+
+def reduced_motion() -> bool:
+    """Calm the interface: the user's own switch in Settings, or the OS's.
+
+    One answer for every animated surface, so the Settings switch is a real
+    control rather than a preference that is saved and then read by nothing.
+    """
+    try:
+        from config import preferences
+        if bool(preferences.get("reduced_motion", False)):
+            return True
+    except Exception:
+        pass
+    try:
+        from hostplatform.desktop import reduced_motion as _os_reduced
+        return bool(_os_reduced())
+    except Exception:
+        return False
 
 
 def ui_family() -> str:

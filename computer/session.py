@@ -225,6 +225,17 @@ class ComputerSession:
         found = self._observation.find(ref)
         return found.describe() if found else ref
 
+    def element_label(self, ref: str | None) -> str:
+        """The visible name of a referenced element, or "" if it has none.
+
+        For telling a person what Mike is about to click ("Clicking “Save”")
+        instead of an internal reference like "el7".
+        """
+        if self._observation is None or not ref:
+            return ""
+        found = self._observation.find(ref)
+        return (found.label or "").strip() if found else ""
+
     def irreversible_target(self, ref: str) -> str | None:
         """The phrase that makes this element a point of no return, if any."""
         if self._observation is None:

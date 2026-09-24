@@ -48,14 +48,14 @@ CARDS = (
         "body": "He's listening for his name, so you can talk to him hands-free "
                 "from across the room. Rather type? Use the box at the bottom. "
                 "Rather use a key? Ctrl+Shift+Space brings him to you from any "
-                "other app.",
+                "other app, and F6 talks.",
     },
     {
         "art": "safe",
         "title": "He checks before he changes anything.",
         "body": "Anything that edits, deletes or sends gets shown to you "
-                "first. You can stop him mid-task at any time, and close him "
-                "whenever you like — he waits quietly in the background.",
+                "first. Stop (or Esc) halts him mid-task at any time, and closing "
+                "the window just tucks him into the corner.",
     },
 )
 
@@ -167,7 +167,7 @@ class _Art(QWidget):
             p.setBrush(glow)
             p.drawRoundedRect(int(cx + 34), int(cy - 13), 62, 26, 9, 9)
             p.setPen(QColor(style.GROUND))
-            p.setFont(style.label(10))
+            p.setFont(style.font(style.CAPTION, QFont.Weight.DemiBold))
             p.drawText(int(cx + 34), int(cy - 13), 62, 26,
                        int(Qt.AlignCenter), "Allow")
 
@@ -222,14 +222,14 @@ class WelcomeWindow(QWidget):
         outer.addSpacing(18)
 
         self._title = QLabel()
-        self._title.setFont(style.voice(20))
+        self._title.setFont(style.font(24, QFont.Weight.DemiBold))
         self._title.setWordWrap(True)
         self._title.setStyleSheet(f"color:{style.INK};background:transparent;")
         outer.addWidget(self._title)
         outer.addSpacing(8)
 
         self._body = QLabel()
-        self._body.setFont(style.voice(13))
+        self._body.setFont(style.font(style.BODY + 1))
         self._body.setWordWrap(True)
         self._body.setStyleSheet(
             f"color:{style.INK_SOFT};background:transparent;line-height:150%;")
@@ -244,7 +244,7 @@ class WelcomeWindow(QWidget):
 
         self._skip = QPushButton("Skip")
         self._skip.setCursor(Qt.PointingHandCursor)
-        self._skip.setFont(style.label(11))
+        self._skip.setFont(style.font(style.BODY, QFont.Weight.Medium))
         self._skip.setStyleSheet(
             f"QPushButton{{background:transparent;color:{style.INK_MUTE};"
             f"border:none;padding:9px 14px;}}"
@@ -254,7 +254,7 @@ class WelcomeWindow(QWidget):
 
         self._next = QPushButton("Next")
         self._next.setCursor(Qt.PointingHandCursor)
-        self._next.setFont(style.label(11))
+        self._next.setFont(style.font(style.BODY, QFont.Weight.DemiBold))
         self._next.setStyleSheet(
             f"QPushButton{{background:{style.INK};color:{style.GROUND};"
             f"border:none;border-radius:9px;padding:10px 22px;}}"

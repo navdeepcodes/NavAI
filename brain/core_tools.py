@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from google.genai import types
 
 
@@ -1364,46 +1366,129 @@ def check_arguments(function_name: str, args: dict) -> str | None:
     return message
 
 
+def _short_path(path) -> str:
+    """A path as a person would say it: the file, and the folder it's in.
+
+    "C:\\Users\\sam\\Documents\\Physics\\notes.md" -> "notes.md in Physics".
+    The full path stays in the tool's own arguments and result; this is only
+    what the steps card and the activity log show at a glance.
+    """
+    raw = str(path or "").strip().strip('"').strip("'")
+    if not raw:
+        return ""
+    parts = [x for x in raw.replace("\\", "/").rstrip("/").split("/") if x]
+    if not parts:
+        return raw
+    name = parts[-1]
+    if len(parts) >= 2:
+        parent = parts[-2]
+        if parent not in ("~", ".") and not parent.endswith(":"):
+            return f"{name} in {parent}"
+    return name
+
+
+def _short_url(url) -> str:
+    text = str(url or "").strip()
+    text = re.sub(r"^[a-zA-Z]+://", "", text)
+    text = re.sub(r"^www\.", "", text)
+    return text.rstrip("/") or "a page"
+
+
+def _clip(text, n: int = 48) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+def _element_name(ref) -> str:
+    """The on-screen name of the element a computer action refers to."""
+    try:
+        from computer.session import SESSION
+        label = SESSION.element_label(str(ref) if ref else None)
+    except Exception:
+        label = ""
+    return f"“{_clip(label, 40)}”" if label else ""
+
+
+def _keys(args: dict) -> str:
+    mods = [str(m).capitalize() for m in (args.get("modifiers") or []) if m]
+    key = str(args.get("key", "") or "").strip()
+    key = key if len(key) != 1 else key.upper()
+    names = {"cmd": "Ctrl", "command": "Ctrl", "control": "Ctrl", "ctrl": "Ctrl",
+             "option": "Alt", "alt": "Alt", "shift": "Shift", "win": "Win"}
+    mods = [names.get(m.lower(), m) for m in mods]
+    return "+".join(mods + ([key.capitalize() if len(key) > 1 else key] if key else []))
+
+
 def friendly_tool_name(function_name: str, args: dict) -> str:
+    """What Mike is doing, in the words a person would use.
+
+    Shown live in the steps card and kept in the activity log, so it names
+    things the way you'd see them — a file and its folder, a site, the button
+    being clicked — never an internal function name or an element id.
+    """
+    a = args or {}
+    path = _short_path(a.get("path"))
+    if function_name == "click_element":
+        target = _element_name(a.get("ref"))
+        count = int(a.get("count") or 1) if str(a.get("count") or "1").isdigit() else 1
+        verb = "Double-clicking" if count == 2 else "Clicking"
+        if a.get("button") == "right":
+            verb = "Right-clicking"
+        return f"{verb} {target}" if target else f"{verb} in the window"
+    if function_name == "scroll_ui":
+        try:
+            dy = float(a.get("dy") or 0)
+        except (TypeError, ValueError):
+            dy = 0.0
+        return "Scrolling up" if dy > 0 else "Scrolling down" if dy < 0 else "Scrolling"
     labels = {
-        "open_browser": "Opening browser",
-        "open_url": f"Opening {args.get('url', 'URL')}",
-        "search_web": f"Searching the web for {args.get('query', '...')}",
-        "create_folder": f"Creating folder {args.get('path', '')}",
-        "create_file": f"Creating file {args.get('path', '')}",
-        "read_file": f"Reading {args.get('path', '')}",
-        "write_file": f"Writing to {args.get('path', '')}",
-        "list_directory": f"Listing {args.get('path', '')}",
-        "delete_path": f"Deleting {args.get('path', '')}",
-        "run_command": f"Running: {args.get('command', '')}",
-        "run_background": f"Starting: {args.get('command', '')}",
-        "open_application": f"Opening {args.get('name', 'application')}",
-        "read_document": f"Reading document {args.get('path', '')}",
-        "calculate": f"Working out {args.get('expression', '')}",
-        "read_spreadsheet": f"Reading spreadsheet {args.get('path', '')}",
-        "edit_spreadsheet": f"Updating spreadsheet {args.get('path', '')}",
-        "search_files": f"Searching for {args.get('query', '...')}",
+        "open_browser": "Opening your browser",
+        "open_url": f"Opening {_short_url(a.get('url'))}",
+        "search_web": f"Searching the web for “{_clip(a.get('query', '…'))}”",
+        "create_folder": f"Creating the folder {path}",
+        "create_file": f"Creating {path}",
+        "read_file": f"Reading {path}",
+        "write_file": f"Writing {path}",
+        "list_directory": f"Looking in {_short_path(a.get('path')).split(' in ')[0] or 'the folder'}",
+        "delete_path": f"Deleting {path}",
+        "run_command": f"Running: {a.get('command', '')}",
+        "run_background": f"Starting: {a.get('command', '')}",
+        "open_application": f"Opening {a.get('name') or _short_path(a.get('path')) or 'the app'}",
+        "read_document": f"Reading {path}",
+        "calculate": f"Working out {_clip(a.get('expression', ''), 60)}",
+        "read_spreadsheet": f"Reading {path}",
+        "edit_spreadsheet": f"Updating {path}",
+        "search_files": f"Looking for “{_clip(a.get('query', '…'))}”",
         "see_screen": "Looking at your screen",
         "ide_context": "Checking your editor",
-        "ide_open_file": f"Opening {args.get('path', '')} in your editor",
-        "ide_apply_edit": f"Editing {args.get('path', '')} in your editor",
+        "ide_open_file": f"Opening {path} in your editor",
+        "ide_apply_edit": f"Editing {path} in your editor",
         "remember": "Saving to memory",
-        "recall_memory": "Searching memory",
-        "forget_memory": "Forgetting memory",
-        "read_lines": f"Reading {args.get('path', '')}",
-        "edit_file": f"Editing {args.get('path', '')}",
-        "multi_edit": f"Editing {args.get('path', '')}",
+        "recall_memory": "Checking what I remember",
+        "forget_memory": "Forgetting a memory",
+        "read_lines": f"Reading {path}",
+        "edit_file": f"Editing {path}",
+        "multi_edit": f"Editing {path}",
         "project_overview": "Looking over the project",
         "project_tree": "Mapping the project structure",
-        "search_code": f"Searching the code for {args.get('query', '...')}",
+        "search_code": f"Searching the code for “{_clip(a.get('query', '…'))}”",
         "list_processes": "Checking what's running",
-        "check_url": f"Checking {args.get('url', 'a URL')}",
-        "check_port": f"Checking port {args.get('port', '')}",
-        "check_syntax": f"Checking {args.get('path', '')} parses",
-        "process_output": f"Reading output from process {args.get('pid', '')}",
-        "kill_process": f"Stopping process {args.get('pid', '')}",
+        "check_url": f"Checking {_short_url(a.get('url'))}",
+        "check_port": f"Checking port {a.get('port', '')}",
+        "check_syntax": f"Checking {path} for errors",
+        "process_output": f"Reading output from process {a.get('pid', '')}",
+        "kill_process": f"Stopping process {a.get('pid', '')}",
+        "send_email": f"Sending an email to {a.get('to') or 'someone'}",
+        "see_ui": f"Looking at {a.get('app')}" if a.get("app") else "Looking at the window",
+        "type_text": f"Typing “{_clip(a.get('text', ''), 40)}”",
+        "press_keys": f"Pressing {_keys(a) or 'a key'}",
+        "list_windows": "Checking which windows are open",
+        "focus_app": f"Switching to {a.get('name') or 'the app'}",
     }
-    return labels.get(function_name, f"Executing {function_name}")
+    label = labels.get(function_name)
+    if label:
+        return label.rstrip()
+    return function_name.replace("_", " ").capitalize()
 
 
 def describe_action(function_name: str, args: dict) -> str:

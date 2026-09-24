@@ -14,11 +14,15 @@ QMainWindow {{
     background: {colors.WINDOW};
 }}
 
+/* No font-family / font-size here. A font property on the universal
+   QWidget rule overrides every widget's own setFont(): it pinned every title,
+   label and heading in the app to one 15px size in ".AppleSystemUIFont" (a
+   face Windows doesn't have), flattening the whole hierarchy. The
+   application font is set in code instead (ui/app.py), so each surface's
+   own sizes actually apply. */
 QWidget {{
     background: transparent;
     color: {colors.TEXT};
-    font-family: "{typography.FONT}";
-    font-size: {typography.BODY}px;
     selection-background-color: {colors.SELECTION};
 }}
 
