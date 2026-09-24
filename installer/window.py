@@ -85,7 +85,8 @@ class InstallerWindow(QWidget):
         p.drawPath(body)
 
     def _mark(self) -> QWidget:
-        """Mike's own mark: a rounded square with three bars."""
+        """Mike's own mark: the nib on its terracotta tile, as on the app icon
+        (three bars on ink if the app's drawing isn't available)."""
         class Mark(QWidget):
             def __init__(self) -> None:
                 super().__init__()
@@ -95,6 +96,16 @@ class InstallerWindow(QWidget):
                 p = QPainter(self)
                 p.setRenderHint(QPainter.Antialiasing, True)
                 p.setPen(Qt.NoPen)
+                try:
+                    from PySide6.QtCore import QRectF
+                    from ui.workspace import nib
+                    p.setBrush(QColor("#C4602F"))
+                    p.drawRoundedRect(0, 0, 46, 46, 11, 11)
+                    nib.paint_centred(p, QRectF(0, 0, 46, 46), QColor("#F6EFE3"),
+                                      QColor("#7A2F14"), scale=0.72)
+                    return
+                except Exception:
+                    pass
                 p.setBrush(QColor(INK))
                 p.drawRoundedRect(0, 0, 46, 46, 9, 9)
                 p.setBrush(QColor(PAPER))

@@ -317,6 +317,9 @@ class _RichTurn(QTextBrowser):
         # with it after reading.
         self._final = bool(text)
         self._copied = False
+        # True while tokens are arriving — the pen that writes the reply
+        # follows the text only while this is set.
+        self._streaming = False
         self.setOpenLinks(False)
         self.setOpenExternalLinks(False)
         self.setFrameShape(QFrame.NoFrame)
@@ -364,6 +367,7 @@ class _RichTurn(QTextBrowser):
 
     def append_text(self, chunk: str) -> None:
         # Streaming: coalesce, and skip highlighting until the reply settles.
+        self._streaming = True
         self._raw += chunk
         if not self._pending.isActive():
             self._pending.start()
@@ -374,6 +378,7 @@ class _RichTurn(QTextBrowser):
         # the way to doing something — rendered, but not offered for copying.
         self._raw = text
         self._final = final
+        self._streaming = False
         self._pending.stop()
         self._render(do_highlight=True)
 

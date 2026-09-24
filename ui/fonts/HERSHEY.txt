@@ -1,0 +1,11 @@
+Hershey Script (Simplex) — pen-stroke letterforms used for Mike's handwriting.
+
+The Hershey fonts were created by Dr. A. V. Hershey at the U.S. National
+Bureau of Standards (1967) and are in the public domain. The stroke data in
+hershey_script.json was extracted from the "scripts" font as distributed in
+the Hershey-Fonts Python package (MIT License, https://github.com/apshu/HersheyFonts).
+
+USE RESTRICTION (from the original distribution): the Hershey fonts may be
+used freely provided this acknowledgement is retained:
+    "The Hershey fonts were originally created by Dr. A. V. Hershey while
+    working at the U. S. National Bureau of Standards."

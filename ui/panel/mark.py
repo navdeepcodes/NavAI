@@ -1,38 +1,32 @@
-"""Mike's mark — the brand. One entity, six behaviours.
+"""Mike's mark — the nib. One pen, six behaviours.
 
-The silhouette is a small aperture: three short blades set around a luminous
-core, the way a lens iris is built. It is deliberately not a plain ring —
-three blades read as *focus*, as an intelligence turning its attention toward
-you, and they stay recognisable from 24px in a header to 120px on a splash.
+The brand is a fountain-pen nib angled exactly like a mouse pointer: the thing
+that writes and the thing that acts, in one silhouette (ui/workspace/nib.py).
+Every state is that same nib doing something a hand does with a pen, never a
+different drawing:
 
-Every state is the same three blades and the same core doing something
-different, never a different drawing:
+    resting     at rest on the page; a drop of ink at the tip breathes
+    listening   lifted and poised, ready to take down what you say
+    thinking    the tip turns small loops, like a pen doodling while you think
+    working     taps in a steady rhythm, getting through the steps
+    speaking    rocks gently with the voice
+    needs you   still and upright, in the warning colour — your turn
 
-    resting     blades still, wide open; the core breathes
-    listening   blades open outward, receiving; core brightens
-    thinking    blades rotate slowly, searching
-    working     blades sweep in a steady cycle, making progress
-    speaking    core pulses to the voice; blades hold, alert
-    needs you   blades close in tight and warm; full attention on you
-
-So it always looks like the same creature — awake, curious, busy, or waiting —
-rather than six unrelated animations. Cheap to run and it stops dead when
-hidden or fully at rest, so an idle Mike costs nothing.
+So it always reads as the same pen — at rest, attentive, busy or waiting —
+rather than six unrelated animations. It stops its clock when hidden or at
+rest, so an idle Mike costs nothing.
 """
 from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import Qt, QTimer, QPointF, QRectF
-from PySide6.QtGui import QColor, QPainter, QPen, QRadialGradient
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QPainter, QRadialGradient
 from PySide6.QtWidgets import QWidget
 
 from ui.panel import style
 
 _MOVING = {"listening", "thinking", "working", "responding", "speaking"}
-
-# The three blades, evenly spaced. Everything else is a transform of these.
-_BASE_ANGLES = (90.0, 210.0, 330.0)
 
 
 class PresenceMark(QWidget):
@@ -41,14 +35,12 @@ class PresenceMark(QWidget):
         self._d = diameter
         self.setFixedSize(diameter, diameter)
         self._state = "idle"
-        self._t = 0.0                 # continuous animation clock
+        self._t = 0.0
         self._timer = QTimer(self)
         self._timer.timeout.connect(self._tick)
-        # eased state parameters, smoothed toward targets each frame so a
-        # change of state is a settle, not a jump
-        self._open = 1.0              # blade radius factor (0 tight ‥ 1 open)
-        self._spin = 0.0              # blade rotation, degrees
-        self._glow = 0.5              # core brightness 0‥1
+        # eased so a change of state is a settle, not a jump
+        self._lift = 0.0          # 0 on the page ‥ 1 lifted
+        self._tilt = 0.0          # degrees away from the pointer angle
 
     def set_state(self, state: str) -> None:
         if state == self._state:
@@ -61,11 +53,13 @@ class PresenceMark(QWidget):
         if not self.isVisible():
             self._timer.stop()
             return
+        if style.reduced_motion():
+            self._timer.start(1000 // 30)
+            QTimer.singleShot(400, self._timer.stop)
+            return
         if self._state in _MOVING or self._state == "idle":
-            self._timer.start(1000 // 30 if self._state in _MOVING else 1000 // 20)
+            self._timer.start(1000 // 30 if self._state in _MOVING else 1000 // 15)
         else:
-            # needs_user / done / error settle once, then hold — but keep a
-            # couple of frames so the easing lands cleanly.
             self._timer.start(1000 // 30)
             QTimer.singleShot(500, self._timer.stop)
 
@@ -76,37 +70,23 @@ class PresenceMark(QWidget):
         super().hideEvent(e); self._timer.stop()
 
     # ── the animation model ───────────────────────────────
-    def _targets(self):
-        """Where the three parameters want to be for the current state."""
+    def _targets(self) -> tuple[float, float]:
         s = self._state
         if s == "listening":
-            return 1.28, self._spin, 0.9
-        if s == "thinking":
-            return 1.0, self._spin, 0.7
-        if s == "working":
-            return 1.05, self._spin, 0.65
-        if s in ("responding", "speaking"):
-            return 1.0, self._spin, 0.5 + 0.5 * (0.5 + 0.5 * math.sin(self._t * 5.0))
+            return 1.0, -6.0
         if s == "needs_user":
-            return 0.66, 0.0, 0.95
-        if s in ("done", "error"):
-            return 1.0, 0.0, 0.85
-        # idle
-        return 1.0, 0.0, 0.42 + 0.32 * (0.5 + 0.5 * math.sin(self._t * 1.6))
+            return 0.6, 14.0
+        if s in ("responding", "speaking"):
+            return 0.3, 5.0 * math.sin(self._t * 3.2)
+        return 0.0, 0.0
 
     def _tick(self) -> None:
-        self._t += (1 / 30) if self._state in _MOVING else (1 / 20)
-        if self._state == "thinking":
-            self._spin = (self._spin + 1.7) % 360
-        elif self._state == "working":
-            self._spin = (self._spin + 4.0) % 360
-        open_t, spin_t, glow_t = self._targets()
-        # critically damped-ish easing toward targets
-        self._open += (open_t - self._open) * 0.22
-        self._glow += (glow_t - self._glow) * 0.30
+        self._t += 1 / 30
+        lift, tilt = self._targets()
+        self._lift += (lift - self._lift) * 0.2
+        self._tilt += (tilt - self._tilt) * 0.25
         self.update()
 
-    # ── painting ──────────────────────────────────────────
     def _colour(self) -> QColor:
         if self._state == "needs_user":
             return QColor(style.WARN)
@@ -116,47 +96,40 @@ class PresenceMark(QWidget):
             return QColor(style.GOOD)
         return style.qaccent()
 
+    # ── painting ──────────────────────────────────────────
     def paintEvent(self, _e) -> None:
+        from ui.workspace import nib as _nib
+
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        d = self._d
-        cx = cy = d / 2
-        centre = QPointF(cx, cy)
-        acc = self._colour()
+        d = float(self._d)
+        col = self._colour()
+        size = d * 0.86
+        still = style.reduced_motion()
 
-        # geometry scales with size, so the mark is right at any diameter
-        blade_r = (d * 0.30) * self._open
-        blade_len = d * 0.30            # arc span expressed as a length
-        stroke = max(1.2, d * 0.052)
-        span_deg = 74.0
-        # blades widen a touch when listening (receiving), tighten when needed
-        if self._state == "listening":
-            span_deg = 92.0
-        elif self._state == "needs_user":
-            span_deg = 58.0
+        # where the tip is: the rest point, plus what the state is doing
+        rest = QPointF(d * 0.30, d * 0.22)
+        ox = oy = 0.0
+        if not still:
+            if self._state == "thinking":
+                # small figure-of-eight doodle
+                ox = d * 0.05 * math.sin(self._t * 3.1)
+                oy = d * 0.035 * math.sin(self._t * 6.2)
+            elif self._state == "working":
+                tap = max(0.0, math.sin(self._t * 7.0))
+                oy = -d * 0.06 * tap
+        oy -= d * 0.07 * self._lift
+        tip = QPointF(rest.x() + ox, rest.y() + oy)
 
-        # the three blades — the identity, alone; no backing ring to dilute it
-        blade = QColor(acc)
-        blade.setAlpha(240 if self._state in _MOVING or self._state == "needs_user" else 205)
-        pen = QPen(blade); pen.setWidthF(stroke); pen.setCapStyle(Qt.RoundCap)
-        p.setPen(pen); p.setBrush(Qt.NoBrush)
-        rect = QRectF(cx - blade_r, cy - blade_r, 2 * blade_r, 2 * blade_r)
-        for base in _BASE_ANGLES:
-            start = base + self._spin - span_deg / 2
-            p.drawArc(rect, int(-start * 16), int(-span_deg * 16))
+        # the drop of ink at the tip — breathes at rest, full while working
+        if self._state in ("idle", "working", "thinking", "done") and self._lift < 0.5:
+            breath = 0.5 + 0.5 * math.sin(self._t * 1.8) if not still else 0.8
+            r = d * (0.06 + 0.02 * breath)
+            g = QRadialGradient(tip, r * 2.2)
+            halo = QColor(col); halo.setAlpha(int(70 * breath))
+            g.setColorAt(0, halo)
+            g.setColorAt(1, QColor(col.red(), col.green(), col.blue(), 0))
+            p.setPen(Qt.NoPen); p.setBrush(g)
+            p.drawEllipse(tip, r * 2.2, r * 2.2)
 
-        # the core — the mind. A crisp solid dot, not a soft glow: a small
-        # filled disc with only a hair of halo, so it reads as a precise point
-        # of light, never a blob. Brightness carries breath (idle) and voice
-        # (speaking); size holds steady so the point stays a point.
-        glow = max(0.0, min(1.0, self._glow))
-        core_r = d * 0.088
-        halo = QRadialGradient(centre, core_r * 2.4)
-        hc = QColor(acc); hc.setAlpha(int(60 * glow))
-        halo.setColorAt(0.0, hc)
-        halo.setColorAt(1.0, QColor(acc.red(), acc.green(), acc.blue(), 0))
-        p.setPen(Qt.NoPen); p.setBrush(halo)
-        p.drawEllipse(centre, core_r * 2.4, core_r * 2.4)
-        solid = QColor(acc); solid.setAlpha(int(150 + 105 * glow))
-        p.setBrush(solid)
-        p.drawEllipse(centre, core_r, core_r)
+        _nib.paint(p, tip, size, col, col.darker(210), _nib.ANGLE + self._tilt)

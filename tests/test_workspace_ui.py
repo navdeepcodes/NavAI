@@ -387,3 +387,52 @@ def test_the_bundled_serif_loads_and_becomes_mikes_face():
         "the font's licence ships with it")
     spec = open(os.path.join(here, "packaging", "mike.spec")).read()
     assert '"ui", "fonts"' in spec, "the Windows package must bundle the fonts"
+
+
+# ── the nib ───────────────────────────────────────────────────
+
+def test_thinking_is_handwritten_from_real_pen_strokes():
+    """The thinking phrases are written by the nib from Hershey pen strokes,
+    over time — not a font revealed behind a mask."""
+    _app()
+    from ui.workspace import handwriting as hw
+    from ui.workspace.thinking import THOUGHTS
+
+    assert hw.available(), "the bundled stroke data must load"
+    for phrase in THOUGHTS:
+        script = hw.Script(phrase)
+        assert script.segments and script.duration > 0.5, phrase
+    s = hw.Script("Thinking it through")
+    _x, _y, down = s.pen_at(s.duration * 0.5)
+    assert isinstance(down, bool)
+    # the pen moves as time passes
+    assert s.pen_at(0.2)[:2] != s.pen_at(s.duration * 0.8)[:2]
+
+
+def test_the_pen_follows_a_streaming_reply_and_lifts_when_it_ends():
+    app = _app()
+    from ui.workspace.chat_page import ChatPage
+
+    page = ChatPage()
+    page.resize(900, 600)
+    page.show()
+    page.add_user_message("hi")
+    turn = page.begin_mike_stream()
+    turn.append_text("Hello there, ")
+    _pump(app, 0.2)
+    assert page._pen._fade_to == 1.0, "the pen writes while tokens arrive"
+    turn.set_text("Hello there, friend.")
+    _pump(app, 0.6)
+    assert page._pen._fade_to == 0.0 and page._pen.isHidden(), (
+        "the pen lifts away when the answer is done")
+    page.hide()
+
+
+def test_the_app_icon_is_the_nib():
+    from PIL import Image
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    im = Image.open(os.path.join(here, "packaging", "icon.ico"))
+    assert {(16, 16), (32, 32), (256, 256)} <= set(im.info["sizes"])
+    im.size = (256, 256)
+    r, g, b, _a = im.convert("RGBA").getpixel((40, 128))
+    assert r > g > b, "the tile is the warm terracotta, not the old ink square"

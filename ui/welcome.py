@@ -97,17 +97,26 @@ class _Art(QWidget):
         mute = QColor(style.INK_FAINT)
 
         if self._kind == "presence":
-            # A steady breathing mark: he is simply here, and stays here.
-            breath = 0.5 + 0.5 * math.sin(self._t * 1.6)
-            for ring in (3, 2, 1):
-                colour = QColor(accent)
-                colour.setAlphaF(0.07 * ring * (0.4 + 0.6 * breath))
+            # The first thing Mike ever does: write "Hello", by hand, with the
+            # nib that is his mark — then hold it, and write it again.
+            from PySide6.QtCore import QPointF
+            from ui.workspace import handwriting as hw
+            if not hasattr(self, "_hello"):
+                self._hello = hw.Script("Hello", seed=7) if hw.available() else None
+            script = self._hello
+            if script is None:
                 p.setPen(Qt.NoPen)
-                p.setBrush(colour)
-                r = 16 + ring * 11 * (0.85 + 0.15 * breath)
-                p.drawEllipse(int(cx - r), int(cy - r), int(r * 2), int(r * 2))
-            p.setBrush(accent)
-            p.drawEllipse(int(cx - 9), int(cy - 9), 18, 18)
+                p.setBrush(accent)
+                p.drawEllipse(int(cx - 9), int(cy - 9), 18, 18)
+                return
+            scale = 2.6
+            pace = 1.15
+            cycle = script.duration / pace + 2.2
+            t = (self._t % cycle) * pace
+            origin = QPointF(cx - script.width * scale / 2, cy + 20)
+            tip = script.paint(p, origin, scale, t, QColor(style.INK), accent)
+            _x, _y, down = script.pen_at(t)
+            hw.paint_pen(p, tip, 40, accent, accent.darker(210), down)
 
         elif self._kind == "doing":
             # Three tasks completing in sequence, over and over: the point is

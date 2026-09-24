@@ -34,6 +34,7 @@ from ui.panel.mike_panel import (
 )
 from ui.workspace.composer import Composer, _ChipIcon
 from ui.workspace.icons import draw
+from ui.workspace.pen import StreamingPen
 from ui.workspace.steps import StepsCard
 from ui.workspace.thinking import ThinkingLine
 
@@ -442,6 +443,10 @@ class ChatPage(QWidget):
         self._stage.addStretch(1)
         self._scroll.setWidget(_centred(column))
         self._views.addWidget(self._scroll)
+        # the nib that writes each reply as it streams in — hosted on the
+        # full-width scroll content, so a line ending at the column's edge
+        # still has room for the pen
+        self._pen = StreamingPen(self._scroll.widget())
 
         self.conversation = _FollowingScroll(self._scroll)
         self.activity = _ActivityFacade()
@@ -516,6 +521,7 @@ class ChatPage(QWidget):
             self._ledger.settle("done")
         self._stream = self._mike_turn("")
         self._insert(self._stream)
+        self._pen.follow(self._stream)
         return self._stream
 
     def add_mike_message(self, text: str) -> None:
@@ -536,6 +542,7 @@ class ChatPage(QWidget):
 
     def mark_stopped(self) -> None:
         """The user stopped Mike: whatever step was running didn't finish."""
+        self._pen.lift()
         if self._ledger is not None:
             self._ledger.settle("stopped")
 
@@ -577,6 +584,9 @@ class ChatPage(QWidget):
         self.input.set_listening(state == "listening")
         self.input.set_responding(
             state in ("thinking", "working", "responding", "speaking"))
+        if state in self._TURN_OVER:
+            # however the turn ended — answered, errored, stopped — the pen lifts
+            self._pen.lift()
         if self._ledger is not None and not self._ledger._settled:
             if state in self._TURN_OVER:
                 self._ledger.settle("done")
@@ -590,6 +600,7 @@ class ChatPage(QWidget):
 
     def _clear_stage(self) -> None:
         self.hide_thinking()
+        self._pen.lift()
         while self._stage.count() > 1:
             item = self._stage.takeAt(0)
             w = item.widget()

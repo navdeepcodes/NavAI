@@ -37,19 +37,24 @@ def _app_icon() -> QIcon:
 
 
 def _tray_icon() -> QIcon:
-    """A plain filled dot in Mike's accent — a tray presence needs an icon,
-    not a logo. Drawn rather than shipped for one small dot."""
-    size = 22
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setBrush(style.qaccent())
-    painter.setPen(Qt.NoPen)
-    margin = 4
-    painter.drawEllipse(margin, margin, size - 2 * margin, size - 2 * margin)
-    painter.end()
-    return QIcon(pixmap)
+    """The nib on its terracotta tile — the same mark as the taskbar, drawn
+    at the tray's sizes rather than scaled down from the big icon."""
+    from PySide6.QtCore import QRectF
+    from ui.workspace import nib
+
+    icon = QIcon()
+    for size in (16, 20, 24, 32):
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#C4602F"))
+        painter.drawRoundedRect(QRectF(0, 0, size, size), size * 0.22, size * 0.22)
+        nib.paint_centred(painter, QRectF(0, 0, size, size), QColor("#F6EFE3"), scale=0.8)
+        painter.end()
+        icon.addPixmap(pixmap)
+    return icon
 
 
 def _optional(what: str, start) -> bool:

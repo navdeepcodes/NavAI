@@ -1,30 +1,27 @@
-"""The wait, made to feel like a mind at work.
+"""The wait, written by hand.
 
-Not a spinner and not a static dot. A short thought writes itself out a
-character at a time, holds for a breath, then fades away, and the next one
-writes in — continuously, so a long wait reads as Mike actively turning
-something over rather than a process that has hung.
+While Mike thinks, the nib writes what he's doing — "Thinking it through",
+"Piecing it together" — in real handwriting, stroke by stroke, the ink landing
+glossy and drying as it goes. The thought holds for a breath, fades from the
+page, and the next one is written. A long wait settles onto reassurance
+("Almost there") and shows how long it's been, because a clock that keeps
+moving is the honest difference between slow and stuck.
 
-Three things carry it, all derived from one continuous clock so nothing
-steps or stutters:
-
-  - the reveal: characters appear left to right, like typing;
-  - the caret: a thin accent bar that blinks while the thought rests;
-  - the fade: the finished thought dissolves, and a new one begins.
-
-Deliberately quiet — INK_SOFT text, a hair of accent on the caret, the UI
-font at reading size. The restraint is the point: it should feel premium and
-alive, never like a toy loader.
+Built on ui.workspace.handwriting (Hershey pen strokes, broad-nib ink) and the
+same nib drawing as the app's mark, so the pen you see thinking is the logo.
+With Reduce motion on, the thought is simply shown, written, with the pen at
+rest.
 """
 from __future__ import annotations
 
 import random
 
-from PySide6.QtCore import Qt, QPointF, QTimer
-from PySide6.QtGui import QBrush, QColor, QPainter, QPainterPath
+from PySide6.QtCore import QPointF, QTimer
+from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QWidget
 
 from ui.panel import style
+from ui.workspace import handwriting as hw
 
 
 # Short thoughts in Mike's register — a smart person half-answering you from
@@ -51,34 +48,36 @@ _REASSURING_TAIL = 2
 
 
 class ThinkingLine(QWidget):
-    """A single line that writes a thought, holds it, fades it, and repeats."""
+    """A thought, handwritten by the nib, held, faded, and replaced."""
 
-    # phase durations, seconds
-    _CHAR_S = 0.032        # per character while writing
-    _HOLD_S = 0.85         # full thought held before it fades
-    _FADE_S = 0.34         # dissolve
-    _GAP_S = 0.14          # blank beat before the next one
-    _FRAME_MS = 16         # ~60fps; motion never reads as stepping
+    _HOLD_S = 1.1          # the finished thought rests before it fades
+    _FADE_S = 0.45
+    _GAP_S = 0.25
+    _FRAME_MS = 16
     _LONG_WAIT_S = 11.0    # past here, stay on the reassuring tail
+    _SHOW_ELAPSED_S = 8.0  # past here, also show how long it's been
+    _PACE = 1.35           # a little quicker than a careful hand
 
     def __init__(self, size: int = 16, parent=None) -> None:
         super().__init__(parent)
-        self._size = size          # pixel size, from the style type scale
-        self.setFixedHeight(int(size * 1.9))
-        self._t = 0.0                 # continuous clock, seconds
-        self._elapsed = 0.0           # total time thinking, for the long-wait bias
-        self._phase = "write"         # write | hold | fade | gap
+        self._size = size                       # the text's reading size, px
+        # handwriting sits a little larger than type, like a note in the margin
+        self._scale = size * 1.55 / 21.0        # px per Hershey unit
+        self.setFixedHeight(int(size * 3.4))
+        self._t = 0.0
+        self._elapsed = 0.0
+        self._phase = "write"
         self._phase_start = 0.0
-        self._index = random.randrange(len(THOUGHTS) - _REASSURING_TAIL)
+        self._index = 0
+        self._script: hw.Script | None = None
         self._frame = QTimer(self)
         self._frame.timeout.connect(self._on_frame)
+        self._pick_first()
 
     # ── lifecycle ─────────────────────────────────────────
     def start(self) -> None:
         self._t = 0.0
         self._elapsed = 0.0
-        self._phase = "write"
-        self._phase_start = 0.0
         self._pick_first()
         if not self._frame.isActive():
             self._frame.start(self._FRAME_MS)
@@ -91,119 +90,98 @@ class ThinkingLine(QWidget):
     def showEvent(self, e) -> None:
         super().showEvent(e)
         if not self._frame.isActive():
-            self.start()
+            self._frame.start(self._FRAME_MS)
 
     def hideEvent(self, e) -> None:
         super().hideEvent(e)
         self._frame.stop()
 
     # ── the clock ─────────────────────────────────────────
+    def _set(self, index: int) -> None:
+        self._index = index
+        self._script = hw.Script(THOUGHTS[index]) if hw.available() else None
+        self._phase, self._phase_start = "write", self._t
+
     def _pick_first(self) -> None:
-        body = len(THOUGHTS) - _REASSURING_TAIL
-        self._index = random.randrange(body)
+        self._set(random.randrange(len(THOUGHTS) - _REASSURING_TAIL))
 
     def _next_thought(self) -> None:
         body = len(THOUGHTS) - _REASSURING_TAIL
         if self._elapsed >= self._LONG_WAIT_S:
             # Long wait: settle onto the reassuring tail instead of implying
             # fresh activity that isn't happening.
-            self._index = body + ((self._index + 1) % _REASSURING_TAIL)
+            self._set(body + ((self._index + 1) % _REASSURING_TAIL)
+                      if self._index >= body else body)
             return
         choice = self._index
         while choice == self._index and body > 1:
             choice = random.randrange(body)
-        self._index = choice
+        self._set(choice)
 
-    #: Past this, the wait also shows how long it has been going: a local
-    #: model on a laptop can take a while, and a number that keeps climbing
-    #: is the honest difference between "slow" and "stuck".
-    _SHOW_ELAPSED_S = 8.0
+    def _write_time(self) -> float:
+        return (self._script.duration / self._PACE) if self._script else 1.2
 
     def _on_frame(self) -> None:
-        self._t += self._FRAME_MS / 1000.0
-        self._elapsed += self._FRAME_MS / 1000.0
-
+        dt = self._FRAME_MS / 1000.0
+        self._t += dt
+        self._elapsed += dt
         if style.reduced_motion():
-            # Calm mode: one steady line, no typing or fading.
-            self._phase = "hold"
-            self._phase_start = self._t
+            self._phase, self._phase_start = "hold", self._t
             self.update()
             return
-
-        text = THOUGHTS[self._index]
         since = self._t - self._phase_start
-        if self._phase == "write":
-            if since >= len(text) * self._CHAR_S:
-                self._phase, self._phase_start = "hold", self._t
-        elif self._phase == "hold":
-            if since >= self._HOLD_S:
-                self._phase, self._phase_start = "fade", self._t
-        elif self._phase == "fade":
-            if since >= self._FADE_S:
-                self._phase, self._phase_start = "gap", self._t
-        elif self._phase == "gap":
-            if since >= self._GAP_S:
-                self._next_thought()
-                self._phase, self._phase_start = "write", self._t
+        if self._phase == "write" and since >= self._write_time():
+            self._phase, self._phase_start = "hold", self._t
+        elif self._phase == "hold" and since >= self._HOLD_S:
+            self._phase, self._phase_start = "fade", self._t
+        elif self._phase == "fade" and since >= self._FADE_S:
+            self._phase, self._phase_start = "gap", self._t
+        elif self._phase == "gap" and since >= self._GAP_S:
+            self._next_thought()
         self.update()
 
     # ── painting ──────────────────────────────────────────
     def paintEvent(self, _e) -> None:
-        text = THOUGHTS[self._index]
-        since = self._t - self._phase_start
-
-        # how much of the thought is written, and how visible the whole line is
-        if self._phase == "write":
-            shown = min(len(text), int(since / self._CHAR_S) + 1)
-            opacity = 1.0
-        elif self._phase == "hold":
-            shown, opacity = len(text), 1.0
-        elif self._phase == "fade":
-            shown = len(text)
-            opacity = max(0.0, 1.0 - since / self._FADE_S)
-        else:  # gap
-            shown, opacity = 0, 0.0
-
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        font = style.font(self._size)
-        p.setFont(font)
-        fm = p.fontMetrics()
-        baseline = self.height() / 2.0 + (fm.ascent() - fm.descent()) / 2.0
+        sc = self._scale
+        baseline = QPointF(4.0, self.height() * 0.62)
+        ink = QColor(style.INK_SOFT)
+        wet = QColor(style.accent())
+        since = self._t - self._phase_start
 
-        # the elapsed time sits at a fixed place, steady through the thought's
-        # write-and-fade, so the number is always readable
+        # how long it's been, at a fixed place so the number stays readable
         if self._elapsed >= self._SHOW_ELAPSED_S:
             secs = int(self._elapsed)
             label = f"{secs}s" if secs < 60 else f"{secs // 60}m {secs % 60:02d}s"
-            small = style.font(style.CAPTION)
-            p.setFont(small)
+            p.setFont(style.font(style.CAPTION))
             p.setPen(QColor(style.INK_MUTE))
-            widest = max(fm.horizontalAdvance(t) for t in THOUGHTS)
-            p.drawText(int(1 + widest + 18), int(baseline), label)
-            p.setFont(font)
+            widest = 330.0 * sc
+            p.drawText(int(baseline.x() + widest + 26), int(baseline.y()), label)
 
-        if opacity <= 0.001:
+        if self._script is None:
+            # no stroke data: a plain, honest line rather than nothing
+            p.setFont(style.font(self._size))
+            p.setPen(ink)
+            p.drawText(int(baseline.x()), int(baseline.y()), THOUGHTS[self._index])
             return
-        visible = text[:shown]
 
-        ink = QColor(style.INK_SOFT)
-        ink.setAlphaF(opacity)
-        path = QPainterPath()
-        path.addText(QPointF(1.0, baseline), font, visible)
-        p.fillPath(path, QBrush(ink))
+        script = self._script
+        if self._phase == "write":
+            t, opacity, pen = since * self._PACE, 1.0, True
+        elif self._phase == "hold":
+            t, opacity, pen = script.duration + 1.0, 1.0, True
+        elif self._phase == "fade":
+            t, opacity, pen = script.duration + 1.0, max(0.0, 1.0 - since / self._FADE_S), False
+        else:
+            return
 
-        # the caret: solid while writing, a slow blink while the thought rests,
-        # riding just after the last written glyph.
-        if self._phase in ("write", "hold"):
-            blink = 1.0
-            if self._phase == "hold":
-                # ~1.1s blink cycle
-                import math
-                blink = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(since * 5.6))
-            caret = QColor(style.accent())
-            caret.setAlphaF(opacity * blink)
-            x = 1.0 + fm.horizontalAdvance(visible) + 2.0
-            top = baseline - fm.ascent() + 2.0
-            bottom = baseline + 2.0
-            p.fillRect(int(x), int(top), 2, int(bottom - top), caret)
+        tip = script.paint(p, baseline, sc, t, ink, wet, opacity)
+        if pen:
+            _x, _y, down = script.pen_at(t)
+            resting = self._phase == "hold"
+            if resting:
+                # pen lifted off the page at the end of the thought, poised
+                down = False
+            hw.paint_pen(p, tip, self._size * 2.3, QColor(style.accent()),
+                         QColor(style.accent()).darker(210), down)

@@ -1,70 +1,84 @@
-"""Regenerates packaging/icon.ico from Mike's own mark.
+"""Regenerates packaging/icon.ico (and icon_256.png) from Mike's mark.
 
-Not a separate design decision — this is the exact glyph served as
-huddlecode.com's favicon (verified by reading its <link rel="icon"> data URI
-directly): a rounded dark square with three bars of the site's own --ink
-background and --paper bar color, the same tokens ui/panel/style.py already
-reads off that stylesheet. Windows needs the mark as a real .ico (a PE
-resource baked into the .exe, seen before Qt ever paints a pixel — the
-taskbar icon, the shortcut icon, the Explorer thumbnail), which can't be
-drawn at runtime the way the tray dot is. Re-run this whenever the mark
-changes; it is checked in as packaging/icon.ico rather than regenerated on
-every build so a build has one fewer moving part and the icon a developer
-sees in git is the icon that ships.
+The mark is the nib — a fountain-pen nib angled like a mouse pointer, cream on
+a warm terracotta tile — drawn from the very same shape the app paints at
+runtime (ui/workspace/nib.py), so the taskbar, the Start menu, the shortcut
+and the window's own mark can never drift apart.
+
+Windows needs it as a real .ico (a PE resource baked into the .exe, seen
+before Qt ever paints a pixel), which can't be drawn at runtime the way the
+tray icon is. Re-run this whenever the mark changes:
+
+    python packaging/generate_icon.py
+
+It is checked in rather than regenerated on every build, so a build has one
+fewer moving part and the icon in git is the icon that ships.
 """
 from __future__ import annotations
 
+import io
 import os
+import sys
 
-from PIL import Image, ImageDraw
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, REPO_ROOT)
 
-INK = (13, 13, 12, 255)      # --ink, the site's background bar color
-PAPER = (250, 249, 247, 255)  # --paper, the mark's own bars
+SIZES = [16, 24, 32, 48, 64, 128, 256]
 
-# Source geometry: the 32x32 viewBox from huddlecode.com's favicon SVG.
-SIZE = 32
-CORNER_RADIUS = 6
-BARS = [
-    # (x, y, w, h) in the 32-unit source space, each with rx=1.5 (== w/2).
-    (9, 13, 3, 6),
-    (14.5, 8, 3, 16),
-    (20, 11, 3, 10),
-]
-
-SUPERSAMPLE = 8  # rendered at 8x then downsampled for anti-aliasing
+TILE_TOP = "#D2703F"
+TILE_BOTTOM = "#B5552C"
+NIB = "#F6EFE3"
+COLLAR = "#7A2F14"
 
 
-def render(px: int) -> Image.Image:
-    scale = SUPERSAMPLE
-    hi = px * scale
-    unit = hi / SIZE
+def render(px: int):
+    """The icon at px×px, as a QImage."""
+    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import QColor, QImage, QLinearGradient, QPainter, QPainterPath
 
-    img = Image.new("RGBA", (hi, hi), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    draw.rounded_rectangle(
-        [0, 0, hi - 1, hi - 1], radius=CORNER_RADIUS * unit, fill=INK,
-    )
-    for x, y, w, h in BARS:
-        draw.rounded_rectangle(
-            [x * unit, y * unit, (x + w) * unit, (y + h) * unit],
-            radius=(w / 2) * unit,
-            fill=PAPER,
-        )
-    return img.resize((px, px), Image.LANCZOS)
+    from ui.workspace import nib
+
+    img = QImage(px, px, QImage.Format_ARGB32)
+    img.fill(Qt.transparent)
+    p = QPainter(img)
+    p.setRenderHint(QPainter.Antialiasing, True)
+    # the smallest sizes use the whole square — a rounded tile at 16px just
+    # loses pixels to its corners
+    inset = 0.0 if px <= 24 else px * 0.03
+    radius = px * (0.20 if px <= 24 else 0.23)
+    tile = QPainterPath()
+    tile.addRoundedRect(QRectF(inset, inset, px - 2 * inset, px - 2 * inset), radius, radius)
+    grad = QLinearGradient(0, 0, 0, px)
+    grad.setColorAt(0, QColor(TILE_TOP))
+    grad.setColorAt(1, QColor(TILE_BOTTOM))
+    p.fillPath(tile, grad)
+    scale = 0.78 if px <= 24 else 0.70
+    nib.paint_centred(p, QRectF(0, 0, px, px), QColor(NIB),
+                      QColor(COLLAR) if px >= 32 else None, scale=scale)
+    p.end()
+    return img
+
+
+def _to_pil(img):
+    from PIL import Image
+    from PySide6.QtCore import QBuffer, QIODevice
+
+    buf = QBuffer()
+    buf.open(QIODevice.WriteOnly)
+    img.save(buf, "PNG")
+    return Image.open(io.BytesIO(bytes(buf.data()))).convert("RGBA")
 
 
 def main() -> None:
-    sizes = [16, 24, 32, 48, 64, 128, 256]
-    images = [render(s) for s in sizes]
-    out_path = os.path.join(os.path.dirname(__file__), "icon.ico")
-    images[-1].save(
-        out_path, format="ICO", sizes=[(s, s) for s in sizes], append_images=images[:-1],
-    )
-    print(f"Wrote {out_path} ({os.path.getsize(out_path)} bytes)")
+    from PySide6.QtGui import QGuiApplication
 
-    png_path = os.path.join(os.path.dirname(__file__), "icon_256.png")
-    images[-1].save(png_path, format="PNG")
-    print(f"Wrote {png_path}")
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv)  # noqa: F841
+    here = os.path.dirname(os.path.abspath(__file__))
+    images = {px: _to_pil(render(px)) for px in SIZES}
+    images[256].save(os.path.join(here, "icon_256.png"))
+    images[256].save(os.path.join(here, "icon.ico"), sizes=[(s, s) for s in SIZES],
+                     append_images=[images[s] for s in SIZES if s != 256])
+    print("wrote icon.ico and icon_256.png")
 
 
 if __name__ == "__main__":
