@@ -325,7 +325,17 @@ class PiperVoice(VoiceProvider):
                             stream.abort()          # drop anything still queued
                             stream.start()
                             break
-                        stream.write(data[i:i + block])
+                        chunk = data[i:i + block]
+                        try:
+                            # the level of exactly what is about to be heard,
+                            # for the speaking trace (int16 -> ~0..1 for speech)
+                            from voice import levels
+                            levels.VOICE.push_block(
+                                levels.rms_levels(chunk.astype("float32") / 32768.0, 3, 0.11),
+                                self._BLOCK_SECONDS)
+                        except Exception:
+                            pass
+                        stream.write(chunk)
                 except Exception as exc:
                     logger.warning("Piper playback failed: %s", exc)
                     self._healthy = False

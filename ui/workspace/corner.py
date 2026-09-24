@@ -107,6 +107,14 @@ class CornerPresence(QWidget):
         self._status_row.hide()
         col.addWidget(self._status_row)
 
+        # the nib drawing the voice — yours while listening, Mike's while he
+        # speaks — for "Hey Mike" and the hotkey, where the corner is all
+        # there is on screen
+        from ui.workspace.voicetrace import VoiceTrace
+        self._trace = VoiceTrace(compact=True)
+        self._trace.hide()
+        col.addWidget(self._trace)
+
         # ── what Mike said ──
         self._answer = QLabel("")
         self._answer.setWordWrap(True)
@@ -197,11 +205,33 @@ class CornerPresence(QWidget):
         self._place()
 
     def dismiss(self) -> None:
+        self._voice("idle")
         self.hide()
         self.clear_response()
         self.mark.set_state("idle")
 
+    def _voice(self, state: str) -> None:
+        mode = {"listening": "listen", "transcribing": "read", "speaking": "speak"}.get(state)
+        if state == "speaking":
+            try:
+                from config import preferences
+                if not preferences.get("voice_enabled", True):
+                    mode = None
+            except Exception:
+                pass
+        if mode is None:
+            self._trace.set_mode("off")
+            if self._trace.isVisible():
+                self._trace.hide()
+                self._resize_to_content()
+            return
+        self._trace.set_mode(mode)
+        if not self._trace.isVisible():
+            self._trace.show()
+            self._resize_to_content()
+
     def set_state(self, state: str, status: str = "") -> None:
+        self._voice(state)
         self.mark.set_state("listening" if state == "transcribing" else state)
         text = status or _STATE_TEXT.get(state, "")
         if text:
@@ -238,6 +268,7 @@ class CornerPresence(QWidget):
 
     def finish(self) -> None:
         self.mark.set_state("idle")
+        self._voice("idle")
         self._hide_status()
 
     # ── internals ─────────────────────────────────────────

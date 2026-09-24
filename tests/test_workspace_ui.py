@@ -436,3 +436,68 @@ def test_the_app_icon_is_the_nib():
     im.size = (256, 256)
     r, g, b, _a = im.convert("RGBA").getpixel((40, 128))
     assert r > g > b, "the tile is the warm terracotta, not the old ink square"
+
+
+# ── voice: the nib draws the real sound ───────────────────────
+
+def test_the_trace_is_flat_in_silence_and_moves_with_real_sound():
+    app = _app()
+    from config import preferences
+    from ui.workspace.voicetrace import VoiceTrace
+    from voice import levels
+
+    preferences.set_value("reduced_motion", False)
+    trace = VoiceTrace()
+    trace.resize(600, 48)
+    trace.show()
+    trace.set_mode("listen")
+    _pump(app, 0.5)                       # a quiet room: nothing pushed
+    assert trace._hist and max(abs(y) for y in trace._hist) < 0.1, "silence draws a flat line"
+
+    end = time.time() + 0.8
+    while time.time() < end:              # someone speaking
+        levels.MIC.push(1.0)
+        _pump(app, 0.01)
+    assert max(abs(y) for y in trace._hist[-30:]) > 0.4, "speech swings the pen"
+    trace.set_mode("off")
+    trace.hide()
+
+
+def test_meters_normalise_and_forget():
+    from voice import levels
+
+    m = levels.Meter()
+    assert m.level() == 0.0 and not m.live()
+    m.push_block(levels.rms_levels([0.1] * 160, 4, 0.1), 0.01)
+    assert abs(m.level() - 1.0) < 1e-3 and m.live()
+    m.clear()
+    assert m.level() == 0.0
+
+
+def test_listening_takes_the_message_box_and_gives_it_back():
+    _app()
+    from ui.workspace.composer import Composer
+
+    c = Composer()
+    c.show()
+    c.set_text("half a thought")
+    c.voice.set_state("recording")
+    assert c._field.isHidden() and c._status.trace.mode() == "listen"
+    c.voice.set_state("transcribing")
+    assert c._status.trace.mode() == "read"
+    c.voice.set_state("idle")
+    assert not c._field.isHidden() and c.text() == "half a thought", "the draft survives"
+    c.hide()
+
+
+def test_the_corner_draws_voice_for_hey_mike():
+    _app()
+    from ui.workspace.corner import CornerPresence
+
+    corner = CornerPresence()
+    corner.show_presence()
+    corner.set_state("listening")
+    assert corner._trace.mode() == "listen" and not corner._trace.isHidden()
+    corner.finish()
+    assert corner._trace.mode() == "off" and corner._trace.isHidden()
+    corner.dismiss()

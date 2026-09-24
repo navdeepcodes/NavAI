@@ -148,10 +148,20 @@ class PushToTalkRecorder:
 
         self._frames.append(indata.copy())
 
+        rms = float(np.sqrt(np.mean(indata ** 2)))
+        # Publish the live level for the voice trace, in 10ms slices so it
+        # moves with syllables rather than stepping every 100ms. Scaled to
+        # this room's own speech threshold once calibrated, so a quiet room
+        # draws a flat line and ordinary speech fills the trace.
+        try:
+            from voice import levels
+            ref = self._speech_threshold * 3.0 if self._speech_threshold else 0.03
+            levels.MIC.push_block(levels.rms_levels(indata, 10, ref), BLOCK_SECONDS)
+        except Exception:
+            pass
+
         if self._should_auto_stop:
             return
-
-        rms = float(np.sqrt(np.mean(indata ** 2)))
 
         # First: measure the real noise floor of whatever room and
         # microphone are actually in use, rather than assuming a single

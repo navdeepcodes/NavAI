@@ -88,7 +88,6 @@ class MicButton(IconButton):
             return
         self._vstate = mapped
         self.setToolTip(self._TIPS[mapped])
-        self.set_icon("speaker" if mapped == "speaking" else "mic")
         if mapped in ("recording", "transcribing") and not style.reduced_motion():
             self._anim.start()
         else:
@@ -102,7 +101,13 @@ class MicButton(IconButton):
 
     def _tick(self) -> None:
         self._t += 0.033
+        if self._vstate == "recording":
+            from voice import levels
+            v = min(1.0, max(0.0, levels.MIC.level() - 0.12) / 0.88) ** 0.6
+            self._env += (v - self._env) * (0.5 if v > self._env else 0.12)
         self.update()
+
+    _env = 0.0
 
     def paintEvent(self, e) -> None:
         if self._vstate == "idle":
@@ -114,40 +119,40 @@ class MicButton(IconButton):
         acc = QColor(style.accent())
         s = self._icon_size
         icon_r = QRectF((w - s) / 2, (h - s) / 2, s, s)
+        c = QRectF(0, 0, w, h).center()
         if self._vstate == "recording":
-            # a filled disc with a soft halo that breathes: "you're being heard"
-            breath = 0.5 + 0.5 * math.sin(self._t * 4.0)
-            halo = QColor(acc)
-            halo.setAlphaF(0.18 + 0.14 * breath)
+            # Filled: the mic is live. The ring around it swells with your
+            # actual voice — still when you're quiet — so you can see you're
+            # being heard.
+            r = w / 2 - 4.5
+            ring = QColor(acc)
+            ring.setAlphaF(0.30 + 0.45 * self._env)
+            p.setPen(QPen(ring, 1.6))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(c, r + 1.5 + 2.5 * self._env, r + 1.5 + 2.5 * self._env)
             p.setPen(Qt.NoPen)
-            p.setBrush(halo)
-            p.drawEllipse(QRectF(0, 0, w, h))
             p.setBrush(acc)
-            inset = 4 - 1.2 * breath
-            p.drawEllipse(QRectF(inset, inset, w - 2 * inset, h - 2 * inset))
-            draw(p, "mic", icon_r, QColor("#17140F"))
+            p.drawEllipse(c, r, r)
+            draw(p, "mic", icon_r.adjusted(1, 1, -1, -1), QColor("#17140F"), 1.8)
         elif self._vstate == "transcribing":
             track = QColor(acc)
-            track.setAlpha(50)
-            pen = QPen(track)
-            pen.setWidthF(2.0)
-            p.setPen(pen)
+            track.setAlpha(46)
+            p.setPen(QPen(track, 1.8))
             p.setBrush(Qt.NoBrush)
-            p.drawEllipse(QRectF(2, 2, w - 4, h - 4))
-            arc = QPen(acc)
-            arc.setWidthF(2.0)
+            p.drawEllipse(c, w / 2 - 3, w / 2 - 3)
+            arc = QPen(acc, 1.8)
             arc.setCapStyle(Qt.RoundCap)
             p.setPen(arc)
-            p.drawArc(QRectF(2, 2, w - 4, h - 4), int(-self._t * 300 * 16), -90 * 16)
+            p.drawArc(QRectF(3, 3, w - 6, h - 6), int(-self._t * 320 * 16), -80 * 16)
             draw(p, "mic", icon_r, acc)
-        else:  # speaking
+        else:  # speaking: clicking interrupts and talks
             if self._hover:
                 tile = QColor(style.INK)
                 tile.setAlpha(18)
                 p.setPen(Qt.NoPen)
                 p.setBrush(tile)
                 p.drawRoundedRect(QRectF(0, 0, w, h), 8, 8)
-            draw(p, "speaker", icon_r, acc)
+            draw(p, "mic", icon_r, acc)
 
 
 class _ComposeField(QPlainTextEdit):
@@ -265,57 +270,51 @@ class _ChipIcon(QWidget):
         draw(p, name, QRectF(5, 5, 16, 16), ink, 1.6)
 
 
-class _VoiceStatus(QWidget):
-    """One quiet line saying what voice is doing, in words."""
+class _VoicePanel(QWidget):
+    """What voice is doing, drawn and said: the nib's trace of the sound, with
+    one quiet line of words above it."""
 
     _TEXT = {
-        "recording": "Listening… pause, or click the mic when you're done",
-        "transcribing": "Transcribing what you said…",
-        "speaking": "Speaking — click the mic to interrupt, or press Esc",
+        "recording": "Listening — pause when you're done, or click the mic",
+        "transcribing": "Writing down what you said…",
+        "speaking": "Speaking — press Esc to stop, or click the mic to talk",
     }
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        from ui.workspace.voicetrace import VoiceTrace
+        col = QVBoxLayout(self)
+        col.setContentsMargins(2, 2, 0, 0)
+        col.setSpacing(2)
+        self._label = QLabel("")
+        self._label.setFont(style.font(style.CAPTION, QFont.Weight.Medium))
+        self._label.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
+        col.addWidget(self._label)
+        self.trace = VoiceTrace()
+        col.addWidget(self.trace)
         self._state = "idle"
-        self._t = 0.0
-        self.setFixedHeight(22)
-        self._timer = QTimer(self)
-        self._timer.setInterval(40)
-        self._timer.timeout.connect(self._tick)
         self.hide()
+
+    def state(self) -> str:
+        return self._state
 
     def set_state(self, state: str) -> None:
         self._state = state
-        if state in self._TEXT:
-            self.show()
-            if not style.reduced_motion():
-                self._timer.start()
-        else:
-            self._timer.stop()
-            self.hide()
-        self.update()
-
-    def _tick(self) -> None:
-        self._t += 0.04
-        self.update()
-
-    def paintEvent(self, _e) -> None:
-        text = self._TEXT.get(self._state)
+        text = self._TEXT.get(state)
         if not text:
+            self.trace.set_mode("off")
+            self.hide()
             return
-        p = QPainter(self)
-        p.setRenderHint(QPainter.Antialiasing, True)
-        h = self.height()
-        acc = QColor(style.accent())
-        pulse = 0.55 + 0.45 * math.sin(self._t * 4.0)
-        dot = QColor(acc)
-        dot.setAlphaF(pulse if self._state == "recording" else 0.9)
-        p.setPen(Qt.NoPen)
-        p.setBrush(dot)
-        p.drawEllipse(QRectF(4, h / 2 - 3.5, 7, 7))
-        p.setFont(style.font(style.CAPTION, QFont.Weight.Medium))
-        p.setPen(QColor(style.INK_SOFT))
-        p.drawText(QRectF(20, 0, self.width() - 20, h), Qt.AlignVCenter | Qt.AlignLeft, text)
+        self._label.setText(text)
+        if state == "recording":
+            self.trace.set_compact(False)
+            self.trace.set_mode("listen")
+        elif state == "transcribing":
+            self.trace.set_mode("read")
+        else:
+            self.trace.set_compact(True)
+            self.trace.set_mode("speak")
+        self.show()
 
 
 class Composer(QFrame):
@@ -336,7 +335,7 @@ class Composer(QFrame):
         col.setContentsMargins(14, 10, 10, 10)
         col.setSpacing(6)
 
-        self._status = _VoiceStatus()
+        self._status = _VoicePanel()
         col.addWidget(self._status)
 
         self._chips = QWidget()
@@ -397,6 +396,9 @@ class Composer(QFrame):
 
     def _on_voice_state(self, state: str) -> None:
         self._status.set_state(state)
+        # While you speak, the trace takes the message's place (your draft is
+        # kept and comes back); while Mike speaks, you can still type.
+        self._field.setVisible(state not in ("recording", "transcribing"))
 
     def _sync_send(self) -> None:
         if self._responding:
