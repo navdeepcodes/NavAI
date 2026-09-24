@@ -156,14 +156,17 @@ class UIController(QObject):
 
         message = message.strip()
 
-        if not message:
+        # An attachment on its own is a real turn ("here, read this"), so a
+        # message is allowed to be empty as long as something was attached.
+        attachments = self._page.take_attachments()
+        if not message and not attachments:
             return
 
         self._retire_active_worker()
 
         self._mirror_edge("thinking")
 
-        self._page.add_user_message(message)
+        self._page.add_user_message(message, attachments=attachments)
 
         self._page.show_thinking()
 
@@ -188,6 +191,7 @@ class UIController(QObject):
         self._worker = CoreRuntimeWorker(
             self._runtime,
             message,
+            attachments=attachments,
         )
 
         self._worker.moveToThread(self._thread)

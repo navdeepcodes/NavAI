@@ -22,12 +22,14 @@ class CoreRuntimeWorker(QObject):
         self,
         runtime: CoreRuntime,
         message: str,
+        attachments: list[str] | None = None,
     ) -> None:
 
         super().__init__()
 
         self._runtime = runtime
         self._message = message
+        self._attachments = list(attachments or [])
 
         self._confirm_event = threading.Event()
         self._confirm_result = False
@@ -41,8 +43,16 @@ class CoreRuntimeWorker(QObject):
 
         try:
 
+            message = self._message
+            if self._attachments:
+                # Read the files here, off the GUI thread, and fold their
+                # contents into the message so Mike always has them -- rather
+                # than hoping the small model decides to call a read tool. A
+                # document becomes its text, an image its description.
+                message = self._with_attachments(message)
+
             for event_type, payload in self._runtime.process_streaming(
-                self._message,
+                message,
                 confirm_callback=self._request_confirmation,
                 cancel_event=self._cancel_event,
             ):
@@ -66,6 +76,50 @@ class CoreRuntimeWorker(QObject):
             )
 
     # =====================================================
+
+    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"}
+    _MAX_DOC_CHARS = 12000        # a budget so one huge PDF can't swamp the turn
+
+    def _with_attachments(self, message: str) -> str:
+        import os
+
+        blocks = []
+        for path in self._attachments:
+            name = os.path.basename(path)
+            self.tool_start.emit(f"Reading {name}")
+            content = self._read_one(path)
+            self.tool_end.emit("done")
+            blocks.append(
+                f"[The user attached a file: {name}]\n{content}\n"
+                f"[end of {name}]")
+
+        preamble = "\n\n".join(blocks)
+        if message.strip():
+            return f"{preamble}\n\n{message}"
+        # No words, just a file: give Mike a sensible default intent.
+        return f"{preamble}\n\nHave a look at this and tell me what you make of it."
+
+    def _read_one(self, path: str) -> str:
+        import os
+
+        ext = os.path.splitext(path)[1].lower()
+        try:
+            if ext in self._IMAGE_EXTS:
+                from vision.vision import Vision
+
+                desc = Vision().analyze(
+                    path,
+                    "Describe this image in full: any text, equations, "
+                    "diagrams, code or handwriting shown, and what it depicts.")
+                return f"(an image; here is what it shows)\n{desc}"
+            from tools.filesystem.document_reader import read_document
+
+            text = read_document(path) or ""
+            if len(text) > self._MAX_DOC_CHARS:
+                text = text[:self._MAX_DOC_CHARS] + "\n...[truncated]"
+            return text or "(the file appears to be empty)"
+        except Exception as exc:
+            return f"(couldn't read this file: {exc})"
 
     def _request_confirmation(self, description: str) -> bool:
 

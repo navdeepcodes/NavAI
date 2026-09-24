@@ -21,7 +21,8 @@ from PySide6.QtCore import (
     Qt, QEasingCurve, QObject, QPointF, QPropertyAnimation, QTimer, Signal,
 )
 from PySide6.QtGui import (
-    QBrush, QColor, QLinearGradient, QPainter, QPainterPath, QPen, QKeyEvent,
+    QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen,
+    QKeyEvent,
 )
 from PySide6.QtWidgets import (
     QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel,
@@ -103,8 +104,33 @@ class _Field(QLineEdit):
         super().keyPressEvent(e)
 
 
+class _AttachChip(QFrame):
+    """A queued file, shown above the input until the turn is sent."""
+
+    removed = Signal(str)
+
+    def __init__(self, name: str, path: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("chip")
+        self._path = path
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 3, 5, 3)
+        row.setSpacing(6)
+        label = QLabel(f"\U0001F4CE  {name}")
+        label.setFont(style.label(11, QFont.Weight.Normal))
+        label.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
+        row.addWidget(label)
+        close = QPushButton("✕")
+        close.setObjectName("chipx")
+        close.setCursor(Qt.PointingHandCursor)
+        close.setFixedSize(16, 16)
+        close.clicked.connect(lambda: self.removed.emit(self._path))
+        row.addWidget(close)
+
+
 class _InputBar(QFrame):
     submitted = Signal(str)
+    attach_requested = Signal(list)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -115,6 +141,16 @@ class _InputBar(QFrame):
 
         self.voice = _Voice()
         row.addWidget(self.voice, 0, Qt.AlignVCenter)
+
+        # Attach a file — a document or an image — for Mike to read. A quiet
+        # plus, not a loud button; the drop target is the whole panel too.
+        self._attach = QPushButton("+")
+        self._attach.setObjectName("attach")
+        self._attach.setCursor(Qt.PointingHandCursor)
+        self._attach.setFixedSize(24, 24)
+        self._attach.setToolTip("Attach a PDF, document or image")
+        self._attach.clicked.connect(self._pick_files)
+        row.addWidget(self._attach, 0, Qt.AlignVCenter)
 
         self._field = _Field(self._emit)
         self._field.setPlaceholderText("Ask Mike, or hold to talk")
@@ -180,11 +216,22 @@ class _InputBar(QFrame):
         p.setPen(QPen(QBrush(grad), 1.3))
         p.drawLine(QPointF(16.0, y), QPointF(float(w - 16), y))
 
+    def _pick_files(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Attach files for Mike", "",
+            "Documents & images (*.pdf *.docx *.pptx *.txt *.md *.csv *.json "
+            "*.py *.js *.png *.jpg *.jpeg *.gif *.webp);;All files (*)")
+        if paths:
+            self.attach_requested.emit(list(paths))
+
     def _emit(self) -> None:
-        text = self._field.text().strip()
-        if text:
-            self._field.clear()
-            self.submitted.emit(text)
+        # Submit even with no text if the field is empty but files are queued;
+        # the panel owns the queue, so it also decides whether there's anything
+        # to send. Here we just forward the words (possibly "").
+        self.submitted.emit(self._field.text().strip())
+        self._field.clear()
 
     def set_enabled(self, enabled: bool) -> None:
         self._field.setEnabled(enabled)
@@ -1182,12 +1229,27 @@ class MikePanel(QWidget):
         wrap.addWidget(self.confirm)
         outer.addLayout(wrap)
 
+        # attachment chips: a quiet row just above the input, present only when
+        # something is queued to send.
+        self._attachments: list[str] = []
+        self._chips = QWidget()
+        self._chips_row = QHBoxLayout(self._chips)
+        self._chips_row.setContentsMargins(16, 0, 16, 6)
+        self._chips_row.setSpacing(6)
+        self._chips_row.addStretch(1)
+        self._chips.hide()
+        outer.addWidget(self._chips)
+
         # input: the anchor, always present
         self.input = _InputBar()
+        self.input.attach_requested.connect(self.add_attachments)
         pad = QVBoxLayout()
         pad.setContentsMargins(14, 4, 14, 14)
         pad.addWidget(self.input)
         outer.addLayout(pad)
+
+        # The whole panel is a drop target, not just the little plus.
+        self.setAcceptDrops(True)
 
         self.setStyleSheet(_build_stylesheet())
         self._show_resting()
@@ -1374,10 +1436,64 @@ class MikePanel(QWidget):
         QTimer.singleShot(0, self._fit)
 
     # ── controller contract ───────────────────────────────
-    def add_user_message(self, text: str) -> None:
+    def add_user_message(self, text: str, attachments: list[str] | None = None) -> None:
         self._drop_resting()
-        self._insert(_Turn(text, "you"))
+        import os
+
+        shown = text
+        if attachments:
+            names = ", ".join(os.path.basename(a) for a in attachments)
+            tag = f"\U0001F4CE {names}"
+            shown = f"{tag}\n{text}" if text else tag
+        self._insert(_Turn(shown, "you"))
         self._ledger = None
+
+    # ── attachments ───────────────────────────────────────
+    def add_attachments(self, paths: list[str]) -> None:
+        import os
+
+        for path in paths:
+            if path and os.path.exists(path) and path not in self._attachments:
+                self._attachments.append(path)
+        self._refresh_chips()
+
+    def take_attachments(self) -> list[str]:
+        """Hand the queued files to the caller and clear the row."""
+        pending = list(self._attachments)
+        self._attachments.clear()
+        self._refresh_chips()
+        return pending
+
+    def _refresh_chips(self) -> None:
+        import os
+
+        # Rebuild the chip row from the current queue.
+        while self._chips_row.count() > 1:      # keep the trailing stretch
+            item = self._chips_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        for path in self._attachments:
+            chip = _AttachChip(os.path.basename(path), path)
+            chip.removed.connect(self._remove_attachment)
+            self._chips_row.insertWidget(self._chips_row.count() - 1, chip)
+        self._chips.setVisible(bool(self._attachments))
+        QTimer.singleShot(0, self._fit)
+
+    def _remove_attachment(self, path: str) -> None:
+        if path in self._attachments:
+            self._attachments.remove(path)
+        self._refresh_chips()
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.add_attachments(paths)
+            event.acceptProposedAction()
 
     def begin_mike_stream(self):
         self._drop_resting()
@@ -1545,6 +1661,21 @@ QPushButton#winctl {{
     border: none; font-size: 13px; padding: 0 2px;
 }}
 QPushButton#winctl:hover {{ color: {style.INK}; }}
+QPushButton#attach {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 20px; padding: 0;
+}}
+QPushButton#attach:hover {{ color: {style.accent()}; }}
+QFrame#chip {{
+    background: {style.GROUND_SUNK};
+    border: 1px solid {style.HAIRLINE};
+    border-radius: 8px;
+}}
+QPushButton#chipx {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 10px;
+}}
+QPushButton#chipx:hover {{ color: {style.STOP}; }}
 QPushButton#close {{
     background: transparent; color: {style.INK_MUTE};
     border: none; font-size: 13px; padding: 0 2px;
