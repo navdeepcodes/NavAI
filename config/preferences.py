@@ -32,7 +32,13 @@ DEFAULTS: dict[str, Any] = {
     # not listed in this dict — deliberately, so a stale file cannot smuggle
     # in settings — which meant the voice choice could be read but never
     # saved, and every attempt to configure it looked like it had worked.
-    "voice_provider": "native",
+    # "piper" is Mike's local neural voice on Windows (chosen by benchmark over
+    # Kokoro for latency/resource/reliability on modest hardware). It is the
+    # default everywhere and self-corrects: where the Piper runtime isn't
+    # bundled (macOS), its availability check fails and Mike falls back to the
+    # native system voice, so this one default is correct on every platform.
+    "voice_provider": "piper",
+    "voice_piper_voice": "en_US-amy-medium",
     "voice_qwen_speaker": "Ryan",
 
     # How Mike should sound, in plain English, handed to the model as its
@@ -54,6 +60,22 @@ DEFAULTS: dict[str, Any] = {
     "welcome_tour_shown": False,     # the one-time install tour has run
     "accent": "",                    # the user's chosen accent, or "" for default
     "theme": "system",               # "system" | "light" | "dark"
+
+    # The workspace window remembers where it was and how big it was, so Mike
+    # reopens as the desktop application the user last shaped rather than
+    # snapping back to a default rectangle every launch. -1 means "not set yet,
+    # centre me"; the size is clamped to the screen on load so a saved geometry
+    # from a larger monitor can't strand the window off-screen.
+    "window_w": -1,
+    "window_h": -1,
+    "window_x": -1,
+    "window_y": -1,
+    "window_maximised": False,
+
+    # Who Mike is talking to. A real profile surface edits these; they're used
+    # for a warmer greeting and nothing is sent anywhere.
+    "profile_name": "",
+    "profile_about": "",
 }
 
 _lock = threading.Lock()

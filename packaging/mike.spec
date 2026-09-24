@@ -47,6 +47,10 @@ hiddenimports = [
     # silently have no wake word and no welcome on a machine that isn't this one.
     "voice.wake.windows",
     "ui.welcome",
+    # Mike's Windows neural voice. Reached through the voice-provider dispatch
+    # (get_provider), so nothing statically imports it; without this the
+    # packaged app would silently have only the SAPI fallback.
+    "voice.providers.piper",
     "win32com.client",
     # Pygments loads lexers and styles by name at runtime (get_lexer_by_name,
     # the "one-dark"/"friendly" styles), which the static graph never sees --
@@ -78,6 +82,13 @@ analysis = Analysis(
         # shipped. Bundling it is what lets Mike offer to install it.
         (os.path.join(REPO_ROOT, "vscode-extension", "mike-bridge-0.1.0.vsix"),
          "vscode-extension"),
+        # The Piper neural-voice runtime: piper.exe, its DLLs and espeak-ng
+        # data, and the bundled English voice models. This is what makes Mike
+        # speak in a natural voice on a machine that only unzipped the release
+        # -- without it the voice provider finds no runtime and falls back to
+        # the SAPI system voice. Lives in runtime/ (git-ignored, fetched at
+        # setup) and is copied to piper/ beside the app.
+        (os.path.join(REPO_ROOT, "runtime", "piper"), "piper"),
     ],
     hiddenimports=hiddenimports,
     hookspath=[],

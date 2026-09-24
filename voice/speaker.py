@@ -129,6 +129,30 @@ class Speaker:
         """
         self._consecutive_failures = 0
 
+    def reload_provider(self) -> None:
+        """Rebuild the configured voice from preferences — so a voice picked in
+        settings takes effect on the next thing Mike says, not the next launch.
+
+        Stops and releases the current provider first (a Piper/Qwen worker holds
+        a process and threads), then reads the preference afresh. The native
+        fallback instance is kept; only the configured voice is swapped.
+        """
+        self.stop()
+        old = self._provider
+        try:
+            self._provider = self._configured_provider(self._native)
+        except Exception:
+            logger.exception("Could not reload the voice provider; keeping the current one.")
+            return
+        if old is not None and old is not self._native and old is not self._provider:
+            try:
+                old.shutdown()
+            except Exception:
+                logger.debug("Old voice provider shutdown failed.", exc_info=True)
+        self._provider.on_failure = self._recover
+        self._consecutive_failures = 0
+        self._fell_back = False
+
     def speak(self, text: str) -> None:
         if not text or not text.strip():
             return

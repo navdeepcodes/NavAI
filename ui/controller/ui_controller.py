@@ -437,6 +437,14 @@ class UIController(QObject):
         if self._stream_bubble is not None:
             self._stream_bubble.set_text(humanized)
 
+        # The corner streamed the raw tokens, so it still shows the pre-guard
+        # text (the "or should I distract you?" menu the humaniser strips). Give
+        # it the cleaned final reply too, so the companion never shows what the
+        # main surface just removed.
+        if (self._floating is not None and self._floating.isVisible()
+                and humanized.strip()):
+            self._floating.set_response(humanized)
+
         remainder = self._response_text[self._spoken_up_to:].strip()
         if remainder and self._speech_allowed():
             self._speaker.speak_sentence(remainder)
@@ -650,6 +658,14 @@ class UIController(QObject):
                 self._wake.stop()
         except Exception:
             logger.exception("Could not change wake word state.")
+
+    def reload_voice(self) -> None:
+        """A voice picked in settings — rebuild the speaker's provider so it
+        takes effect immediately rather than on the next launch."""
+        try:
+            self._speaker.reload_provider()
+        except Exception:
+            logger.exception("Could not reload the voice.")
 
     def _speech_allowed(self) -> bool:
         return bool(preferences.get("voice_enabled", True))

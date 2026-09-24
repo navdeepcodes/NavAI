@@ -37,7 +37,7 @@ def native_provider_class() -> type[VoiceProvider]:
 
 
 def available_providers() -> list[str]:
-    return ["native", "qwen"]
+    return ["native", "piper", "qwen"]
 
 
 def get_provider(name: str | None = None) -> VoiceProvider:
@@ -52,6 +52,19 @@ def get_provider(name: str | None = None) -> VoiceProvider:
     requested = (name or "native").strip().lower()
 
     if requested in ("", "native", "macos", "windows", "say", "sapi", "samantha"):
+        return native_provider_class()()
+
+    if requested == "piper":
+        try:
+            from voice.providers.piper import PiperVoice
+
+            provider = PiperVoice()
+            ok, why = provider.available()
+            if ok:
+                return provider
+            logger.warning("Piper voice unavailable (%s); using the native voice.", why)
+        except Exception as exc:
+            logger.warning("Piper voice could not be created (%s); using the native voice.", exc)
         return native_provider_class()()
 
     if requested == "qwen":
