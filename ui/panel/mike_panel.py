@@ -138,62 +138,46 @@ class _InputBar(QFrame):
         # flows left-to-right while Mike is answering (something is arriving).
         # One element carries both sides of the exchange so input and output
         # feel like the same living surface rather than two states bolted on.
+        # A still, faint accent hairline under the field, shown only while Mike
+        # is actually listening or answering. It eases in and out and then holds
+        # -- no breathing, no travelling light. When it's idle the line is gone
+        # and the timer is stopped, so the input is simply a clean field at rest.
         self._state = "idle"        # idle | listening | responding
-        self._t = 0.0
-        self._glow = QTimer(self)
-        self._glow.timeout.connect(self._on_glow_frame)
-        self._glow.start(16)        # ~60fps
+        self._opacity = 0.0
+        self._target = 0.0
+        self._ease_timer = QTimer(self)
+        self._ease_timer.setInterval(16)
+        self._ease_timer.timeout.connect(self._ease)
 
-    def _on_glow_frame(self) -> None:
-        self._t += 0.016
+    def _set_target(self, value: float) -> None:
+        self._target = value
+        if not self._ease_timer.isActive():
+            self._ease_timer.start()
+
+    def _ease(self) -> None:
+        self._opacity += (self._target - self._opacity) * 0.16
+        if abs(self._opacity - self._target) < 0.004:
+            self._opacity = self._target
+            if self._target == 0.0:
+                self._ease_timer.stop()   # at rest: no more repaints
         self.update()
 
     def paintEvent(self, event) -> None:
-        # Let the stylesheet paint the rounded inset surface first, then lay the
-        # breathing line over it.
         super().paintEvent(event)
-        import math
-
+        if self._opacity <= 0.003:
+            return
         w = self.width()
         y = self.height() - 3.0
         accent = QColor(style.accent())
-
-        if self._state == "responding":
-            # A soft highlight travels the width — a current, not a pulse.
-            span = max(1.0, float(w - 32))
-            head = (self._t * 0.55) % 1.5      # 0..1.5, the tail is a brief rest
-            intensity = 0.7
-        else:
-            head = None
-            # A slow breath at rest; a fuller, quicker one while listening.
-            if self._state == "listening":
-                intensity = 0.30 + 0.45 * (0.5 + 0.5 * math.sin(self._t * 3.2))
-            else:
-                intensity = 0.06 + 0.10 * (0.5 + 0.5 * math.sin(self._t * 1.3))
-
-        grad = QLinearGradient(16.0, 0.0, float(w - 16), 0.0)
         edge = QColor(accent); edge.setAlphaF(0.0)
-        if head is not None:
-            centre = min(max(head, 0.0), 1.0)
-            lit = QColor(accent); lit.setAlphaF(intensity if head <= 1.0 else 0.0)
-            grad.setColorAt(0.0, edge)
-            lo = max(0.001, centre - 0.22)
-            hi = min(0.999, centre + 0.22)
-            mid = min(max(centre, lo + 0.001), hi - 0.001)
-            grad.setColorAt(lo, edge)
-            grad.setColorAt(mid, lit)
-            grad.setColorAt(hi, edge)
-            grad.setColorAt(1.0, edge)
-        else:
-            mid = QColor(accent); mid.setAlphaF(intensity)
-            grad.setColorAt(0.0, edge)
-            grad.setColorAt(0.5, mid)
-            grad.setColorAt(1.0, edge)
-
+        mid = QColor(accent); mid.setAlphaF(self._opacity)
+        grad = QLinearGradient(16.0, 0.0, float(w - 16), 0.0)
+        grad.setColorAt(0.0, edge)
+        grad.setColorAt(0.5, mid)
+        grad.setColorAt(1.0, edge)
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
-        pen = QPen(QBrush(grad), 1.6)
-        p.setPen(pen)
+        p.setPen(QPen(QBrush(grad), 1.3))
         p.drawLine(QPointF(16.0, y), QPointF(float(w - 16), y))
 
     def _emit(self) -> None:
@@ -210,16 +194,26 @@ class _InputBar(QFrame):
     def focus(self) -> None:
         self._field.setFocus()
 
+    _LISTEN_OPACITY = 0.26
+    _RESPOND_OPACITY = 0.16
+
     def set_listening(self, on: bool) -> None:
         self._field.setPlaceholderText("Listening…" if on else "Ask Mike, or hold to talk")
-        self._state = "listening" if on else "idle"
+        if on:
+            self._state = "listening"
+            self._set_target(self._LISTEN_OPACITY)
+        elif self._state == "listening":
+            self._state = "idle"
+            self._set_target(0.0)
 
     def set_responding(self, on: bool) -> None:
-        """Mike is answering: the line flows rather than breathes."""
+        """Mike is answering: the line holds, faint, until he's done."""
         if on:
             self._state = "responding"
+            self._set_target(self._RESPOND_OPACITY)
         elif self._state == "responding":
             self._state = "idle"
+            self._set_target(0.0)
 
 
 # ══ streamed reply ═════════════════════════════════════════
@@ -456,36 +450,21 @@ class _Thinking(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
 
-        cx, cy = 7.0, self.height() / 2.0
+        cx, cy = 6.0, self.height() / 2.0
         accent = style.qaccent()
 
-        # A soft sonar pulse: a ring that expands and fades on a loop, so the
-        # presence mark feels like it's emitting thought rather than just
-        # sitting there blinking. Smooth because it's driven off continuous t.
-        period = 2.4
-        ph = (self._t % period) / period                 # 0..1
-        ring = QColor(accent)
-        ring.setAlphaF(max(0.0, 0.30 * (1.0 - ph)))
-        pen = QPen(ring)
-        pen.setWidthF(1.4)
-        p.setPen(pen)
-        p.setBrush(Qt.NoBrush)
-        rr = 3.0 + ph * 7.0
-        p.drawEllipse(QPointF(cx, cy), rr, rr)
-
-        # The breathing core dot.
-        breath = 0.55 + 0.45 * (0.5 + 0.5 * math.sin(self._t * 2.1))
+        # One quiet dot, breathing gently. No ring, no pulse -- the restraint is
+        # the point; a single mark that's alive reads as premium where a sonar
+        # ping reads as a toy.
+        breath = 0.5 + 0.32 * (0.5 + 0.5 * math.sin(self._t * 1.7))
         core = QColor(accent)
         core.setAlphaF(breath)
         p.setPen(Qt.NoPen)
         p.setBrush(core)
-        p.drawEllipse(QPointF(cx, cy), 3.2, 3.2)
+        p.drawEllipse(QPointF(cx, cy), 2.6, 2.6)
 
-        # The word, lit by a highlight that sweeps across it left-to-right --
-        # muted ink at rest, a brief brightening as the light passes, then
-        # muted again, with a beat of pause before it comes round. It reads as
-        # a thought moving through, not a spinner, and stays smooth because the
-        # band's position is a continuous function of t.
+        # The word, with a soft highlight passing through it -- subtle enough to
+        # be a sign of life, not a spinner.
         word = THINKING_WORDS[self._index]
         font = style.voice(15)
         p.setFont(font)
@@ -495,8 +474,8 @@ class _Thinking(QWidget):
         baseline = cy + (fm.ascent() - fm.descent()) / 2.0
 
         base = QColor(style.INK_MUTE)
-        bright = QColor(style.INK)
-        sweep = (self._t * 0.55) % 1.7          # 0..1.7: the >1 tail is the pause
+        bright = QColor(style.INK_SOFT)          # a whisper of lift, not a flash
+        sweep = (self._t * 0.5) % 1.9            # slower, with a longer pause
         grad = QLinearGradient(tx, 0.0, tx + tw, 0.0)
         grad.setColorAt(0.0, base)
         if 0.0 <= sweep <= 1.0:
