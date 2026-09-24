@@ -16,10 +16,10 @@ Two things it does that a plain Markdown-to-HTML pass does not:
     intercepts -- so a student can lift a snippet in one click, which is the
     single most-used action on a coding answer.
 
-Math (LaTeX) is not rendered here yet: Qt's rich text can't lay it out and
-neither KaTeX nor a math-to-image renderer is available offline in this build.
-It is left as legible inline text rather than faked, and is the next thing to
-add through the web-view path.
+Math (LaTeX) can't be typeset by Qt's rich text and there's no offline KaTeX,
+so math spans are converted to real Unicode mathematics (see mathtext.py) and
+set in Cambria Math — legible fractions, powers, roots, integrals and Greek,
+instead of raw backslash commands.
 """
 from __future__ import annotations
 
@@ -126,8 +126,17 @@ def render(markdown_text: str, do_highlight: bool = True) -> tuple[str, list[str
     renderer = _Renderer(do_highlight)
     _MD.renderer.rules["fence"] = renderer.fence
     _MD.renderer.rules["code_block"] = renderer.fence
+    from ui.panel import mathtext
+
+    # Math is lifted out first (Markdown would read x_1 or a*b as emphasis)
+    # and put back, converted, after rendering.
     try:
-        body = _MD.render(markdown_text)
+        prepared, maths = mathtext.extract(markdown_text)
+    except Exception:
+        prepared, maths = markdown_text, []
+    try:
+        body = _MD.render(prepared)
+        body = mathtext.restore(body, maths)
     except Exception:
         body = f"<p>{escape(markdown_text)}</p>"
 

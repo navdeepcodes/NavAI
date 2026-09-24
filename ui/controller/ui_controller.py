@@ -4,7 +4,7 @@ import threading
 
 from PySide6.QtCore import QObject, QThread, QTimer
 
-from brain import activity_store, projects
+from brain import activity_store, conversation_store, projects
 from brain.core_runtime import CoreRuntime
 from config import preferences
 from ui.controller.core_worker import CoreRuntimeWorker
@@ -58,6 +58,11 @@ class UIController(QObject):
         # otherwise accumulates one at a time.
         self._prewarm_stop = threading.Event()
         self._prewarm_thread: threading.Thread | None = None
+
+        # The saved conversation this chat belongs to. Created lazily on the
+        # first message, so opening Mike and closing him again doesn't leave
+        # empty chats cluttering History.
+        self._conversation_id: int | None = None
 
         self._connect()
 
@@ -113,6 +118,11 @@ class UIController(QObject):
 
     def startup(self) -> None:
 
+        # Reopening Mike continues the chat you were in, if it's recent. Done
+        # before the model warm-up below so the warmed prefix is the one the
+        # next question will actually use.
+        self.resume_recent_conversation()
+
         if preferences.get("wake_word_enabled", True):
             self._wake.start()
 
@@ -167,6 +177,17 @@ class UIController(QObject):
         self._mirror_edge("thinking")
 
         self._page.add_user_message(message, attachments=attachments)
+
+        # Keep what was said, so the chat survives a restart and shows up in
+        # History. Attachments are recorded by name — the file itself stays
+        # where the user keeps it.
+        if self._conversation_id is None:
+            self._conversation_id = conversation_store.create()
+        import os as _os
+        conversation_store.add_message(
+            self._conversation_id, "user", message,
+            [_os.path.basename(a) for a in attachments],
+        )
 
         self._page.show_thinking()
 
@@ -466,6 +487,17 @@ class UIController(QObject):
 
         answer = self._response_text.strip()
 
+        # Save Mike's final (humanised) reply and the conversation's running
+        # summary, so reopening this chat restores exactly what was said and
+        # the context Mike had — not a summary of some other conversation.
+        if answer:
+            conversation_store.add_message(self._conversation_id, "assistant", answer)
+        try:
+            conversation_store.set_summary(
+                self._conversation_id, self._runtime.situation_summary)
+        except Exception:
+            logger.debug("Could not save the conversation summary.", exc_info=True)
+
         self._stream_bubble = None
         self._action_card = None
         self._response_text = ""
@@ -658,6 +690,74 @@ class UIController(QObject):
                 self._wake.stop()
         except Exception:
             logger.exception("Could not change wake word state.")
+
+    # =====================================================
+    # Conversations
+    # =====================================================
+
+    #: Reopening Mike continues the last chat only if it's this recent; after
+    #: that, a new session starts fresh (the old chat stays in History).
+    RESUME_WITHIN_HOURS = 12
+
+    def _quiesce(self) -> None:
+        """Stop whatever turn is running before the conversation changes.
+
+        A cancelled worker can still append its partial reply to the runtime's
+        history as it unwinds; resetting history underneath it would let that
+        reply leak into the new chat. Cancellation stops the model stream within
+        a chunk, so the wait is normally a fraction of a second, and it is
+        bounded so a slow tool can never freeze the window.
+        """
+        self._speaker.stop()
+        self._speech_pump_timer.stop()
+        if self._worker is not None:
+            self.cancel_active()
+        for thread in list(self._retired_threads):
+            try:
+                thread.wait(2500)
+            except Exception:
+                pass
+
+    def new_conversation(self) -> None:
+        """Start a fresh chat: new screen, and Mike genuinely forgets the old
+        one (it stays saved in History)."""
+        self._quiesce()
+        self._conversation_id = None
+        self._runtime.new_conversation()
+        self._page.clear()
+        self._page.set_state("idle")
+        self._page.input.set_enabled(True)
+        self._page.input.focus()
+
+    def open_conversation(self, conversation_id: int) -> None:
+        """Reopen a saved chat and continue it with the context it had."""
+        convo = conversation_store.get(conversation_id)
+        if convo is None:
+            return
+        turns = conversation_store.messages(conversation_id)
+        self._quiesce()
+        self._conversation_id = conversation_id
+        self._runtime.restore_conversation(turns, convo.get("summary", ""))
+        self._page.show_conversation(turns)
+        self._page.set_state("idle")
+        self._page.input.set_enabled(True)
+        self._page.input.focus()
+
+    def resume_recent_conversation(self) -> None:
+        import time as _time
+        try:
+            last = conversation_store.latest()
+        except Exception:
+            last = None
+        if not last:
+            return
+        age_h = (_time.time() - float(last.get("updated_at") or 0)) / 3600.0
+        if age_h <= self.RESUME_WITHIN_HOURS:
+            self.open_conversation(int(last["id"]))
+
+    @property
+    def conversation_id(self) -> int | None:
+        return self._conversation_id
 
     def reload_voice(self) -> None:
         """A voice picked in settings — rebuild the speaker's provider so it

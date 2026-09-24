@@ -95,6 +95,10 @@ class MikeWindow(QMainWindow):
         self._settings_hooks["on_voice_toggle"] = self.controller.set_voice_enabled
         self._settings_hooks["on_wake_toggle"] = self.controller.set_wake_word_enabled
         self._settings_hooks["on_voice_changed"] = self.controller.reload_voice
+        # Conversations: History opens/deletes them, the rail starts new ones.
+        self._settings_hooks["new_conversation"] = self.controller.new_conversation
+        self._settings_hooks["open_conversation"] = self.controller.open_conversation
+        self._settings_hooks["current_conversation"] = lambda: self.controller.conversation_id
 
         self.setCentralWidget(self.page)
 
@@ -381,7 +385,11 @@ class MikeWindow(QMainWindow):
         return super().nativeEvent(event_type, message)
 
     def _configure_shortcuts(self):
-        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.page.clear)
+        # A new chat really is new: Mike forgets the old one (it stays in
+        # History). Ctrl+L used to clear only the screen while Mike silently
+        # kept the whole conversation in context.
+        QShortcut(QKeySequence("Ctrl+N"), self, activated=self.controller.new_conversation)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.controller.new_conversation)
         QShortcut(
             QKeySequence.Quit if platform.system() == "Darwin" else QKeySequence("Ctrl+Q"),
             self, activated=self._request_quit,
@@ -457,6 +465,12 @@ def _maybe_show_welcome(window) -> None:
 def run():
     app = QApplication(sys.argv)
     app.setApplicationName("Mike")
+
+    # Garbage-collect only on the GUI thread. Mike's busy background threads
+    # (wake word, Piper, speech-to-text, workers) would otherwise trigger
+    # collections that finalise Qt objects on the wrong thread and crash.
+    from ui.system.main_thread_gc import MainThreadGC
+    app._main_thread_gc = MainThreadGC(app)
 
     from ui.panel import style
     style.apply_theme()

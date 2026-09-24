@@ -11,7 +11,7 @@
 # script" tell.
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -51,6 +51,14 @@ hiddenimports = [
     # (get_provider), so nothing statically imports it; without this the
     # packaged app would silently have only the SAPI fallback.
     "voice.providers.piper",
+    # Reading a student's PDF / Word / PowerPoint files. document_reader
+    # imports these inside the function that needs them, and they were never
+    # installed at all until the production pass found "pypdf isn't
+    # installed" on an attached PDF -- listed explicitly so a lazy import can
+    # never again silently leave them out of the package.
+    "pypdf",
+    *collect_submodules("docx"),
+    *collect_submodules("pptx"),
     "win32com.client",
     # Pygments loads lexers and styles by name at runtime (get_lexer_by_name,
     # the "one-dark"/"friendly" styles), which the static graph never sees --
@@ -89,6 +97,9 @@ analysis = Analysis(
         # the SAPI system voice. Lives in runtime/ (git-ignored, fetched at
         # setup) and is copied to piper/ beside the app.
         (os.path.join(REPO_ROOT, "runtime", "piper"), "piper"),
+        # python-docx / python-pptx load their XML templates from package data.
+        *collect_data_files("docx"),
+        *collect_data_files("pptx"),
     ],
     hiddenimports=hiddenimports,
     hookspath=[],

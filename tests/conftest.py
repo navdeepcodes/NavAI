@@ -131,3 +131,29 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.get_closest_marker("drives_real_apps"):
             item.add_marker(skip)
+
+
+# ══ garbage collection happens on the main thread only ═════
+#
+# Mirrors ui/system/main_thread_gc.py in the app. With automatic collection on,
+# a collection can fire on any background thread (the wake-word loop, Piper,
+# speech-to-text) and finalise Qt objects left in reference cycles by earlier
+# tests on the wrong thread -- an access violation that killed the whole run
+# ("Garbage-collecting" inside a thread importing faster-whisper). pytest runs
+# tests on the main thread, so collecting between tests keeps memory reclaimed
+# and every Qt finaliser on the thread that owns it.
+
+import gc as _gc
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _gc_only_on_main_thread():
+    _gc.disable()
+    yield
+    _gc.enable()
+
+
+@pytest.fixture(autouse=True)
+def _collect_between_tests():
+    yield
+    _gc.collect()

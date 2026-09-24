@@ -1,20 +1,20 @@
 """The conversation workspace — the main surface of FULL MIKE.
 
-A centred reading column that fills the window: Mike's answers rendered
-(Markdown, code with copy, tables), your prompts quietly above them, an inline
-ledger while he works, a first-class confirmation when he needs you, and the
-input anchored at the bottom with attachments and voice. Unlike the old panel
-this does not size itself to its content — it is a real workspace that fills
-the space it's given and scrolls when the conversation grows.
+Laid out like a chat people already know: Mike's answers start at the left
+edge (rendered Markdown, code with copy, tables), your messages sit in quiet
+bubbles on the right, an inline ledger appears while he works, a first-class
+confirmation when he needs you, and the composer runs along the bottom with
+attachments and voice. It fills the space it's given and scrolls as the
+conversation grows.
 
-It reuses the proven message/ledger/confirm/input widgets from the panel
-(they were always about presentation, not the panel's floating shape) and
+It reuses the proven message/ledger/confirm/input widgets from the panel and
 implements exactly the slice of the controller contract that concerns the
 conversation, so nothing under it changes.
 """
 from __future__ import annotations
 
 import os
+from html import escape
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
@@ -25,27 +25,56 @@ from ui.panel import style
 from ui.panel.mike_panel import (
     _ActivityFacade, _AttachChip, _ConversationFacade, _Confirm, _InputBar,
     _Ledger, _RichTurn, _Starters, _Turn, _ActionHandle, _animate_entry,
-    _build_stylesheet, STATE_WORD,
+    _build_stylesheet,
 )
 from ui.workspace.thinking import ThinkingLine
 
-#: The reading column never grows past this; text set wider than this is
-#: tiring to read and makes the workspace feel empty. Everything centres in it.
-COLUMN_MAX = 760
+#: Mike's text starts at the left and runs no wider than this — beyond it a
+#: line of prose gets tiring to read on a maximised window.
+MIKE_MAX = 900
+#: Your messages wrap inside a bubble no wider than this.
+USER_MAX = 560
+#: Breathing room between the conversation and the window edges.
+SIDE_PAD = 36
 
 
-def _centered(inner: QWidget, max_width: int = COLUMN_MAX) -> QWidget:
-    """Wrap a widget so it centres in its parent and caps its width."""
-    holder = QWidget()
-    holder.setStyleSheet("background:transparent;")
-    row = QHBoxLayout(holder)
-    row.setContentsMargins(0, 0, 0, 0)
-    row.setSpacing(0)
-    row.addStretch(1)
-    inner.setMaximumWidth(max_width)
-    row.addWidget(inner, 1)
-    row.addStretch(1)
-    return holder
+class _UserBubble(QWidget):
+    """Your message, in a quiet bubble on the right — like any chat."""
+
+    def __init__(self, text: str, attachments: list[str] | None = None,
+                 parent=None) -> None:
+        super().__init__(parent)
+        self._raw = text
+        self.setStyleSheet("background:transparent;")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        row.addStretch(1)
+
+        parts = []
+        if attachments:
+            # One line per file, kept whole (no wrap between the clip and the
+            # name), then a real line break before what you typed.
+            files = "<br>".join(
+                f'<span style="color:{style.INK_MUTE}; font-size:12px; '
+                f'white-space:nowrap;">&#128206;&nbsp;{escape(os.path.basename(a))}</span>'
+                for a in attachments)
+            parts.append(files)
+        if text:
+            parts.append(escape(text).replace("\n", "<br>"))
+
+        label = QLabel("<br>".join(parts))
+        label.setTextFormat(Qt.RichText)
+        label.setWordWrap(True)
+        label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        label.setMaximumWidth(USER_MAX)
+        # Same reading size as Mike's replies (16px), so neither side shouts.
+        label.setFont(style.voice(12))
+        label.setStyleSheet(
+            f"QLabel{{background:{style.GROUND_RAISED}; color:{style.INK};"
+            f"border:1px solid {style.HAIRLINE}; border-radius:16px;"
+            f"padding:10px 15px;}}")
+        row.addWidget(label, 0, Qt.AlignRight)
 
 
 class ChatPage(QWidget):
@@ -72,7 +101,7 @@ class ChatPage(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
-        # ── the conversation, scrolling, centred ──
+        # ── the conversation, scrolling, starting from the left ──
         self._scroll = QScrollArea()
         self._scroll.setObjectName("stage")
         self._scroll.setWidgetResizable(True)
@@ -80,40 +109,25 @@ class ChatPage(QWidget):
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self._scroll.setFrameShape(QFrame.NoFrame)
 
-        board = QWidget()
-        board.setStyleSheet("background:transparent;")
-        board_row = QHBoxLayout(board)
-        board_row.setContentsMargins(0, 0, 0, 0)
-        board_row.addStretch(1)
-
         column = QWidget()
         column.setStyleSheet("background:transparent;")
-        column.setMaximumWidth(COLUMN_MAX)
         self._stage = QVBoxLayout(column)
-        self._stage.setContentsMargins(8, 28, 8, 16)
-        self._stage.setSpacing(20)
+        self._stage.setContentsMargins(SIDE_PAD, 28, SIDE_PAD, 16)
+        self._stage.setSpacing(18)
         self._stage.addStretch(1)
-        board_row.addWidget(column, 1)
-        board_row.addStretch(1)
 
-        self._scroll.setWidget(board)
+        self._scroll.setWidget(column)
         outer.addWidget(self._scroll, 1)
 
         self.conversation = _ConversationFacade(self._scroll)
         self.activity = _ActivityFacade()
 
-        # ── the composer: confirm + chips + input, centred to the column ──
+        # ── the composer: confirm + chips + input, along the bottom ──
         composer = QWidget()
         composer.setObjectName("composer")
-        cwrap = QHBoxLayout(composer)
-        cwrap.setContentsMargins(0, 0, 0, 0)
-        cwrap.addStretch(1)
-
-        stack = QWidget()
-        stack.setStyleSheet("background:transparent;")
-        stack.setMaximumWidth(COLUMN_MAX)
-        col = QVBoxLayout(stack)
-        col.setContentsMargins(8, 10, 8, 18)
+        composer.setStyleSheet("background:transparent;")
+        col = QVBoxLayout(composer)
+        col.setContentsMargins(SIDE_PAD - 8, 10, SIDE_PAD - 8, 18)
         col.setSpacing(8)
 
         self.confirm = _Confirm()
@@ -134,8 +148,6 @@ class ChatPage(QWidget):
         self.input.attach_requested.connect(self.add_attachments)
         col.addWidget(self.input)
 
-        cwrap.addWidget(stack, 1)
-        cwrap.addStretch(1)
         outer.addWidget(composer)
 
         self.setAcceptDrops(True)
@@ -163,9 +175,11 @@ class ChatPage(QWidget):
             text = f"{part}{who}. What are we working on?"
 
         self._resting = _Turn(text, "mike")
+        self._resting.setMaximumWidth(MIKE_MAX)
         self._insert(self._resting)
         if first_run:
             self._starters = _Starters()
+            self._starters.setMaximumWidth(MIKE_MAX)
             self._starters.picked.connect(self._on_starter)
             self._insert(self._starters)
             preferences.set_value("onboarding_complete", True)
@@ -184,36 +198,38 @@ class ChatPage(QWidget):
                 setattr(self, name, None)
 
     # ── column helpers ────────────────────────────────────
-    def _insert(self, widget: QWidget) -> None:
+    def _insert(self, widget: QWidget, animate: bool = True) -> None:
         self._stage.insertWidget(self._stage.count() - 1, widget)
-        _animate_entry(widget)
+        if animate:
+            _animate_entry(widget)
         self.conversation.scroll_to_bottom()
+
+    def _mike_turn(self, text: str) -> _RichTurn:
+        turn = _RichTurn(text)
+        turn.setMaximumWidth(MIKE_MAX)
+        return turn
 
     # ── controller contract: conversation ─────────────────
     def add_user_message(self, text: str, attachments: list[str] | None = None) -> None:
         self._drop_resting()
-        shown = text
-        if attachments:
-            names = ", ".join(os.path.basename(a) for a in attachments)
-            tag = f"\U0001F4CE {names}"
-            shown = f"{tag}\n{text}" if text else tag
-        self._insert(_Turn(shown, "you"))
+        self._insert(_UserBubble(text, attachments))
         self._ledger = None
 
     def begin_mike_stream(self) -> _RichTurn:
         self._drop_resting()
-        self._stream = _RichTurn("")
+        self._stream = self._mike_turn("")
         self._insert(self._stream)
         return self._stream
 
     def add_mike_message(self, text: str) -> None:
         self._drop_resting()
-        self._insert(_RichTurn(text))
+        self._insert(self._mike_turn(text))
 
     def add_action_card(self, text: str) -> _ActionHandle:
         self._drop_resting()
         if self._ledger is None:
             self._ledger = _Ledger()
+            self._ledger.setMaximumWidth(MIKE_MAX)
             self._insert(self._ledger)
         index = self._ledger.add_row(text)
         self.set_state("working")
@@ -245,7 +261,8 @@ class ChatPage(QWidget):
     def state(self) -> str:
         return self._state
 
-    def clear(self) -> None:
+    def _clear_stage(self) -> None:
+        self.hide_thinking()
         while self._stage.count() > 1:
             item = self._stage.takeAt(0)
             w = item.widget()
@@ -255,9 +272,24 @@ class ChatPage(QWidget):
         self._starters = None
         self._stream = None
         self._ledger = None
-        self._thinking = None
+
+    def clear(self) -> None:
+        self._clear_stage()
         self._show_resting()
         self.set_state("idle")
+
+    def show_conversation(self, turns: list[dict]) -> None:
+        """Lay a saved conversation back out, exactly as it was said."""
+        self._clear_stage()
+        for t in turns:
+            if t.get("role") == "user":
+                self._insert(_UserBubble(t.get("content", ""), t.get("attachments")),
+                             animate=False)
+            elif t.get("role") == "assistant":
+                self._insert(self._mike_turn(t.get("content", "")), animate=False)
+        if not turns:
+            self._show_resting()
+        QTimer.singleShot(50, self.conversation.scroll_to_bottom)
 
     # ── attachments ───────────────────────────────────────
     def add_attachments(self, paths: list[str]) -> None:

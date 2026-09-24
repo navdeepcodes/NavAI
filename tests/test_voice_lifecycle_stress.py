@@ -235,9 +235,14 @@ def test_speech_can_be_interrupted_mid_utterance():
     assert not speaker.is_speaking()
 
 
-def test_a_new_utterance_replaces_the_one_in_progress():
+def test_a_new_utterance_replaces_the_one_in_progress(monkeypatch):
     """Speaking again while speaking is the ordinary interruption path: the
     old audio has to stop, or two voices talk over each other."""
+    # Exercises the native voice specifically (Piper is the default).
+    from config import preferences
+    real_get = preferences.get
+    monkeypatch.setattr(preferences, "get", lambda k, d=None: "native"
+                        if k == "voice_provider" else real_get(k, d))
     from voice.speaker import Speaker
 
     speaker = Speaker()
@@ -304,7 +309,7 @@ def test_twenty_speak_stop_cycles_leave_no_processes():
 
 # ══ failure isolation: the point of the whole file ═════════
 
-def test_a_broken_speaker_does_not_stop_the_runtime():
+def test_a_broken_speaker_does_not_stop_the_runtime(monkeypatch):
     """TTS is an output device. If the platform's own voice fails, Mike must
     still think and act — the answer simply arrives silently.
 
@@ -314,6 +319,11 @@ def test_a_broken_speaker_does_not_stop_the_runtime():
     subprocess.Popen at all) — speak() returning False is the one contract
     every backend must honour when its own OS call fails, so this is the
     platform-independent way to simulate that."""
+    # Exercises the native voice specifically (Piper is the default).
+    from config import preferences
+    real_get = preferences.get
+    monkeypatch.setattr(preferences, "get", lambda k, d=None: "native"
+                        if k == "voice_provider" else real_get(k, d))
     from brain.core_runtime import CoreRuntime
     from voice.speaker import Speaker
 

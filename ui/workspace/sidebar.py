@@ -11,7 +11,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QRectF, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ui.panel import style
@@ -119,6 +119,18 @@ def _glyph(p: QPainter, name: str, x: float, y: float, s: float, col: QColor) ->
         p.drawLine(cx, y + s * 0.44, cx, y + s * 0.72)
 
 
+def sidebar_qss() -> str:
+    """The rail's stylesheet, rebuilt from the live palette (re-theme safe)."""
+    return (
+        f"QWidget#sidebar {{ background:{style.GROUND_SUNK}; "
+        f"border-right:1px solid {style.HAIRLINE}; }}"
+        f"QPushButton#newChat {{ background:{style.GROUND}; color:{style.INK};"
+        f" border:1px solid {style.HAIRLINE}; border-radius:10px;"
+        f" padding:8px 12px; text-align:left; }}"
+        f"QPushButton#newChat:hover {{ border-color:{style.accent()}; }}"
+    )
+
+
 class SidebarItem(QWidget):
     clicked = Signal(str)
 
@@ -192,6 +204,7 @@ class SidebarItem(QWidget):
 
 class Sidebar(QWidget):
     page_selected = Signal(str)
+    new_chat_requested = Signal()
 
     WIDTH = 212
 
@@ -223,6 +236,20 @@ class Sidebar(QWidget):
         trow.addWidget(word, 1, Qt.AlignVCenter)
         col.addWidget(top)
 
+        # ── a fresh chat: the saved one stays in History ──
+        new_wrap = QWidget()
+        new_wrap.setStyleSheet("background:transparent;")
+        nrow = QHBoxLayout(new_wrap)
+        nrow.setContentsMargins(12, 0, 12, 10)
+        self._new_chat = QPushButton("+   New chat")
+        self._new_chat.setObjectName("newChat")
+        self._new_chat.setCursor(Qt.PointingHandCursor)
+        self._new_chat.setToolTip("Start a new chat (Ctrl+N)")
+        self._new_chat.setFont(style.voice(13))
+        self._new_chat.clicked.connect(self.new_chat_requested.emit)
+        nrow.addWidget(self._new_chat)
+        col.addWidget(new_wrap)
+
         # ── surfaces ──
         nav = QWidget()
         nav.setStyleSheet("background:transparent;")
@@ -248,15 +275,14 @@ class Sidebar(QWidget):
         line.setFont(style.voice(12))
         line.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
         arow.addWidget(line)
-        sub = QLabel("Sign-in & sync — coming soon")
+        sub = QLabel("Sign-in & sync coming soon")
+        sub.setWordWrap(True)
         sub.setFont(style.label(10, QFont.Weight.Normal))
         sub.setStyleSheet(f"color:{style.INK_FAINT};background:transparent;")
         arow.addWidget(sub)
         col.addWidget(acct)
 
-        self.setStyleSheet(
-            f"QWidget#sidebar {{ background:{style.GROUND_SUNK}; "
-            f"border-right:1px solid {style.HAIRLINE}; }}")
+        self.setStyleSheet(sidebar_qss())
 
     def set_active(self, key: str) -> None:
         for k, item in self._items.items():

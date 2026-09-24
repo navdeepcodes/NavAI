@@ -289,6 +289,23 @@ class CoreRuntime:
         return greeting
 
     # =====================================================
+    # Conversations
+    # =====================================================
+
+    def new_conversation(self) -> None:
+        """Forget the current conversation entirely — turns and summary — so a
+        new chat really starts clean. Call only when no turn is running."""
+        self._core.reset_conversation()
+
+    def restore_conversation(self, turns: list[dict], summary: str = "") -> None:
+        """Continue a saved conversation with the context it had."""
+        self._core.restore_conversation(turns, summary)
+
+    @property
+    def situation_summary(self) -> str:
+        return self._core.situation_summary or ""
+
+    # =====================================================
     # Process
     # =====================================================
 

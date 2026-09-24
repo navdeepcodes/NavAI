@@ -46,7 +46,18 @@ def _fresh_window():
     return MikeWindow()
 
 
-def test_closing_the_window_does_not_quit_mike():
+
+def _away(window) -> bool:
+    """Put away: since Mike stays in the taskbar ("in the dock"), closing or
+    minimising leaves the window minimised there rather than fully hidden."""
+    return (not window.isVisible()) or window.isMinimized()
+
+
+def _up(window) -> bool:
+    return window.isVisible() and not window.isMinimized()
+
+
+def case_closing_the_window_does_not_quit_mike():
     from PySide6.QtWidgets import QApplication
 
     from ide import manager as ide_manager
@@ -69,7 +80,7 @@ def test_closing_the_window_does_not_quit_mike():
     window.close()
 
     # The window goes away...
-    assert not window.isVisible(), "closing the window should hide it"
+    assert _away(window), "closing the window should put it away (to the taskbar)"
     # ...but Mike does not.
     assert not window._torn_down, "closing the window must not tear Mike down"
     assert window.hotkey._registered == hotkey_was_registered, (
@@ -82,7 +93,7 @@ def test_closing_the_window_does_not_quit_mike():
     print("PASS: closing the window hides it and leaves every service running")
 
 
-def test_quit_actually_tears_everything_down():
+def case_quit_actually_tears_everything_down():
     from PySide6.QtWidgets import QApplication
 
     from ide import manager as ide_manager
@@ -106,7 +117,7 @@ def test_quit_actually_tears_everything_down():
     print("PASS: an explicit quit tears down every service, orphaning nothing")
 
 
-def test_close_event_refuses_normally_but_accepts_during_a_real_quit():
+def case_close_event_refuses_normally_but_accepts_during_a_real_quit():
     """Regression for a bug this file's first version did NOT catch, because
     it called _teardown() directly and so never exercised the real quit path.
 
@@ -147,7 +158,7 @@ def test_close_event_refuses_normally_but_accepts_during_a_real_quit():
     print("PASS: close is refused normally and accepted during a real quit")
 
 
-def test_teardown_is_idempotent():
+def case_teardown_is_idempotent():
     """aboutToQuit and run()'s post-exec call can both fire; the second must
     be a harmless no-op rather than double-stopping live services."""
     from PySide6.QtWidgets import QApplication
@@ -163,7 +174,7 @@ def test_teardown_is_idempotent():
     print("PASS: teardown is idempotent")
 
 
-def test_close_then_reopen_restores_a_working_window():
+def case_close_then_reopen_restores_a_working_window():
     """Closing is 'put it away', so reopening has to genuinely bring it back
     — including through the same path the tray's "Show Mike" item uses."""
     from PySide6.QtWidgets import QApplication
@@ -173,18 +184,18 @@ def test_close_then_reopen_restores_a_working_window():
     window = _fresh_window()
     window.show()
     window.close()
-    assert not window.isVisible()
+    assert _away(window)
 
-    window._show_main_window()
+    window._show_full()
 
-    assert window.isVisible(), "Show Mike must bring the window back"
+    assert _up(window), "Open Mike must bring the window back"
     assert not window._torn_down, "reopening must not have needed a restart"
 
     window._teardown()
     print("PASS: close then reopen restores a working window")
 
 
-def test_global_invocation_still_works_after_the_window_is_closed():
+def case_global_invocation_still_works_after_the_window_is_closed():
     """The whole point of staying alive: summoning Mike from anywhere has to
     work when his window is gone, which is exactly when it matters most."""
     from PySide6.QtWidgets import QApplication
@@ -194,14 +205,14 @@ def test_global_invocation_still_works_after_the_window_is_closed():
     window = _fresh_window()
     window.show()
     window.close()
-    assert not window.isVisible()
+    assert _away(window)
 
     # This is what the Carbon hotkey callback invokes. In the redesigned
     # interaction model the panel *is* the summoned presence, so the hotkey
     # brings the panel itself forward rather than a separate quick-line.
     window._summon()
 
-    assert window.isVisible(), "global invocation must bring Mike forward with the window closed"
+    assert _up(window), "global invocation must bring Mike forward with the window closed"
 
     # And it toggles: pressing it again while Mike is up puts him away. The
     # dismiss fades out first, so it completes on the event loop — pump it.
@@ -211,19 +222,19 @@ def test_global_invocation_still_works_after_the_window_is_closed():
 
     window._summon()
     deadline = time.time() + 1.5
-    while window.isVisible() and time.time() < deadline:
+    while _up(window) and time.time() < deadline:
         QApplication.instance().processEvents()
         time.sleep(0.01)
-    assert not window.isVisible(), "summoning again should dismiss the panel"
+    assert _away(window), "summoning again should put Mike away"
 
     window._teardown()
     print("PASS: global invocation still works with the main window closed")
 
 
-def test_edge_ambient_presence_wakes_when_the_window_closes():
-    """The Edge strip is Mike's ambient 'still here' surface. It sleeps while
-    the window is up and must wake when the window goes away — that transition
-    is driven by hideEvent, which a close now actually triggers."""
+def case_corner_presence_appears_when_the_window_closes():
+    """CORNER MIKE is the ambient 'still here' companion (it replaced the old
+    Edge strip). It stays away while the workspace is up, appears when the
+    window is put away, and steps aside again when the window comes back."""
     from PySide6.QtWidgets import QApplication
 
     QApplication.instance() or QApplication(sys.argv)
@@ -233,18 +244,22 @@ def test_edge_ambient_presence_wakes_when_the_window_closes():
     app = QApplication.instance()
     app.processEvents()
 
-    assert not window.edge.isVisible(), "Edge should sleep while the window is up"
+    assert not window.corner.isVisible(), "the corner should stay away while the window is up"
 
     window.close()
     app.processEvents()
 
-    assert window.edge.isVisible(), "Edge must wake when the window closes"
+    assert window.corner.isVisible(), "the corner must appear when the window is put away"
+
+    window._show_full()
+    app.processEvents()
+    assert not window.corner.isVisible(), "the corner steps aside when Mike is full again"
 
     window._teardown()
-    print("PASS: Edge ambient presence wakes when the window closes")
+    print("PASS: corner presence appears when the window closes")
 
 
-def test_wake_word_survives_window_close_and_stops_on_quit():
+def case_wake_word_survives_window_close_and_stops_on_quit():
     """Covers the one service _fresh_window leaves off, on its own terms:
     started for real, asserted across a close, and asserted stopped by quit."""
     from PySide6.QtWidgets import QApplication
@@ -269,13 +284,43 @@ def test_wake_word_survives_window_close_and_stops_on_quit():
     print("PASS: wake word survives a window close and stops on quit")
 
 
+# ── each case runs in its own process ─────────────────────────
+#
+# Every case builds a full, real MikeWindow with its services running (tray,
+# hotkey, IDE bridge, corner, model warm-up, speech prewarm). The app only ever
+# has ONE such window per process. Run as eight windows in one interpreter,
+# the suite hit a nondeterministic native access violation during teardown that
+# could not be reproduced outside pytest, in standalone multi-window scripts, or
+# in the real app (verified with 25 minimise/corner/restore/hotkey cycles and
+# forced collections). Each case passes on its own, so each gets a fresh
+# process — the same shape the product runs in.
+
+CASES = [name for name in list(globals()) if name.startswith("case_")]
+
+import subprocess  # noqa: E402
+import tempfile  # noqa: E402
+
+import pytest  # noqa: E402
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_lifecycle(case):
+    env = dict(os.environ)
+    env["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-lifecycle-")
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    result = subprocess.run(
+        [sys.executable, os.path.abspath(__file__), case],
+        capture_output=True, text=True, timeout=240, env=env,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    )
+    assert result.returncode == 0, (
+        f"{case} failed (exit {result.returncode}): "
+        + result.stdout[-3000:] + " " + result.stderr[-3000:])
+
+
 if __name__ == "__main__":
-    test_closing_the_window_does_not_quit_mike()
-    test_quit_actually_tears_everything_down()
-    test_close_event_refuses_normally_but_accepts_during_a_real_quit()
-    test_teardown_is_idempotent()
-    test_close_then_reopen_restores_a_working_window()
-    test_global_invocation_still_works_after_the_window_is_closed()
-    test_edge_ambient_presence_wakes_when_the_window_closes()
-    test_wake_word_survives_window_close_and_stops_on_quit()
-    print("\nAll lifecycle regression tests passed.")
+    # `python tests/test_lifecycle.py <case>` runs one case (how pytest drives
+    # them); with no argument, every case in turn.
+    _cases = [a for a in sys.argv[1:]] or list(CASES)
+    for _name in _cases:
+        globals()[_name]()

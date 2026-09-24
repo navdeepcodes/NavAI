@@ -177,18 +177,26 @@ def test_the_ceiling_scales_with_the_text(length, ceiling):
 
 # ── configuration ─────────────────────────────────────────
 
-def test_the_default_voice_is_the_native_one():
-    """Until the real conversation test says otherwise, Samantha ships."""
+def test_the_default_voice_is_piper_with_native_fallback():
+    """Piper is the default (chosen by a measured benchmark on the target
+    laptop); where its runtime isn't bundled, Mike falls back to the native
+    system voice rather than going silent."""
     from config import preferences
+    from voice.providers.piper import PiperVoice
 
-    assert str(preferences.get("voice_provider", "native")).lower() == "native"
-    assert Speaker().provider_name == "native"
+    assert preferences.DEFAULTS["voice_provider"] == "piper"
+    piper_ok, _ = PiperVoice().available()
+    assert Speaker().provider_name == ("piper" if piper_ok else "native")
 
 
-def test_one_voice_is_one_object():
+def test_one_voice_is_one_object(monkeypatch):
     """With native configured, Speaker held two NativeVoice instances. Stop
     still worked because it stopped both, but "which one is speaking?" had
     two answers, and that is the kind of ambiguity that hides a bug later."""
+    from config import preferences
+    real_get = preferences.get
+    monkeypatch.setattr(preferences, "get", lambda k, d=None: "native"
+                        if k == "voice_provider" else real_get(k, d))
     speaker = Speaker()
     assert speaker._provider is speaker._native
 

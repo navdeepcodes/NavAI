@@ -56,6 +56,7 @@ class MikeWorkspace(QWidget):
 
         self.sidebar = Sidebar()
         self.sidebar.page_selected.connect(self._select)
+        self.sidebar.new_chat_requested.connect(self._new_chat)
         crow.addWidget(self.sidebar)
 
         self.stack = QStackedWidget()
@@ -72,7 +73,7 @@ class MikeWorkspace(QWidget):
 
         # secondary surfaces are built lazily but registered here by key
         self._page_factories = {
-            "history": P.HistoryPage,
+            "history": lambda: P.HistoryPage(self._hooks),
             "memory": P.MemoryPage,
             "profile": P.ProfilePage,
             "settings": P.PreferencesPage,
@@ -189,6 +190,20 @@ class MikeWorkspace(QWidget):
         self._select("chat")
         self.chat.clear()
 
+    def show_conversation(self, turns):
+        """Show a saved chat (reopened from History, or resumed at launch)."""
+        self._select("chat")
+        self.chat.show_conversation(turns)
+
+    def _new_chat(self) -> None:
+        # The controller owns what a new chat means (Mike forgetting the old
+        # one too, not just a cleared screen), so the rail only asks.
+        hook = self._hooks.get("new_conversation")
+        if hook:
+            hook()
+        else:
+            self.clear()
+
     def set_maximised(self, on: bool) -> None:
         self._maximised = on
         self._max.setText("❐" if on else "▢")
@@ -210,9 +225,8 @@ class MikeWorkspace(QWidget):
             self.chat.setStyleSheet(_build_stylesheet())
         except Exception:
             pass
-        self.sidebar.setStyleSheet(
-            f"QWidget#sidebar {{ background:{style.GROUND_SUNK}; "
-            f"border-right:1px solid {style.HAIRLINE}; }}")
+        from ui.workspace.sidebar import sidebar_qss
+        self.sidebar.setStyleSheet(sidebar_qss())
         # drop cached secondary pages so they rebuild with the new palette
         for key in list(self._pages):
             if key == "chat":

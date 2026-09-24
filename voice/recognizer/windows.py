@@ -7,12 +7,11 @@ offline and on-device -- chosen over openai-whisper (much slower on CPU)
 and whisper.cpp (a C++ binary with no first-party Python binding as clean
 as this pip package) after checking what this machine actually has: 14
 logical CPUs with AVX2, integrated graphics only, no CUDA. INT8 CPU
-inference is the only practical path, and it's fast enough for one: a
-3.2-second utterance transcribes in ~4-5s with the medium.en model,
-measured on this machine, not assumed.
+inference is the only practical path; see MODEL_SIZE for the measured
+choice of model.
 
-The model itself (~1.5GB) downloads once from Hugging Face on first use and
-is cached under ~/.cache/huggingface; nothing here bundles or vendors it.
+The model downloads once from Hugging Face on first use (small.en is ~0.5GB)
+and is cached under ~/.cache/huggingface; nothing here bundles or vendors it.
 """
 from __future__ import annotations
 
@@ -22,8 +21,26 @@ from typing import Callable
 from logs.logger import logger
 from voice.recognizer.base import SpeechRecognizer
 
-MODEL_SIZE = "medium.en"
+#: small.en, not medium.en — measured on the target laptop (Core Ultra 5,
+#: 15GB, with the 9B chat model resident, as in real use), five spoken student
+#: commands with mild mic noise:
+#:
+#:     model      memory added   time to transcribe   real mistakes
+#:     medium.en     +4.2 GB          7.7 s              1 ("lofi")
+#:     small.en      +2.2 GB          2.1 s (4 threads)  1 ("lofi")
+#:     base.en       +1.0 GB          0.7 s              1 ("desktop" -> "desk cup")
+#:
+#: medium bought no accuracy over small, cost 2GB more, and made a student
+#: wait ~8s after speaking before Mike even began to think. With the chat model
+#: holding 6.3GB of a 15GB machine it was also what exhausted memory: its load
+#: failed outright ("mkl_malloc: failed to allocate memory") and the pressure
+#: slowed every reply. base.en is the fallback when even small.en can't fit.
+MODEL_SIZE = "small.en"
+FALLBACK_MODEL_SIZES = ("base.en",)
 COMPUTE_TYPE = "int8"  # no GPU on this machine -- INT8 is the fast CPU path
+#: Transcription shares the CPU with the chat model; four threads was faster
+#: (2.1s vs 2.9s for all cores) because it stops fighting the LLM for them.
+CPU_THREADS = 4
 
 
 class WhisperRecognizer(SpeechRecognizer):
@@ -54,10 +71,10 @@ class WhisperRecognizer(SpeechRecognizer):
     def prewarm(self) -> None:
         """Load (downloading on first ever run) the model now.
 
-        medium.en is ~1.5GB; loading it lazily on the first spoken command
-        meant the first "Hey Mike" froze on a multi-minute download showing
-        only "transcribing". Called from a background thread at startup so the
-        model is ready — or well on its way — by the time anyone speaks.
+        Loading lazily on the first spoken command meant the first "Hey
+        Mike" froze on the model download showing only "transcribing".
+        Called from a background thread at startup so the model is ready —
+        or well on its way — by the time anyone speaks.
         """
         try:
             self._get_model()
@@ -69,10 +86,30 @@ class WhisperRecognizer(SpeechRecognizer):
             if self._model is None:
                 from faster_whisper import WhisperModel
 
-                logger.info("Loading Whisper model %s (first use)...", self._model_size)
-                self._model = WhisperModel(
-                    self._model_size, device="cpu", compute_type=COMPUTE_TYPE,
-                )
+                # Try the chosen model, then smaller ones. A machine too short
+                # on memory for small.en should still be able to hear the user
+                # with base.en, not lose voice input entirely because one
+                # allocation failed.
+                sizes = [self._model_size] + [
+                    s for s in FALLBACK_MODEL_SIZES if s != self._model_size]
+                last_error: Exception | None = None
+                for size in sizes:
+                    try:
+                        logger.info("Loading Whisper model %s (first use)...", size)
+                        self._model = WhisperModel(
+                            size, device="cpu", compute_type=COMPUTE_TYPE,
+                            cpu_threads=CPU_THREADS,
+                        )
+                        if size != self._model_size:
+                            logger.warning(
+                                "Whisper %s could not load (%s); using %s instead.",
+                                self._model_size, last_error, size)
+                        break
+                    except (MemoryError, RuntimeError) as exc:
+                        last_error = exc
+                        logger.warning("Whisper %s failed to load: %s", size, exc)
+                if self._model is None:
+                    raise RuntimeError(f"No speech model could be loaded: {last_error}")
             return self._model
 
     def transcribe_async(

@@ -2,7 +2,7 @@
 voice, model, privacy, about.
 
 Each is a real surface over real state, not a settings screen invented to fill
-a rail: history reads the activity log, memory reads and edits the memory
+a rail: history lists saved conversations (and what Mike did), memory reads and edits the memory
 store, profile and preferences edit what actually persists, voice drives the
 live engines. Built from one small set of primitives (a page frame, cards,
 rows, a painted switch) so the whole product reads as one considered thing.
@@ -129,6 +129,21 @@ class Page(QScrollArea):
     def add(self, w: QWidget) -> None:
         self.body.addWidget(w)
 
+    def _clear_body(self) -> None:
+        """Remove everything below the title and subtitle before a reload.
+
+        Hidden as well as scheduled for deletion: a detached widget stays
+        visible at its old position until the deferred delete runs, and a
+        page that reloads on entry would otherwise paint its stale rows
+        underneath the fresh ones.
+        """
+        while self.body.count() > 3:
+            item = self.body.takeAt(3)
+            w = item.widget()
+            if w is not None:
+                w.hide()
+                w.deleteLater()
+
     def end(self) -> None:
         self.body.addStretch(1)
 
@@ -163,6 +178,15 @@ QPushButton#ghost {{
     padding: 7px 16px; font-size: 13px;
 }}
 QPushButton#ghost:hover {{ color: {style.INK}; border-color: {style.INK_MUTE}; }}
+QPushButton#iconx {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; border-radius: 8px; padding: 0; font-size: 12px;
+}}
+QPushButton#iconx:hover {{ color: {style.STOP}; background: {style.GROUND_SUNK}; }}
+QPushButton#danger {{
+    background: {style.STOP}; color: #FFFFFF; border: none;
+    border-radius: 8px; padding: 4px 10px; font-size: 12px; font-weight: 600;
+}}
 QScrollBar:vertical {{ background: transparent; width: 9px; margin: 6px 3px; }}
 QScrollBar::handle:vertical {{ background: {style.INK_FAINT}; border-radius: 4px; min-height: 30px; }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
@@ -184,45 +208,156 @@ def _rel_time(ts: float) -> str:
     return f"{int(delta // 86400)}d ago"
 
 
+def _arm(button: QPushButton, confirm_text: str, action, idle_text: str | None = None) -> None:
+    """Make a destructive button ask once before acting.
+
+    First click turns it into a red "Delete?"-style confirm; a second click
+    within three seconds acts, otherwise it quietly reverts. One stray click
+    must never permanently erase a chat or everything Mike remembers.
+    """
+    from PySide6.QtCore import QTimer
+
+    idle = idle_text if idle_text is not None else button.text()
+    idle_name = button.objectName()
+    min_w, max_w = button.minimumWidth(), button.maximumWidth()
+    state = {"armed": False}
+    timer = QTimer(button)
+    timer.setSingleShot(True)
+
+    def revert():
+        state["armed"] = False
+        button.setText(idle)
+        button.setObjectName(idle_name)
+        button.setMinimumWidth(min_w)
+        button.setMaximumWidth(max_w)
+        button.style().unpolish(button); button.style().polish(button)
+
+    def clicked():
+        if state["armed"]:
+            timer.stop()
+            revert()
+            action()
+            return
+        state["armed"] = True
+        button.setText(confirm_text)
+        button.setObjectName("danger")
+        button.setMaximumWidth(16777215)
+        button.setMinimumWidth(button.fontMetrics().horizontalAdvance(confirm_text) + 24)
+        button.style().unpolish(button); button.style().polish(button)
+        timer.start(3000)
+
+    timer.timeout.connect(revert)
+    button.clicked.connect(clicked)
+
+
 # ══ history ════════════════════════════════════════════════
 
+class _ConvoRow(QFrame):
+    """One saved conversation: click to reopen it, ✕ to delete it."""
+    opened = Signal(int)
+    deleted = Signal(int)
+
+    def __init__(self, convo: dict, current: bool, parent=None) -> None:
+        super().__init__(parent)
+        self._id = int(convo["id"])
+        self.setObjectName("convoRow")
+        self.setCursor(Qt.PointingHandCursor)
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 10, 8, 10)
+        row.setSpacing(10)
+
+        text = QVBoxLayout(); text.setSpacing(2)
+        title = QLabel(convo.get("title") or "Untitled chat")
+        title.setFont(style.voice(14))
+        title.setStyleSheet(f"color:{style.INK};background:transparent;")
+        text.addWidget(title)
+        n = int(convo.get("message_count") or 0)
+        meta = f"{n} message{'s' if n != 1 else ''} · {_rel_time(convo.get('updated_at', 0))}"
+        if current:
+            meta = "Current chat · " + meta
+        sub = QLabel(meta)
+        sub.setFont(style.label(10, QFont.Weight.Normal))
+        sub.setStyleSheet(
+            f"color:{style.accent() if current else style.INK_MUTE};background:transparent;")
+        text.addWidget(sub)
+        row.addLayout(text, 1)
+
+        x = QPushButton("✕")
+        x.setObjectName("iconx")
+        x.setCursor(Qt.PointingHandCursor)
+        x.setFixedSize(28, 28)
+        x.setToolTip("Delete this chat")
+        _arm(x, "Delete?", lambda: self.deleted.emit(self._id))
+        row.addWidget(x, 0, Qt.AlignVCenter)
+
+    def mousePressEvent(self, _e) -> None:
+        self.opened.emit(self._id)
+
+
 class HistoryPage(Page):
-    def __init__(self, parent=None) -> None:
+    """Your conversations with Mike — reopen one and carry on where you left
+    off. What Mike actually *did* (files written, apps opened) is kept below,
+    since that's a different, also useful, kind of history."""
+
+    def __init__(self, hooks: dict | None = None, parent=None) -> None:
         super().__init__("History",
-                         "Everything Mike has done on this machine, newest first.",
-                         parent)
+                         "Your chats with Mike, newest first. Open one to pick "
+                         "up exactly where you left off.", parent)
+        self._hooks = hooks or {}
+        self.setStyleSheet(self.styleSheet() + f"""
+QFrame#convoRow {{ background: transparent; border-radius: 10px; }}
+QFrame#convoRow:hover {{ background: {style.GROUND_SUNK}; }}
+""")
         self.reload()
 
     def reload(self) -> None:
-        # clear existing cards (keep the header + subtitle + spacing = 3 items)
-        while self.body.count() > 3:
-            item = self.body.takeAt(3)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_body()
 
         try:
+            from brain import conversation_store
+            convos = conversation_store.recent(limit=100)
+        except Exception:
+            convos = []
+        current = None
+        getter = self._hooks.get("current_conversation")
+        if getter:
+            try:
+                current = getter()
+            except Exception:
+                current = None
+
+        if not convos:
+            self.add(_body("No chats yet. Everything you and Mike talk about "
+                           "is kept here, on this PC, so you can come back to it.",
+                           style.INK_MUTE))
+        else:
+            card, col = _card()
+            col.setContentsMargins(6, 6, 6, 6)
+            col.setSpacing(0)
+            for i, c in enumerate(convos):
+                if i:
+                    sep = QFrame(); sep.setFixedHeight(1)
+                    sep.setStyleSheet(f"background:{style.HAIRLINE};border:none;")
+                    col.addWidget(sep)
+                row = _ConvoRow(c, current is not None and int(c["id"]) == int(current))
+                row.opened.connect(self._open)
+                row.deleted.connect(self._delete)
+                col.addWidget(row)
+            self.add(card)
+
+        self._actions_section()
+        self.end()
+
+    def _actions_section(self) -> None:
+        try:
             from brain import activity_store
-            rows = activity_store.recent(limit=80)
+            rows = activity_store.recent(limit=12)
         except Exception:
             rows = []
-
         if not rows:
-            self.add(_body("Nothing yet. When Mike opens something, writes a "
-                           "file or runs a command, it shows up here.",
-                           style.INK_MUTE))
-            self.end()
             return
-
-        top = QHBoxLayout()
-        top.addStretch(1)
-        clear = QPushButton("Clear history")
-        clear.setObjectName("ghost")
-        clear.setCursor(Qt.PointingHandCursor)
-        clear.clicked.connect(self._clear)
-        top.addWidget(clear)
-        holder = QWidget(); holder.setStyleSheet("background:transparent;"); holder.setLayout(top)
-        self.add(holder)
-
+        self.body.addSpacing(10)
+        self.add(_kicker("What Mike did"))
         card, col = _card()
         col.setSpacing(0)
         for i, r in enumerate(rows):
@@ -230,15 +365,14 @@ class HistoryPage(Page):
                 sep = QFrame(); sep.setFixedHeight(1)
                 sep.setStyleSheet(f"background:{style.HAIRLINE};border:none;")
                 col.addWidget(sep)
-            col.addWidget(self._row(r))
+            col.addWidget(self._action_row(r))
         self.add(card)
-        self.end()
 
-    def _row(self, r: dict) -> QWidget:
+    def _action_row(self, r: dict) -> QWidget:
         ok = bool(r.get("succeeded", 1))
         w = QWidget(); w.setStyleSheet("background:transparent;")
         row = QHBoxLayout(w)
-        row.setContentsMargins(0, 10, 0, 10)
+        row.setContentsMargins(0, 8, 0, 8)
         row.setSpacing(12)
         tick = QLabel("✓" if ok else "✕")
         tick.setStyleSheet(
@@ -247,7 +381,7 @@ class HistoryPage(Page):
         text = QLabel(str(r.get("action", "")))
         text.setWordWrap(True)
         text.setFont(style.voice(13))
-        text.setStyleSheet(f"color:{style.INK};background:transparent;")
+        text.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
         row.addWidget(text, 1)
         when = QLabel(_rel_time(r.get("started_at", 0)))
         when.setFont(style.label(10, QFont.Weight.Normal))
@@ -255,12 +389,26 @@ class HistoryPage(Page):
         row.addWidget(when, 0, Qt.AlignTop)
         return w
 
-    def _clear(self) -> None:
+    def _open(self, conversation_id: int) -> None:
+        hook = self._hooks.get("open_conversation")
+        if hook:
+            hook(conversation_id)
+
+    def _delete(self, conversation_id: int) -> None:
         try:
-            from brain import activity_store
-            activity_store.clear()
+            from brain import conversation_store
+            conversation_store.delete(conversation_id)
         except Exception:
             pass
+        # Deleting the chat you're in starts a fresh one, rather than leaving
+        # a conversation on screen that no longer exists to be continued.
+        getter = self._hooks.get("current_conversation")
+        try:
+            is_current = getter is not None and getter() == conversation_id
+        except Exception:
+            is_current = False
+        if is_current and self._hooks.get("new_conversation"):
+            self._hooks["new_conversation"]()
         self.reload()
 
 
@@ -274,10 +422,7 @@ class MemoryPage(Page):
         self.reload()
 
     def reload(self) -> None:
-        while self.body.count() > 3:
-            item = self.body.takeAt(3)
-            if item.widget():
-                item.widget().deleteLater()
+        self._clear_body()
         try:
             from brain import memory_store
             rows = memory_store.all_memories(limit=300)
@@ -300,7 +445,7 @@ class MemoryPage(Page):
         forget = QPushButton("Forget all")
         forget.setObjectName("ghost")
         forget.setCursor(Qt.PointingHandCursor)
-        forget.clicked.connect(self._forget_all)
+        _arm(forget, "Forget everything?", self._forget_all)
         top.addWidget(forget)
         holder = QWidget(); holder.setStyleSheet("background:transparent;"); holder.setLayout(top)
         self.add(holder)
@@ -319,10 +464,10 @@ class MemoryPage(Page):
         text.setStyleSheet(f"color:{style.INK};background:transparent;")
         row.addWidget(text, 1)
         x = QPushButton("✕")
-        x.setObjectName("ghost")
+        x.setObjectName("iconx")
         x.setCursor(Qt.PointingHandCursor)
         x.setFixedSize(28, 28)
-        x.clicked.connect(lambda _=False, mid=r.get("id"): self._forget_one(mid))
+        _arm(x, "Forget?", lambda mid=r.get("id"): self._forget_one(mid))
         row.addWidget(x, 0, Qt.AlignTop)
         col.addLayout(row)
         meta = QLabel(str(r.get("category", "") or "").capitalize())

@@ -96,6 +96,11 @@ class PiperVoice(VoiceProvider):
         self._submit_q: queue.Queue = queue.Queue()
         self._play_q: queue.Queue = queue.Queue()
         self._stop = threading.Event()
+        # Bumped by every stop(). Text and audio carry the generation they were
+        # queued in, and anything from an older generation is dropped — so an
+        # interrupted reply can never resume, even if a new one is queued in
+        # the same instant the old audio was being written.
+        self._gen = 0
         self._closing = False
         self._playing = threading.Event()
         self._synthing = threading.Event()
@@ -222,39 +227,42 @@ class PiperVoice(VoiceProvider):
     def _synth_loop(self) -> None:
         while not self._closing:
             try:
-                text = self._submit_q.get(timeout=0.1)
+                gen, text = self._submit_q.get(timeout=0.1)
             except queue.Empty:
                 continue
-            if self._stop.is_set() or self._proc is None:
+            if gen != self._gen or self._proc is None:
                 continue
             self._synthing.set()
             try:
                 self._flush_pipe()
-                if self._stop.is_set():
+                if gen != self._gen:
                     continue
                 try:
                     assert self._proc.stdin is not None
-                    self._proc.stdin.write((text.replace("\n", " ") + "\n").encode("utf-8"))
+                    line = text.replace("\n", " ") + "\n"
+                    self._proc.stdin.write(line.encode("utf-8"))
                     self._proc.stdin.flush()
                 except Exception as exc:
                     self._fail(text, f"could not reach piper: {exc}")
                     continue
-                pcm = self._read_sentence()
-                if pcm is not None and pcm.size and not self._stop.is_set():
-                    self._play_q.put(pcm)
-                elif pcm is not None and not pcm.size and not self._stop.is_set():
+                pcm = self._read_sentence(gen)
+                if pcm is None or gen != self._gen:
+                    continue
+                if pcm.size:
+                    self._play_q.put((gen, pcm))
+                else:
                     self._fail(text, "piper produced no audio")
             finally:
                 self._synthing.clear()
 
-    def _read_sentence(self):
+    def _read_sentence(self, gen: int):
         import numpy as np
         buf = bytearray()
         first = None
         last = None
         start = time.perf_counter()
         while True:
-            if self._stop.is_set():
+            if gen != self._gen:
                 return None
             try:
                 item = self._raw_q.get(timeout=0.03)
@@ -276,31 +284,66 @@ class PiperVoice(VoiceProvider):
             last = ts
         return np.frombuffer(bytes(buf), dtype=np.int16)
 
+    #: Audio is written in ~30ms blocks, so an interruption lands within one.
+    _BLOCK_SECONDS = 0.03
+
     def _play_loop(self) -> None:
+        """Play finished sentences through ONE output stream owned by this
+        thread.
+
+        Only this thread ever touches the audio device. The first version used
+        sounddevice's global play()/stop() — one module-level stream, no lock —
+        from this thread while stop() ran on the GUI thread (every barge-in)
+        and the wake word held its own PortAudio stream on a third. Racing on
+        that global can close a stream underneath PortAudio's callback thread:
+        a native crash with no Python frame. Now stop() only bumps a
+        generation counter, and this thread aborts its own stream when it sees
+        it. Keeping one stream open also makes consecutive sentences seamless
+        instead of reopening the device for each.
+        """
         import sounddevice as sd
-        while not self._closing:
-            try:
-                pcm = self._play_q.get(timeout=0.1)
-            except queue.Empty:
-                continue
-            if self._stop.is_set():
-                continue
-            self._playing.set()
-            try:
-                sd.play(pcm, self._sr)
-                while True:
-                    if self._stop.is_set():
-                        sd.stop()
-                        break
-                    stream = sd.get_stream()
-                    if stream is None or not stream.active:
-                        break
-                    time.sleep(0.01)
-            except Exception as exc:
-                logger.warning("Piper playback failed: %s", exc)
-                self._healthy = False
-            finally:
-                self._playing.clear()
+
+        stream = None
+        try:
+            while not self._closing:
+                try:
+                    gen, pcm = self._play_q.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                if gen != self._gen:
+                    continue
+                try:
+                    if stream is None:
+                        stream = sd.OutputStream(samplerate=self._sr, channels=1,
+                                                 dtype="int16")
+                        stream.start()
+                    self._playing.set()
+                    data = pcm.reshape(-1, 1)
+                    block = max(256, int(self._sr * self._BLOCK_SECONDS))
+                    for i in range(0, len(data), block):
+                        if gen != self._gen or self._closing:
+                            stream.abort()          # drop anything still queued
+                            stream.start()
+                            break
+                        stream.write(data[i:i + block])
+                except Exception as exc:
+                    logger.warning("Piper playback failed: %s", exc)
+                    self._healthy = False
+                    try:
+                        if stream is not None:
+                            stream.close()
+                    except Exception:
+                        pass
+                    stream = None
+                finally:
+                    self._playing.clear()
+        finally:
+            if stream is not None:
+                try:
+                    stream.abort()
+                    stream.close()
+                except Exception:
+                    pass
 
     # ── speaking ──────────────────────────────────────────
     def speak(self, text: str) -> bool:
@@ -322,7 +365,7 @@ class PiperVoice(VoiceProvider):
 
     def _submit(self, text: str) -> bool:
         try:
-            self._submit_q.put(text)
+            self._submit_q.put((self._gen, text))
             return True
         except Exception as exc:
             self._last_failure = f"could not queue text: {exc}"
@@ -346,6 +389,11 @@ class PiperVoice(VoiceProvider):
                 or not self._submit_q.empty() or not self._play_q.empty())
 
     def stop(self) -> None:
+        # Only mark the reply as abandoned. The playback thread owns the audio
+        # stream and aborts it within one ~30ms block when it sees the new
+        # generation — this may be called from the GUI thread, which must
+        # never touch the device itself (see _play_loop).
+        self._gen += 1
         self._stop.set()
         # drop everything queued — it's part of the reply just interrupted
         for q in (self._submit_q, self._play_q):
@@ -354,15 +402,18 @@ class PiperVoice(VoiceProvider):
                     q.get_nowait()
                 except queue.Empty:
                     break
-        try:
-            import sounddevice as sd
-            sd.stop()
-        except Exception:
-            pass
 
     def shutdown(self) -> None:
         self._closing = True
         self.stop()
+        # Wait for the playback thread to close its audio stream (and the synth
+        # thread to let go of the pipe) before returning. Returning while a
+        # stream is still open let PortAudio's own exit-time teardown race the
+        # closing stream — heap corruption at exit.
+        for thread in (self._player, self._synth):
+            if thread is not None and thread.is_alive() \
+                    and thread is not threading.current_thread():
+                thread.join(timeout=1.5)
         proc = self._proc
         if proc is not None and proc.poll() is None:
             try:

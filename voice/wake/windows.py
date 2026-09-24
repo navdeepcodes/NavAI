@@ -5,7 +5,7 @@ Windows has no equivalent that fits this contract, and rather than pull in a
 new keyword-spotting dependency (openWakeWord, Porcupine, Vosk — each its own
 model download and licence), this reuses what Mike already ships for
 speech-to-text: faster-whisper. A *tiny* Whisper model (tiny.en, ~75MB, the
-smallest there is, not the medium.en the real transcriber uses) runs on a
+smallest there is, not the small.en the real transcriber uses) runs on a
 short rolling window of microphone audio and is checked for the wake word.
 
 Two things keep an always-on recogniser from being a CPU hog or a
