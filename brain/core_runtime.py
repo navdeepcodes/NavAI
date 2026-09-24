@@ -4,7 +4,9 @@ import json
 from pathlib import Path
 import platform
 import pathlib
+import re
 import threading
+import time
 from datetime import datetime
 from typing import Callable
 
@@ -609,6 +611,33 @@ class CoreRuntime:
 
         if not tool_calls_raw:
             self._core.history.append({"role": "assistant", "content": collected_text})
+            # Measured in the installed app: "open notepad" answered "Opening
+            # Notepad for you." and "type hello in notepad" answered "I'll
+            # switch back to Notepad and type it" -- and neither made a tool
+            # call, so nothing happened while the user was told it had. A
+            # reply that ends on a promise of an action is not an answer; the
+            # model gets one chance to actually do it (or say plainly that it
+            # won't). One extra call, only on the turns that would otherwise
+            # have been a false claim.
+            if (
+                depth < MAX_AGENT_STEPS
+                and _promises_unperformed_action(collected_text)
+                and not self._already_nudged_this_turn()
+                and not (cancel_event is not None and cancel_event.is_set())
+            ):
+                logger.info("Reply promised an action but made no tool call; asking the model to act.")
+                nudge = {"role": "user", "content": _UNACTED_NUDGE}
+                self._core.history.append(nudge)
+                try:
+                    yield ("token", " ")
+                    yield from self._streaming_loop(confirm_callback, cancel_event, depth + 1)
+                finally:
+                    # The nudge is the runtime talking, not the user; it must
+                    # not be remembered as something they said.
+                    try:
+                        self._core.history.remove(nudge)
+                    except ValueError:
+                        pass
             return
 
         self._core.history.append({
@@ -660,7 +689,13 @@ class CoreRuntime:
                     yield ("tool_end", reason)
                     continue
 
+            _t_tool = time.perf_counter()
             result = self._execute_tool(name, args)
+            logger.info(
+                "Tool %s ran in %.2fs -> %s: %s", name, time.perf_counter() - _t_tool,
+                result.get("status"),
+                " ".join(str(result.get("result", result.get("error", ""))).split())[:240],
+            )
 
             self._core.history.append({
                 "role": "tool",
@@ -681,6 +716,51 @@ class CoreRuntime:
                 "if it isn't."
             )
             return
+
+        # Typing that was the last thing asked for, and that the readback
+        # confirms is in the field, is finished: a further model call only
+        # to say "Typed it" cost 8-11s measured. Verification is not skipped
+        # -- it is the condition; unverified typing still goes back to the
+        # model to check.
+        if len(tool_calls_raw) == 1 and tool_calls_raw[0].name == "type_text":
+            last_tool = self._core.history[-1]
+            if last_tool.get("role") == "tool":
+                result = json.loads(last_tool["content"])
+                args = tool_calls_raw[0].arguments or {}
+                typed = str(args.get("text") or "")
+                if (
+                    result.get("status") == "success"
+                    and result.get("verified")
+                    and _typing_finishes_request(self._last_user_text(), typed)
+                ):
+                    app = str(args.get("app") or "").strip()
+                    where = f" into {app[:1].upper() + app[1:]}" if app else ""
+                    summary = (f'Typed "{typed.strip()}"{where}.' if len(typed) <= 60
+                               else f"Typed it{where}.")
+                    self._core.history.append({"role": "assistant", "content": summary})
+                    yield ("token", summary)
+                    return
+
+        # "Open notepad" is finished once its window is seen; a second model
+        # call only to write "Notepad's open." cost ~4.4s measured. Only when
+        # the request was that and nothing more ("open notepad and type..."
+        # still goes back to the model), and only when the tool saw the window
+        # -- a launch with no window goes back to the model to deal with.
+        if len(tool_calls_raw) == 1 and tool_calls_raw[0].name == "open_application":
+            last_tool = self._core.history[-1]
+            args = tool_calls_raw[0].arguments or {}
+            if last_tool.get("role") == "tool" and not args.get("path"):
+                result = json.loads(last_tool["content"])
+                if (
+                    result.get("status") == "success"
+                    and str(result.get("result", "")).startswith("Opened ")
+                    and _is_bare_open_request(self._last_user_text())
+                ):
+                    app = str(args.get("name") or "it").strip()
+                    summary = f"Opened {app[:1].upper() + app[1:]}."
+                    self._core.history.append({"role": "assistant", "content": summary})
+                    yield ("token", summary)
+                    return
 
         if len(tool_calls_raw) == 1 and depth == 0:
             last_tool = self._core.history[-1]
@@ -705,6 +785,20 @@ class CoreRuntime:
     # =====================================================
     # Honest wrap-up (used when the step limit is reached)
     # =====================================================
+
+    def _last_user_text(self) -> str:
+        for m in reversed(self._core.history):
+            if m.get("role") == "user" and m.get("content") != _UNACTED_NUDGE:
+                return str(m.get("content") or "")
+        return ""
+
+    def _already_nudged_this_turn(self) -> bool:
+        """A nudge stays in history only while its retry runs, so finding one
+        means this turn has already had its second chance."""
+        return any(
+            m.get("role") == "user" and m.get("content") == _UNACTED_NUDGE
+            for m in self._core.history
+        )
 
     def _wrap_up(self, instruction: str):
 
@@ -1008,7 +1102,10 @@ class CoreRuntime:
                 count=int(args.get("count") or 1),
             )
         if function_name == "type_text":
-            return SESSION.type_text(str(args.get("text") or ""))
+            text = str(args.get("text") or "")
+            app = str(args.get("app") or "") or _app_named_in_request(
+                self._last_user_text(), text, SESSION)
+            return SESSION.type_text(text, app=app or None)
         if function_name == "press_keys":
             return SESSION.press_keys(str(args.get("key") or ""), args.get("modifiers") or [])
         if function_name == "scroll_ui":
@@ -1585,6 +1682,129 @@ def _explain_error_text(message: str, args: dict, is_missing: bool | None = None
         f"{target} does not exist. {parent} contains: "
         f"{', '.join(shown)}{more}."
     )
+
+
+_UNACTED_NUDGE = (
+    "(Note from Mike's runtime, not the user: your last reply said you would do "
+    "something, but you made no tool call, so nothing happened. If the request "
+    "needs an action, call the tool now. If it doesn't, reply in one short "
+    "sentence without repeating yourself. Don't apologise and don't mention "
+    "this note — the user can't see it.)"
+)
+
+# Verbs of acting on the computer. "Let me explain" or "I'll keep it short"
+# are not promises of an action and must not trigger a retry.
+_ACTION_VERBS = (
+    r"open|switch|type|launch|start|click|bring|focus|check|look|read|search|"
+    r"find|close|press|navigate|go|run|create|write|save|send|play|scroll|"
+    r"select|paste|copy|delete|move|rename|download|install"
+)
+_PROMISE = re.compile(
+    rf"\b(?:I'll|I will|I'm going to|I am going to|let me|lemme)\s+"
+    rf"(?:now\s+|just\s+|quickly\s+|first\s+)?(?:{_ACTION_VERBS})\b",
+    re.IGNORECASE,
+)
+_PROGRESSIVE = re.compile(
+    r"^(?:ok(?:ay)?|sure|alright|got it|on it)?[\s,!.]*"
+    r"(?:opening|launching|switching|typing|clicking|starting|searching|"
+    r"closing|navigating|bringing|focusing|playing)\b",
+    re.IGNORECASE,
+)
+
+
+_BARE_OPEN = re.compile(
+    r"^(?:hey\s+mike[\s,]*)?(?:please\s+|can you\s+|could you\s+)?"
+    r"(?:open|launch|start)\s+(?:up\s+)?(?:the\s+|my\s+)?[\w .+'-]{1,40}?"
+    r"(?:\s+app)?(?:\s+please)?[\s.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def _is_bare_open_request(text: str) -> bool:
+    """'open notepad', 'please launch spotify' -- a request that is complete
+    once the app is open. Anything with a second step is not."""
+    text = re.sub(r"^\s*(?:hey|hi|ok|okay)?\s*mike\s*[,!.]?\s*", "", text, flags=re.IGNORECASE).strip()
+    if re.search(r"\b(?:and|then|to|so|with|in)\b|[,;:]", text, re.IGNORECASE):
+        return False
+    return bool(_BARE_OPEN.match(text))
+
+
+_STEP_WORDS = re.compile(r"\b(?:and|then|press|enter|save|send|click|search|submit)\b", re.IGNORECASE)
+_TYPE_HEAD = re.compile(
+    r"\s*(?:please\s+|can you\s+|could you\s+)?"
+    r"(?:(?:open|launch|start)\s+(?:up\s+)?(?:the\s+|my\s+)?[\w .+'-]{1,40}?\s*(?:,\s*)?(?:and\s+|then\s+|and then\s+)?)?"
+    r"(?:type|write)\s*(?:out\s+)?:?\s*[\"'“]?",
+    re.IGNORECASE,
+)
+_TYPE_TAIL = re.compile(
+    r"\s*[\"'”]?\s*(?:(?:in|into|on)\s+(?:the\s+|my\s+)?[\w .+'-]{1,40}?)?\s*(?:please)?[\s.!]*",
+    re.IGNORECASE,
+)
+
+
+def _typing_finishes_request(message: str, typed: str) -> bool:
+    """True when typing `typed` was the last step the user asked for:
+    "type hello in notepad", "open notepad and type: meeting at 5pm".
+    Anything after the text ("... and press enter") means there is more."""
+    msg = re.sub(r"^\s*(?:hey|hi|ok|okay)?\s*mike\s*[,!.]?\s*", "", message, flags=re.IGNORECASE)
+    typed = typed.strip()
+    i = msg.lower().find(typed.lower()) if typed else -1
+    if i < 0:
+        return False
+    head, tail = msg[:i], msg[i + len(typed):]
+    if _STEP_WORDS.search(tail) or len(re.findall(r"\b(?:and|then)\b", head, re.IGNORECASE)) > 1:
+        return False
+    return bool(_TYPE_HEAD.fullmatch(head) and _TYPE_TAIL.fullmatch(tail))
+
+
+_NAMED_TARGET = re.compile(
+    r"\b(?:in|into|on)\s+(?:the\s+|my\s+)?([A-Za-z][\w.+'-]*(?:\s+[A-Za-z][\w.+'-]*){0,2}?)"
+    r"(?:\s+(?:app|window|tab))?[\s.!?]*$",
+    re.IGNORECASE,
+)
+
+
+def _app_named_in_request(message: str, typed: str, session) -> str | None:
+    """The app the user said to type into, when the model left it out.
+
+    Measured in the installed app: "type hello from mike in notepad" was
+    called with no app, the keystrokes went into the browser that happened to
+    be in front, and Mike said it had typed into Notepad. The user named the
+    target; that is not a guess to leave to the model. Only a name that is
+    not part of the text being typed and that matches an open window counts
+    -- "type: see you in class" never goes looking for an app called class.
+    """
+    tail = message
+    if typed and typed in message:
+        tail = message[message.rfind(typed) + len(typed):]
+    match = _NAMED_TARGET.search(tail.strip())
+    if not match:
+        return None
+    name = match.group(1).strip()
+    try:
+        windows = session.controller().list_windows()
+    except Exception:
+        return None
+    wanted = name.casefold()
+    for w in windows:
+        if wanted in (w.app or "").casefold() or wanted in (w.title or "").casefold():
+            logger.info("Typing target taken from the request: %s", name)
+            return name
+    return None
+
+
+def _promises_unperformed_action(text: str) -> bool:
+    """True when a reply ends on a promise to act ("I'll switch to Notepad and
+    type it", "Opening Notepad for you.") -- which, with no tool call, means
+    the user was told something is happening that is not."""
+    sentences = [s.strip(" \t\n\"'*") for s in re.split(r"(?<=[.!?])\s+|\n+", text.strip())]
+    sentences = [s for s in sentences if s]
+    if not sentences:
+        return False
+    last = sentences[-1]
+    if last.endswith("?"):
+        return False           # asking the user something is a real answer
+    return bool(_PROMISE.search(last) or _PROGRESSIVE.match(last))
 
 
 def _quick_summary(function_name: str, args: dict) -> str | None:

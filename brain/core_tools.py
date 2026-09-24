@@ -1,14 +1,31 @@
 from __future__ import annotations
 
 import re
-
-from google.genai import types
+from dataclasses import dataclass
+from types import SimpleNamespace
 
 
 # ============================================================
 # Mike's canonical tool definitions. Provider-neutral: each brain's provider
 # translates these into whatever protocol it speaks. Named after no vendor.
 # ============================================================
+
+@dataclass(frozen=True)
+class FunctionDeclaration:
+    """One tool as the model sees it: a name, what it does, its arguments.
+
+    These used to be google.genai's FunctionDeclaration, which made importing
+    the Gemini SDK the single largest cost of starting Mike -- measured 1.55s
+    of the 2.5s it took to import the UI -- for three plain fields Mike reads
+    and a provider it does not use.
+    """
+
+    name: str
+    description: str = ""
+    parameters_json_schema: dict | None = None
+
+
+types = SimpleNamespace(FunctionDeclaration=FunctionDeclaration)
 
 TOOL_DECLARATIONS = [
 
@@ -18,7 +35,7 @@ TOOL_DECLARATIONS = [
 
     types.FunctionDeclaration(
         name="open_browser",
-        description="Open the user's default web browser.",
+        description="Open the browser, blank. For a site use open_url.",
     ),
 
     types.FunctionDeclaration(
@@ -548,7 +565,7 @@ TOOL_DECLARATIONS = [
             "Use see_ui instead whenever you are operating an application: it "
             "reads the same interface as text in a fraction of a second and "
             "gives you clickable references.\n"
-            "Use see_screen when: the user asks what is on their screen; "
+            "Use see_screen when: the user asks about the whole screen; "
             "see_ui returned nothing useful for the app you need; the content "
             "is drawn rather than built from controls (canvas, charts, images, "
             "video, games); you need to judge how something actually looks; or "
@@ -870,8 +887,8 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="see_ui",
         description=(
-            "Read the controls in an application's window: buttons, text fields, "
-            "links, checkboxes, tabs, with their labels and current values. Each "
+            "Read an app window as text — use it to read what a window says: "
+            "buttons, fields, links, tabs, their labels and current text. Each "
             "gets a reference like 'el7' that you pass to click_element or "
             "scroll_ui. ALWAYS prefer this over see_screen for operating an "
             "application: it is far faster, it names controls exactly, and it "
@@ -941,6 +958,7 @@ TOOL_DECLARATIONS = [
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "The text to type"},
+                "app": {"type": "string", "description": "Running app to type into; it is brought to the front first, so no separate focus_app"},
             },
             "required": ["text"],
         },
@@ -1014,9 +1032,6 @@ TOOL_DECLARATIONS = [
     ),
 
 ]
-
-
-GEMINI_TOOLS = [types.Tool(function_declarations=TOOL_DECLARATIONS)]
 
 
 # ============================================================

@@ -140,6 +140,32 @@ def _key_input(vk: int, down: bool, unicode: bool = False) -> _INPUT:
     return _INPUT(_INPUT_KEYBOARD, _INPUT_UNION(ki=ki))
 
 
+_WS_EX_NOACTIVATE = 0x08000000
+
+# Pause after each typed character so the app keeps up with the input
+# instead of falling behind and reading key state that has since changed.
+_KEY_PACE = 0.012
+
+_VkKeyScanW = ctypes.windll.user32.VkKeyScanW
+_VkKeyScanW.argtypes = [ctypes.c_wchar]
+_VkKeyScanW.restype = ctypes.c_short
+
+
+def _key_for(ch: str) -> tuple[int, bool] | None:
+    """(virtual key, needs Shift) that types `ch` on the current keyboard
+    layout, or None when the layout has no plain key for it (or needs AltGr)."""
+    scan = _VkKeyScanW(ch)
+    if scan == -1:
+        return None
+    vk, state = scan & 0xFF, (scan >> 8) & 0xFF
+    if state & 0x06:          # needs Ctrl/Alt (AltGr): let the unicode path send it
+        return None
+    shift = bool(state & 0x01)
+    if 0x41 <= vk <= 0x5A and ctypes.windll.user32.GetKeyState(0x14) & 1:
+        shift = not shift     # Caps Lock flips letters, so undo it
+    return vk, shift
+
+
 def _send_input(*inputs: _INPUT) -> None:
     count = len(inputs)
     array = (_INPUT * count)(*inputs)
@@ -345,6 +371,14 @@ class WindowsController(ComputerController):
             width, height = rect[2] - rect[0], rect[3] - rect[1]
             if width * height < 4000:      # tray icons, tooltips, not "windows"
                 return True
+            # Popups and tool palettes are not windows a person works in --
+            # the same rule Alt+Tab uses. Measured: Windows 11 Notepad keeps
+            # fifteen visible "PopupHost" windows (owned, no-activate), and
+            # see_ui(app="Notepad") read one of those instead of the document,
+            # found nothing, and the model spent 170s looking elsewhere.
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            if ex_style & (_WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW):
+                return True
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             found.append((hwnd, title, pid, rect))
             return True
@@ -385,7 +419,13 @@ class WindowsController(ComputerController):
         wanted = (name or "").strip().lower()
         if not wanted:
             return None
-        candidates = self._enum_windows()
+        # An app's own main window before anything it owns (a dialog, a
+        # palette), frontmost first within each -- EnumWindows is already in
+        # z-order and the sort is stable.
+        candidates = sorted(
+            self._enum_windows(),
+            key=lambda c: win32gui.GetWindow(c[0], win32con.GW_OWNER) != 0,
+        )
 
         # 1. Exact process name — "chrome", "notepad".
         for hwnd, title, pid, _ in candidates:
@@ -708,10 +748,33 @@ class WindowsController(ComputerController):
     def type_text(self, text: str) -> ActionResult:
         if not text:
             return ActionResult(False, error="No text given to type.")
+        shift_held = False
+
+        def shift(down: bool) -> None:
+            # Notepad reads Shift's *live* state when it gets to a key, not
+            # the state when the key was sent, so Shift must still be down
+            # then -- and pressed once for a run of capitals, as a person
+            # would, not toggled per letter. Measured: sent in one batch,
+            # "XYZ ! ( #" arrived as "xyz 1 9 3"; toggled per letter, the key
+            # after the run was intermittently lost.
+            nonlocal shift_held
+            if shift_held != down:
+                _send_input(_key_input(0x10, down=down))
+                shift_held = down
+                time.sleep(_KEY_PACE * (1 if down else 2))
+
+        try:
+            self._type_chars(text, shift)
+        finally:
+            shift(False)
+        return ActionResult(True, f"typed {len(text)} characters")
+
+    def _type_chars(self, text: str, shift) -> None:
         for ch in text:
             if ch == "\r":
                 continue    # \r\n: the \n below sends the actual newline
             if ch == "\n":
+                shift(False)
                 # Verified directly: a raw LF sent via KEYEVENTF_UNICODE is
                 # silently dropped by Windows edit controls — Notepad typed
                 # "line 0line 1line 2..." with every newline vanishing, not
@@ -727,9 +790,27 @@ class WindowsController(ComputerController):
                 # 16 bits, so this would need a surrogate pair to send
                 # correctly. Not yet handled — skipped rather than mojibake.
                 continue
-            _send_input(_key_input(code, down=True, unicode=True))
-            _send_input(_key_input(code, down=False, unicode=True))
-        return ActionResult(True, f"typed {len(text)} characters")
+            # Anything the keyboard layout can produce goes as a real key
+            # press. Unicode "packets" (VK_PACKET) are turned into characters
+            # only when the app gets round to them, from the *latest* packet
+            # -- so an app that falls behind types the last character over
+            # and over. Measured on Windows 11 Notepad: "probe text abc xyz
+            # hello" came out "probe text abc ooooooooo". A real key press
+            # carries its own key code and cannot be rewritten that way.
+            key = _key_for(ch)
+            if key is not None:
+                vk, needs_shift = key
+                shift(needs_shift)
+                _send_input(_key_input(vk, down=True), _key_input(vk, down=False))
+                time.sleep(_KEY_PACE)
+                continue
+            # Accents, other scripts: only a packet can send them. Down and up
+            # together, then give the app a moment to consume it before the
+            # next one can overwrite it.
+            shift(False)
+            _send_input(_key_input(code, down=True, unicode=True),
+                        _key_input(code, down=False, unicode=True))
+            time.sleep(0.02)
 
     def press_keys(self, key: str, modifiers: list[str] | None = None) -> ActionResult:
         name = (key or "").strip().lower()

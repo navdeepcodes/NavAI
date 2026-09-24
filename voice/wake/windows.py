@@ -52,6 +52,25 @@ ENERGY_FLOOR = 0.012                    # absolute minimum RMS to consider at al
 SPEECH_MULTIPLIER = 2.2                 # how far above the room's noise floor speech must sit
 NOISE_ADAPT = 0.08                      # how fast the noise-floor estimate follows the room
 COOLDOWN_SECONDS = 3.0                  # refractory period after a detection
+WAKE_CPU_THREADS = 2                    # Whisper threads for the always-on spotter
+
+
+def _has_speech(audio: np.ndarray) -> bool:
+    """Whether the window holds speech, not just sound.
+
+    The energy gate passes anything loud -- typing, music, a video, a fan --
+    and every one of those used to go to Whisper. faster-whisper ships a
+    voice-activity model (Silero) that answers this in a few milliseconds.
+    If it can't be loaded, fall back to transcribing: a wake word that costs
+    CPU is better than one that never fires.
+    """
+    try:
+        from faster_whisper.vad import VadOptions, get_speech_timestamps
+        return bool(get_speech_timestamps(
+            audio, VadOptions(threshold=0.5, min_speech_duration_ms=200)))
+    except Exception:
+        logger.debug("Wake word: voice-activity check unavailable.", exc_info=True)
+        return True
 
 # Whisper's spellings of the name, as whole words. "mic" is deliberately left
 # out — it turns up in ordinary speech ("mic check", "microphone") and would
@@ -162,7 +181,12 @@ class WindowsWakeWord(WakeWordBackend):
             from faster_whisper import WhisperModel
 
             logger.info("Loading tiny Whisper for wake word (first use)...")
-            self._model = WhisperModel("tiny.en", device="cpu", compute_type="int8")
+            # Two threads, not every core. With the default, each 2s check
+            # cost ~4s of CPU (threads spinning, not working) -- measured 55%
+            # of a core with speech in the room -- and it competes with the
+            # local model for the same cores.
+            self._model = WhisperModel("tiny.en", device="cpu", compute_type="int8",
+                                       cpu_threads=WAKE_CPU_THREADS)
         return self._model
 
     def _listen_loop(self) -> None:
@@ -173,6 +197,7 @@ class WindowsWakeWord(WakeWordBackend):
             return
 
         calibrated = False
+        was_loud = False
         while not self._stop.wait(CHECK_INTERVAL):
             if self._suppressed:
                 calibrated = False        # re-measure the room after a pause
@@ -203,10 +228,31 @@ class WindowsWakeWord(WakeWordBackend):
             adapt = NOISE_ADAPT if rms < gate else NOISE_ADAPT * 0.3
             self._noise_floor = (1 - adapt) * self._noise_floor + adapt * rms
             if rms < gate:
+                was_loud = False
+                continue
+
+            # The 2s window stays loud for up to 2s after the sound stops, so
+            # the same audio was transcribed again and again. Only look when
+            # something new arrived -- plus one check after it ends, so a name
+            # that finished right at the edge of a window is still heard whole.
+            recent = audio[-int(CHECK_INTERVAL * SAMPLE_RATE):]
+            recent_loud = float(np.sqrt(np.mean(recent ** 2))) >= gate
+            if not (recent_loud or was_loud):
+                continue
+            was_loud = recent_loud
+
+            if not _has_speech(audio):
                 continue
 
             try:
-                segments, _info = model.transcribe(audio, beam_size=1, language="en")
+                # One pass, a few words. Whisper's default re-decodes unclear
+                # audio at up to six temperatures and will write hundreds of
+                # tokens of hallucination for noise; a wake phrase is two
+                # words, so neither is ever worth the CPU here.
+                segments, _info = model.transcribe(
+                    audio, beam_size=1, language="en", temperature=0.0,
+                    without_timestamps=True, condition_on_previous_text=False,
+                    max_new_tokens=24)
                 text = " ".join(seg.text for seg in segments).lower()
             except Exception:
                 continue

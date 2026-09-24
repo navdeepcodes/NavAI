@@ -191,6 +191,7 @@ class MikeWindow(QMainWindow):
         self._tour = None
 
     def _request_quit(self) -> None:
+        logger.info("Quit requested.")
         self._quitting = True
         QApplication.instance().quit()
 
@@ -438,19 +439,33 @@ class MikeWindow(QMainWindow):
             return
         self._torn_down = True
 
-        self._save_geometry()
-        self.controller.shutdown()
+        import time as _time
+        started = _time.monotonic()
+        logger.info("Quitting: shutting down.")
 
-        try:
+        def step(name, fn):
+            t = _time.monotonic()
+            try:
+                fn()
+            except Exception:
+                logger.exception("Shutdown step failed: %s", name)
+            spent = _time.monotonic() - t
+            if spent > 0.5:
+                logger.info("Shutdown step %s took %.1fs", name, spent)
+
+        step("geometry", self._save_geometry)
+        step("controller", self.controller.shutdown)
+
+        def _stop_processes():
             from tools.terminal.actions import shutdown_all
             shutdown_all()
-        except Exception:
-            logger.exception("Could not stop background processes.")
 
-        ide_manager.stop()
-        self.hotkey.unregister()
-        self.tray.hide()
-        self.corner.close()
+        step("background processes", _stop_processes)
+        step("ide bridge", ide_manager.stop)
+        step("hotkey", self.hotkey.unregister)
+        step("tray", self.tray.hide)
+        step("corner", self.corner.close)
+        logger.info("Shut down in %.1fs.", _time.monotonic() - started)
 
 
 def _maybe_show_welcome(window) -> None:
@@ -516,9 +531,24 @@ def run():
 
     window._teardown()
 
-    sys.stdout.flush()
-    sys.stderr.flush()
+    _flush_std_streams()
     os._exit(code)
+
+
+def _flush_std_streams() -> None:
+    """Flush stdout/stderr before the hard exit -- when there are any.
+
+    The packaged app is windowed, so it has no console and sys.stdout and
+    sys.stderr are None. Flushing them unguarded raised on every quit, and the
+    frozen app turned that into an "Unhandled exception in script" dialog that
+    held the process open until someone clicked Close.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None:
+                stream.flush()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

@@ -148,7 +148,23 @@ class Observation:
             lines.append("  " + element.describe())
         if len(self.elements) > limit:
             lines.append(f"  ... {len(self.elements) - limit} more elements")
+        # The element list shows only the first 40 characters of a field, which
+        # is right for spotting a control and wrong for reading one: asked what
+        # Notepad said, Mike saw a fragment and answered from it. The full
+        # contents of text fields and documents are given here, bounded.
+        budget = self.CONTENTS_CAP
+        for element in self.elements[:limit]:
+            if budget <= 0:
+                break
+            if element.role in ("text_field", "text_area") and len(element.value) > 40:
+                shown = element.value[:budget]
+                cut = "" if len(shown) == len(element.value) else f" (first {len(shown)} of {len(element.value)} characters)"
+                lines.append(f"Contents of [{element.ref}]{cut}:\n{shown}")
+                budget -= len(shown)
         return "\n".join(lines)
+
+    #: Total characters of field contents an observation carries.
+    CONTENTS_CAP = 3000
 
     def find(self, ref: str) -> UIElement | None:
         return next((e for e in self.elements if e.ref == ref), None)

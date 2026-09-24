@@ -364,10 +364,22 @@ class ComputerSession:
     # keystrokes are going somewhere the caller probably did not intend.
     _TEXT_ROLES = frozenset({"text_field", "text_area", "combo_box"})
 
-    def type_text(self, text: str) -> dict:
+    def type_text(self, text: str, app: str | None = None) -> dict:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
+        # "Type X in Notepad" is one request, not two. Switching here saves a
+        # whole model round-trip (measured ~8-20s on the target laptop) over a
+        # separate focus_app call, and if the switch fails nothing is typed --
+        # keystrokes never go to whatever else happens to be in front.
+        if app:
+            switched = self.focus_app(app)
+            if switched.get("status") != "success":
+                return {
+                    "status": "error",
+                    "error": f"Did not type: could not switch to {app}: "
+                             f"{switched.get('error') or switched.get('result') or 'unknown error'}",
+                }
         # Keystrokes go to whatever is frontmost, so the same precondition
         # applies: type into the application that was observed, not whatever
         # happens to be in front now.
@@ -387,7 +399,20 @@ class ComputerSession:
         if result.get("status") != "success":
             return result
 
+        # Keystrokes are queued, not applied, when the call returns. Measured
+        # on Notepad: typing "probe text" and reading straight back gave
+        # "now reads 'p'", and the model -- told its text was wrong -- spent
+        # extra turns "fixing" a field that was fine. Wait for the text to
+        # land (bounded), then report what is really there.
         after = self._focused()
+        deadline = time.time() + 1.5
+        while (
+            text.strip()
+            and time.time() < deadline
+            and not (after and text.strip() in (after.value or ""))
+        ):
+            time.sleep(0.05)
+            after = self._focused() or after
         landed = after or before
 
         if landed is None:
@@ -399,16 +424,36 @@ class ComputerSession:
             return result
 
         where = f"{landed.role} {landed.label!r}" if landed.label else landed.role
+        value = landed.value or ""
+        typed = text.strip()
+        # Read back, not assumed: the text is in a text control's contents.
+        verified = bool(typed and landed.role in self._TEXT_ROLES and typed in value)
         detail = f" into {where}"
-        if landed.value:
-            detail += f", which now reads {landed.value[:120]!r}"
-        if landed.role not in self._TEXT_ROLES:
+        if verified:
+            # Show the text where it landed, not the start of the document --
+            # in a long document the first 120 characters may not include it.
+            at = value.find(typed)
+            start = max(0, at - 40)
+            excerpt = ("…" if start else "") + value[start:at + len(typed) + 40]
+            detail += f"; read back, it is there: {excerpt!r}"
+        elif landed.role in self._TEXT_ROLES:
+            detail += (
+                f" — but reading the field back, the text is NOT in it (it reads "
+                f"{value[:120]!r}), so it did not go in as intended. Do not say "
+                "it was typed; check with see_ui or try again"
+            )
+        else:
+            if value:
+                detail += f", which now reads {value[:120]!r}"
             detail += (
                 f" — note that {landed.role} is not a text field, so the "
-                "keystrokes may not have gone where you intended"
+                "keystrokes may not have gone where you intended. Unless this "
+                "app takes keystrokes without a field (a calculator, a game), "
+                "do not tell the user it was typed: check with see_ui first"
             )
         result["result"] = result.get("result", "") + detail + note
         result["focused"] = where
+        result["verified"] = verified
         return result
 
     def _focused(self):

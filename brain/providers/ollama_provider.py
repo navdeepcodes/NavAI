@@ -328,10 +328,41 @@ class OllamaProvider(BrainProvider):
                     event = self._to_tool_call(raw)
                     yield event
 
+                if getattr(chunk, "done", False):
+                    self._log_call_stats(chunk, len(messages), len(tools or []))
+
             yield StreamEvent(kind="done", truncated=truncated)
 
         except Exception as exc:
             yield StreamEvent(kind="error", error=self._to_error(exc))
+
+    @staticmethod
+    def _log_call_stats(chunk: Any, n_messages: int, n_tools: int) -> None:
+        """One line per model call, from Ollama's own accounting.
+
+        prompt_eval_count counts only the prompt tokens actually recomputed —
+        a reused KV-cache prefix doesn't appear in it — so this line shows at a
+        glance whether a call paid for its whole prompt again (a cache miss) or
+        only for what was appended, and how much of the call was generation.
+        This is what separates "the model is slow" from "we made it redo work".
+        """
+        def s(ns):
+            return (ns or 0) / 1e9
+
+        try:
+            p_n = getattr(chunk, "prompt_eval_count", None) or 0
+            p_s = s(getattr(chunk, "prompt_eval_duration", None))
+            e_n = getattr(chunk, "eval_count", None) or 0
+            e_s = s(getattr(chunk, "eval_duration", None))
+            logger.info(
+                "Model call: prefill %d tok in %.2fs | output %d tok in %.2fs (%.1f tok/s)"
+                " | load %.2fs | total %.2fs | %d messages, %d tools",
+                p_n, p_s, e_n, e_s, (e_n / e_s) if e_s else 0.0,
+                s(getattr(chunk, "load_duration", None)),
+                s(getattr(chunk, "total_duration", None)), n_messages, n_tools,
+            )
+        except Exception:
+            pass
 
     def complete(
         self,
@@ -368,6 +399,7 @@ class OllamaProvider(BrainProvider):
         # first version of this logged "stopped at the 8192-token generation
         # limit" on every single startup -- a false alarm that would send
         # whoever read it looking for a truncation bug that isn't there.
+        self._log_call_stats(response, len(messages), len(tools or []))
         truncated = response.get("done_reason") == "length"
         if truncated:
             effective = self._options["num_predict"] if max_tokens is None else max_tokens

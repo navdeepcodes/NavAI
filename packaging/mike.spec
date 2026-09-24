@@ -72,6 +72,14 @@ hiddenimports = [
     "installer.core",
     "installer.window",
     *collect_submodules("faster_whisper"),
+    # ToolRegistry finds Mike's tools by walking the tools package at runtime
+    # (pkgutil.iter_modules), so the static graph only ever reached the ones
+    # something else happened to import. Measured in the installed app: every
+    # open_application / open_url / ide call failed with "Unknown tool: system"
+    # and Mike fell back to run_command, turning a 4s "open notepad" into a
+    # minute of retries. Collect the whole package so the frozen app has the
+    # same tools as source.
+    *collect_submodules("tools"),
 ]
 
 # Mike is one app, but its optional surfaces each drag in a large dependency
@@ -104,6 +112,9 @@ analysis = Analysis(
         # python-docx / python-pptx load their XML templates from package data.
         *collect_data_files("docx"),
         *collect_data_files("pptx"),
+        # faster-whisper's Silero voice-activity model, which the wake word
+        # uses to skip sound that isn't speech before running Whisper.
+        *collect_data_files("faster_whisper"),
     ],
     hiddenimports=hiddenimports,
     hookspath=[],

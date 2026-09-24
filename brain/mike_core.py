@@ -24,6 +24,17 @@ from logs.logger import logger
 MAX_HISTORY = 80
 MAX_TOOL_LOG = 10
 SUMMARY_TRIGGER_TURNS = 6
+
+# The situation summary is a full call to the same local model (measured: ~73
+# output tokens at ~4.5 tok/s, ~25 s). It used to run every SUMMARY_TRIGGER_TURNS
+# turns, immediately — so the next thing the student said queued behind it and
+# a 4 s answer took 29 s, every sixth turn, in conversations short enough that
+# every turn was still in context anyway. It is only needed once history nears
+# the trim point (old turns are about to be dropped), so it now runs only then,
+# and only after Mike has been idle for a moment; if the user starts a new turn
+# first, it backs off and is rescheduled after that turn.
+SUMMARY_HEADROOM = 20          # start summarising this many messages before the trim
+SUMMARY_IDLE_SECONDS = 20.0    # ...and only after this long with no new turn
 VISION_FRESHNESS_SECONDS = 120
 
 SUMMARY_PROMPT = """\
@@ -335,30 +346,42 @@ class MikeCore:
 
     def _maybe_refresh_summary(self) -> None:
 
-        near_limit = len(self.history) >= MAX_HISTORY - 4
-
-        due = self._turns_since_summary >= SUMMARY_TRIGGER_TURNS
-
-        if not (near_limit or due):
+        # Only when old turns are about to be trimmed away: before that point
+        # the full conversation is already in context and a summary adds a
+        # ~25 s model call for nothing.
+        near_limit = len(self.history) >= MAX_HISTORY - SUMMARY_HEADROOM
+        if not near_limit:
             return
 
         if self._summarizing:
             return
 
-        turns_snapshot = list(self.history)
-        old_summary = self.situation_summary
-        project_snapshot = self.project_id
-
         self._summarizing = True
-        self._turns_since_summary = 0
-
-        thread = threading.Thread(
-            target=self._refresh_summary,
-            args=(old_summary, turns_snapshot, project_snapshot, self._epoch),
+        threading.Thread(
+            target=self._refresh_when_idle,
+            args=(len(self.history), self._epoch),
             daemon=True,
-        )
+        ).start()
 
-        thread.start()
+    def _refresh_when_idle(self, history_len: int, epoch: int) -> None:
+        """Wait for a quiet moment, then summarise — never in front of the
+        user's next message. The local model serves one request at a time, so
+        a summary started as a turn ends is a summary the next turn waits for."""
+        # Right at the trim point there's no time to wait for a quiet moment:
+        # summarise now rather than let turns be dropped unsummarised.
+        urgent = history_len >= MAX_HISTORY - 4
+        deadline = time.monotonic() + (0.0 if urgent else SUMMARY_IDLE_SECONDS)
+        while time.monotonic() < deadline:
+            if len(self.history) != history_len or epoch != self._epoch:
+                # A new turn (or a different conversation) began: back off.
+                # The next completed turn schedules another attempt.
+                self._summarizing = False
+                return
+            time.sleep(0.25)
+
+        self._turns_since_summary = 0
+        self._refresh_summary(
+            self.situation_summary, list(self.history), self.project_id, epoch)
 
     # -----------------------------------------------------
 
