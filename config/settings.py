@@ -56,8 +56,13 @@ LEGAL_VERSION = "2026-09-25.2"  # .2: Mike accounts
 # project URL and its public key (the "anon" or "publishable" key, never the
 # service-role / secret key) are safe to ship in the app: row-level security
 # in supabase/migrations decides what anyone can do. Setup: docs/ACCOUNTS.md.
-SUPABASE_URL = os.getenv("MIKE_SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.getenv("MIKE_SUPABASE_ANON_KEY", "")
+SUPABASE_URL = os.getenv("MIKE_SUPABASE_URL", "https://ljvvkiaikosvznedzanx.supabase.co")
+SUPABASE_ANON_KEY = os.getenv(
+    "MIKE_SUPABASE_ANON_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqdnZraWFpa29zdnpu"
+    "ZWR6YW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyOTYzMDEsImV4cCI6MjEwNTg3MjMwMX0.kupHNFSOjH2L3_"
+    "D4vKe3bARZODmMWJRWd_StRgTY6rI",
+)
 #: Sign-in providers switched on in the Supabase project, e.g. "google".
 SUPABASE_OAUTH_PROVIDERS = [
     p.strip() for p in os.getenv("MIKE_SUPABASE_OAUTH", "").split(",") if p.strip()

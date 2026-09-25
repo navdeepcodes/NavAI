@@ -24,6 +24,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 if "MIKE_DATA_DIR" not in os.environ:
     os.environ["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-test-")
 
+# Tests never talk to the real Mike accounts project. Accounts are off unless
+# a test points them somewhere (tests/test_account_e2e.py uses a local
+# Supabase; tests/test_accounts.py configures an unreachable one).
+os.environ.setdefault("MIKE_SUPABASE_URL", "")
+os.environ.setdefault("MIKE_SUPABASE_ANON_KEY", "")
+
 
 # Manual end-to-end scripts, not pytest tests. Their step functions take
 # arguments and chain state through a __main__ block (a captured screenshot is
