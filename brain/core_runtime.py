@@ -240,9 +240,7 @@ their files, the brief and the deadline.
 - Mark a step no file can show once they say they've done it.
 
 The user's home directory is {pathlib.Path.home()}.
-Paths like "Desktop/folder" or "Documents/file.txt" are relative to home.
-
-Today's date is {{date}}. Use this for any time-sensitive answers.\
+Paths like "Desktop/folder" or "Documents/file.txt" are relative to home.\
 """
 
 
@@ -424,8 +422,15 @@ class CoreRuntime:
                     if enabled_now else "",
                 )
 
+            tools = permissions.allowed_tools(OLLAMA_TOOLS)
+            if hasattr(self._brain, "warm_prefix"):
+                # Mike's own engine: restore the saved reading of the prompt
+                # (a fraction of a second) or read it once and save it.
+                how = self._brain.warm_prefix(SYSTEM_PROMPT, tools)
+                logger.info("Model prefix ready (%s).", how)
+                return
             messages = self._build_messages()
-            result = self._brain.complete(messages, permissions.allowed_tools(OLLAMA_TOOLS), max_tokens=1)
+            result = self._brain.complete(messages, tools, max_tokens=1)
             # complete() reports a failed request by returning an error rather
             # than raising, so a bare call here looked successful even when
             # the server rejected it outright -- the first version of this
@@ -1501,12 +1506,10 @@ class CoreRuntime:
         # changing threw the whole prefix away and the entire prompt was
         # re-evaluated every turn. They are recorded into history as the turn
         # happens instead; see _record_user_turn for the measurements.
-        _now = datetime.now()
-        prompt = SYSTEM_PROMPT.replace(
-            "{date}", f"{_now:%A}, {_now:%B} {_now.day}, {_now:%Y}"
-        )
-
-        return [{"role": "system", "content": prompt}, *self._core.history]
+        # Today's date is not in it either: it made the fixed prompt change
+        # every midnight, and with it the model's saved reading of the prompt
+        # (brain/engine.py). The date travels with each turn's context.
+        return [{"role": "system", "content": SYSTEM_PROMPT}, *self._core.history]
 
     def _record_user_turn(self, message: str) -> None:
         """Append what the user said, with the context that was true when they
@@ -1538,6 +1541,8 @@ class CoreRuntime:
         what they asked."""
         parts: list[str] = []
 
+        _now = datetime.now()
+        parts.append(f"Today's date is {_now:%A}, {_now:%B} {_now.day}, {_now:%Y}.")
         env_line = environment.describe_environment()
         if env_line:
             parts.append(env_line)

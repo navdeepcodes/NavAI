@@ -131,7 +131,8 @@ class TestExecuteVision(unittest.TestCase):
         result = runtime._execute_vision({})
 
         self.assertEqual(result["status"], "error")
-        self.assertIn("Ollama", result["error"])
+        # names what is down and what to do, whichever local backend it is
+        self.assertRegex(result["error"], r"Ollama|model isn.t running")
 
     @patch("brain.core_runtime.Vision")
     def test_permission_error(self, mock_vision_cls):

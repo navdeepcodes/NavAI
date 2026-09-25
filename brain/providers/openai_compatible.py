@@ -311,6 +311,9 @@ class OpenAICompatibleProvider(BrainProvider):
         if response.status_code != 200:
             yield StreamEvent(kind="error", error=self._http_error(response))
             return
+        # SSE is UTF-8, but a server that doesn't say so in its Content-Type
+        # (llama-server) gets decoded as Latin-1: "—" arrived as "â\x80\x94".
+        response.encoding = "utf-8"
 
         # Tool calls arrive in fragments across SSE deltas and must be
         # reassembled before they mean anything.

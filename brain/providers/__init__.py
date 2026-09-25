@@ -79,7 +79,7 @@ _ENDPOINTS: dict[str, dict] = {
 def available_providers() -> list[str]:
     """Providers Mike can construct today. Grows as rows are added above; the
     rest of Mike does not change when it does."""
-    return ["ollama", *sorted(_ENDPOINTS)]
+    return ["engine", "ollama", *sorted(_ENDPOINTS)]
 
 
 def get_provider(
@@ -98,6 +98,13 @@ def get_provider(
     from config import ollama as ollama_config
 
     provider = (provider or getattr(ollama_config, "BRAIN_PROVIDER", "ollama")).lower()
+    if provider == "engine" and (model or vision_model):
+        provider = "ollama"          # a specific other model: Ollama serves those
+    if provider == "engine":
+        from brain import engine as _engine
+
+        if not _engine.available():
+            provider = "ollama"
     if provider == "ollama":
         model = model or ollama_config.OLLAMA_CHAT_MODEL
         vision_model = vision_model or ollama_config.OLLAMA_VISION_MODEL
@@ -106,10 +113,15 @@ def get_provider(
     if not refresh and key in _CACHE:
         return _CACHE[key]
 
-    if provider == "ollama":
+    if provider == "engine":
+        from brain import engine as _engine
+        from brain.providers.engine_provider import EngineProvider
+
+        instance: BrainProvider = EngineProvider(_engine.engine())
+    elif provider == "ollama":
         from brain.providers.ollama_provider import OllamaProvider
 
-        instance: BrainProvider = OllamaProvider(
+        instance = OllamaProvider(
             model=model,
             host=ollama_config.OLLAMA_HOST,
             num_ctx=getattr(ollama_config, "NUM_CTX", 8192),

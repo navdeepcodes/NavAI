@@ -538,6 +538,12 @@ class MikeWindow(QMainWindow):
             shutdown_all()
 
         step("background processes", _stop_processes)
+
+        def _stop_engine():
+            from brain import engine
+            engine.shutdown()
+
+        step("model engine", _stop_engine)
         step("ide bridge", ide_manager.stop)
         step("hotkey", self.hotkey.unregister)
         step("tray", self.tray.hide)

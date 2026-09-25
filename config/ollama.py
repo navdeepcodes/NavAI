@@ -1,6 +1,10 @@
+import platform
 # Which backend powers Mike's brain. "ollama" today; adding another means
 # adding a provider module, not changing the runtime.
-BRAIN_PROVIDER = "ollama"
+# Mike's own engine on Windows (brain/engine.py): the same model Ollama
+# installed, run so its reading of Mike's prompt survives a restart. It falls
+# back to Ollama by itself when it can't run.
+BRAIN_PROVIDER = "engine" if platform.system() == "Windows" else "ollama"
 
 # Context Mike allocates per request. Ollama hands a request only part of
 # this (see brain/providers/ollama_provider.USABLE_FRACTION_OF_CTX), so the
