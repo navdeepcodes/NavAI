@@ -47,4 +47,21 @@ WEBSITE = "https://huddlecode.com"
 SUPPORT_EMAIL = ""
 #: Bump when the Privacy Policy or Terms change materially; people are asked
 #: to accept the new version on their next launch.
-LEGAL_VERSION = "2026-09-25"
+LEGAL_VERSION = "2026-09-25.2"  # .2: Mike accounts
+
+# ── Accounts (Supabase) ───────────────────────────────────────
+# Optional Mike accounts: email, name and photo, synced across computers.
+# Conversations, memory and files never leave the computer either way.
+# Accounts stay switched off — and hidden — until both values are set. The
+# project URL and its public key (the "anon" or "publishable" key, never the
+# service-role / secret key) are safe to ship in the app: row-level security
+# in supabase/migrations decides what anyone can do. Setup: docs/ACCOUNTS.md.
+SUPABASE_URL = os.getenv("MIKE_SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("MIKE_SUPABASE_ANON_KEY", "")
+#: Sign-in providers switched on in the Supabase project, e.g. "google".
+SUPABASE_OAUTH_PROVIDERS = [
+    p.strip() for p in os.getenv("MIKE_SUPABASE_OAUTH", "").split(",") if p.strip()
+]
+#: True makes Mike usable only when signed in. Off: an account is optional,
+#: offered once on first run and always available in Settings → Account.
+ACCOUNT_REQUIRED = os.getenv("MIKE_ACCOUNT_REQUIRED", "").lower() in ("1", "true", "yes")

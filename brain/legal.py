@@ -51,13 +51,21 @@ def load(key: str) -> str:
                if getattr(settings, "SUPPORT_EMAIL", "") else f"visit {settings.WEBSITE}")
     from datetime import date
     try:
-        updated = date.fromisoformat(settings.LEGAL_VERSION).strftime("%d %B %Y").lstrip("0")
+        # LEGAL_VERSION is a date, optionally with a revision ("2026-09-25.2").
+        updated = date.fromisoformat(settings.LEGAL_VERSION[:10]).strftime("%d %B %Y").lstrip("0")
     except Exception:
         updated = settings.LEGAL_VERSION
+    try:
+        from account import config as account_config
+        required = account_config.required()
+    except Exception:
+        required = False
+    account_terms = ("You need a Mike account to use this copy of Mike." if required else
+                     "You don't need an account to use Mike.")
     values = {
         "publisher": settings.PUBLISHER, "website": settings.WEBSITE,
         "version": settings.VERSION, "updated": updated,
-        "data_dir": data_dir, "contact": contact,
+        "data_dir": data_dir, "contact": contact, "account_terms": account_terms,
     }
     for k, v in values.items():
         text = text.replace("{" + k + "}", v)

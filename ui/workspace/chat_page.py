@@ -577,6 +577,11 @@ class ChatPage(QWidget):
     def _drop_resting(self) -> None:
         self._show_stage()
 
+    def refresh_greeting(self) -> None:
+        """The name may have changed (an account signed in): greet afresh."""
+        if self.is_resting():
+            self._hero.refresh()
+
     def is_resting(self) -> bool:
         return self._views.currentWidget() is self._hero
 

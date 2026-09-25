@@ -82,6 +82,8 @@ DEFAULTS: dict[str, Any] = {
     "launch_at_login": False,
     "notifications_enabled": True,
     "terms_accepted_version": "",
+    # The one-time offer to create a Mike account (after the first-run tour).
+    "account_offered": False,
 
     # Who Mike is talking to. A real profile surface edits these; they're used
     # for a warmer greeting and nothing is sent anywhere.

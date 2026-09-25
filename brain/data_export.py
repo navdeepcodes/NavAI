@@ -20,6 +20,8 @@ chats.json        every saved conversation, with each message you and Mike wrote
 memory.json       what Mike remembers about you
 activity.json     what Mike did on your computer (files, apps, commands)
 preferences.json  your settings
+account.json      your Mike account, if you're signed in: email, name, photo path
+                  (never your password or sign-in token)
 
 Everything here came from this computer; nothing was fetched from a server.
 """
@@ -40,6 +42,14 @@ def export_zip(path: str | Path) -> Path:
         "activity.json": activity_store.recent(limit=100000),
         "preferences.json": preferences.all_values(),
     }
+    try:
+        from account import session_store
+        profile = session_store.load_profile()
+        if profile:
+            parts["account.json"] = {k: profile.get(k) for k in
+                                     ("email", "display_name", "avatar_path", "user_id")}
+    except Exception:
+        logger.debug("No account to export.", exc_info=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("README.txt", _README.format(when=time.strftime("%Y-%m-%d %H:%M")))
         for name, data in parts.items():
@@ -86,8 +96,13 @@ def reset_everything() -> None:
 
 
 def _erase_traces() -> None:
-    """Logs, the crash log, the last voice recording and the Gmail sign-in —
-    everything the Privacy Policy says Reset removes."""
+    """Logs, the crash log, the last voice recording, the Mike account sign-in
+    and the Gmail sign-in — everything the Privacy Policy says Reset removes."""
+    try:
+        from account import session_store
+        session_store.clear()
+    except Exception:
+        logger.exception("Could not remove the account sign-in during reset.")
     import logging
     from logging.handlers import RotatingFileHandler
     from hostplatform import storage

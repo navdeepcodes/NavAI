@@ -54,7 +54,7 @@ class MikeWorkspace(QWidget):
         self.sidebar.new_chat_requested.connect(self._new_chat)
         self.sidebar.conversation_opened.connect(self._open_conversation)
         self.sidebar.conversation_deleted.connect(self._delete_conversation)
-        self.sidebar.settings_requested.connect(self.open_settings)
+        self.sidebar.settings_requested.connect(self._open_profile)
         self.sidebar.collapse_requested.connect(self.toggle_sidebar)
         root.addWidget(self.sidebar)
 
@@ -91,6 +91,13 @@ class MikeWorkspace(QWidget):
         self.chat.brain_banner.retry_requested.connect(self.health.check)
         self._hooks["brain_health"] = self.health
         self._hooks.setdefault("chats_deleted", self._on_chats_deleted)
+
+        # The account: the profile row, the greeting and Settings follow it,
+        # and being signed out by the server is said out loud.
+        from account.manager import manager
+        account = manager()
+        account.changed.connect(self._on_account_changed)
+        account.notice.connect(lambda text: self.chat.add_notice(text, "info"))
 
         from config import preferences
         if bool(preferences.get("sidebar_collapsed", False)):
@@ -287,6 +294,15 @@ class MikeWorkspace(QWidget):
 
     def _on_profile_changed(self) -> None:
         self.sidebar.refresh_profile()
+
+    def _on_account_changed(self) -> None:
+        self.sidebar.refresh_profile()
+        self.chat.refresh_greeting()
+
+    def _open_profile(self) -> None:
+        """The profile row opens Settings at your account, when there is one."""
+        from account import config as account_config
+        self.open_settings("account" if account_config.configured() else None)
 
     # ── state fan-out ─────────────────────────────────────
     def _on_state(self, state: str) -> None:

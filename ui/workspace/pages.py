@@ -333,8 +333,7 @@ class GeneralTab(_Tab):
         col.addWidget(self._about)
         save_row = QHBoxLayout()
         save_row.setContentsMargins(0, 6, 0, 0)
-        hint = _label(f"Stays on {_this_machine()} — nothing is sent anywhere.",
-                      style.CAPTION, style.INK_MUTE)
+        hint = _label(self._privacy_hint(), style.CAPTION, style.INK_MUTE)
         save_row.addWidget(hint, 1)
         self._saved = _label("", style.SMALL, style.GOOD, wrap=False)
         save_row.addWidget(self._saved, 0, Qt.AlignVCenter)
@@ -406,10 +405,29 @@ class GeneralTab(_Tab):
         preferences.set_value("launch_at_login", on if ok else autostart.is_enabled())
         self._login.set_on(autostart.is_enabled())
 
+    @staticmethod
+    def _signed_in_account():
+        try:
+            from account.manager import manager
+            m = manager()
+            return m if m.signed_in() else None
+        except Exception:
+            return None
+
+    def _privacy_hint(self) -> str:
+        if self._signed_in_account() is not None:
+            return (f"Your name syncs with your Mike account. The rest stays on "
+                    f"{_this_machine()}.")
+        return f"Stays on {_this_machine()} — nothing is sent anywhere."
+
     def _save(self) -> None:
         from config import preferences
-        preferences.set_value("profile_name", self._name.text().strip())
+        name = self._name.text().strip()
+        preferences.set_value("profile_name", name)
         preferences.set_value("profile_about", self._about.toPlainText().strip())
+        account = self._signed_in_account()
+        if account is not None and name != account.display_name():
+            account.update_name(name)
         self._saved.setText("Saved")
         QTimer.singleShot(2200, lambda: self._saved.setText(""))
         hook = self._hooks.get("profile_changed")
@@ -865,10 +883,17 @@ class PrivacyTab(_Tab):
         card, col = _card()
         col.setContentsMargins(20, 16, 20, 16)
         col.setSpacing(10)
+        try:
+            from account import config as account_config
+            accounts = account_config.configured()
+        except Exception:
+            accounts = False
+        account_line = (" An account is optional and holds only your email, name and photo."
+                        if accounts else " There's no account to create.")
         col.addWidget(_label(
             f"Mike thinks on {_this_machine()}. Your chats, files, screen and voice are "
-            "processed here, not on our servers. There's no account, no analytics and "
-            "no telemetry — we don't receive your data.", style.BODY, style.INK))
+            "processed here, not on our servers. No analytics, no telemetry — we don't "
+            "receive your data." + account_line, style.BODY, style.INK))
         read = _button("Read the Privacy Policy")
         read.clicked.connect(lambda: _open_doc("privacy", self))
         col.addWidget(read, 0, Qt.AlignLeft)
@@ -885,6 +910,9 @@ class PrivacyTab(_Tab):
             _row("Gmail, if you connect it",
                  "Sends email you approve and reads your inbox when you ask, through Google.",
                  None),
+            *([_row("Your Mike account, if you sign in",
+                    "Keeps you signed in and syncs your name and photo. Nothing else.",
+                    None)] if accounts else []),
         ]))
 
         self.add(_group("Your data"))
@@ -911,7 +939,11 @@ class PrivacyTab(_Tab):
         reset = _button("Reset…")
         _arm(reset, "Erase everything?", self._reset)
         self.add(_rows_card([
-            _row("Reset Mike", "Erase chats, memory, activity, logs and settings, and "
+            _row("Reset Mike", "Erase chats, memory, activity, logs and settings, sign out, "
+                 "and disconnect Gmail — like a fresh install. Mike closes afterwards. "
+                 "(Your Mike account itself isn't deleted — do that in Account.)"
+                 if accounts else
+                 "Erase chats, memory, activity, logs and settings, and "
                  "disconnect Gmail — like a fresh install. Mike closes afterwards.", reset),
         ]))
         self.body.addStretch(1)
@@ -966,6 +998,12 @@ class PrivacyTab(_Tab):
         QDesktopServices.openUrl(QUrl.fromLocalFile(self._data_dir()))
 
     def _reset(self) -> None:
+        # Sign out properly first (the server revokes the session), then erase.
+        try:
+            from account.manager import manager
+            manager().sign_out()
+        except Exception:
+            pass
         from brain import data_export
         data_export.reset_everything()
         from PySide6.QtWidgets import QMessageBox
@@ -1233,6 +1271,17 @@ class SettingsPage(QWidget):
         ("about", "About"),
     ]
 
+    @classmethod
+    def tabs(cls) -> list[tuple[str, str]]:
+        """The tabs this build shows: Account leads when accounts are set up."""
+        try:
+            from account import config as account_config
+            if account_config.configured():
+                return [("account", "Account"), *cls.TABS]
+        except Exception:
+            pass
+        return list(cls.TABS)
+
     def __init__(self, hooks: dict | None = None, parent=None) -> None:
         super().__init__(parent)
         self.setObjectName("settings")
@@ -1256,7 +1305,7 @@ class SettingsPage(QWidget):
         done.clicked.connect(self.closed.emit)
         top.addWidget(done, 0, Qt.AlignVCenter)
         hcol.addLayout(top)
-        self._bar = _TabBar(self.TABS)
+        self._bar = _TabBar(self.tabs())
         self._bar.selected.connect(self.open_tab)
         hcol.addWidget(self._bar)
         col.addWidget(_centred(head))
@@ -1268,6 +1317,9 @@ class SettingsPage(QWidget):
         self.open_tab("general")
 
     def _make(self, key: str) -> _Tab:
+        if key == "account":
+            from ui.workspace.account_tab import AccountTab
+            return AccountTab(self._hooks)
         if key == "general":
             return GeneralTab(self._hooks, self.restyle_needed.emit)
         if key == "voice":
@@ -1283,7 +1335,7 @@ class SettingsPage(QWidget):
         return AboutTab(self._hooks)
 
     def open_tab(self, key: str) -> None:
-        if key not in dict(self.TABS):
+        if key not in dict(self.tabs()):
             key = "general"
         tab = self._tabs.get(key)
         if tab is None:

@@ -258,6 +258,8 @@ class _ProfileRow(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._name = ""
+        self._photo = None
+        self._subtitle = ""
         self._hover = False
         self.setFixedHeight(56)
         self.setCursor(Qt.PointingHandCursor)
@@ -272,11 +274,16 @@ class _ProfileRow(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
+        from ui.workspace import avatar
+        self._name, self._photo = avatar.current()
+        self._subtitle = ""
         try:
-            from config import preferences
-            self._name = str(preferences.get("profile_name", "") or "").strip()
+            from account.manager import manager
+            m = manager()
+            if m.signed_in():
+                self._subtitle = "Offline" if m.offline else m.email()
         except Exception:
-            self._name = ""
+            pass
         self.update()
 
     def enterEvent(self, _e):
@@ -301,19 +308,12 @@ class _ProfileRow(QWidget):
             p.setPen(Qt.NoPen)
             p.setBrush(tile)
             p.drawRoundedRect(QRectF(8, 6, w - 16, h - 12), 10, 10)
-        # avatar: the initial of the name you gave Mike, on the accent
+        # avatar: your photo when signed in with one, else the initial of the
+        # name you gave Mike, on the accent
+        from ui.workspace import avatar
         d = 30
         ay = (h - d) / 2
-        p.setPen(Qt.NoPen)
-        p.setBrush(style.qaccent())
-        p.drawEllipse(QRectF(18, ay, d, d))
-        initial = (self._name[:1] or "").upper()
-        if initial:
-            p.setPen(QColor("#17140F"))
-            p.setFont(style.font(style.SMALL, QFont.Weight.DemiBold))
-            p.drawText(QRectF(18, ay, d, d), Qt.AlignCenter, initial)
-        else:
-            draw(p, "user", QRectF(18 + 7, ay + 7, 16, 16), QColor("#17140F"), 1.6)
+        avatar.paint(p, QRectF(18, ay, d, d), self._name, self._photo)
 
         p.setPen(QColor(style.INK))
         p.setFont(style.font(style.BODY, QFont.Weight.Medium))
@@ -324,8 +324,9 @@ class _ProfileRow(QWidget):
         p.setPen(QColor(style.INK_MUTE))
         p.setFont(style.font(style.CAPTION))
         from ui.panel.mike_panel import _this_machine
-        p.drawText(QRectF(58, h / 2 + 1, w - 110, 16), Qt.AlignLeft | Qt.AlignTop,
-                   f"Private · on {_this_machine()}")
+        subtitle = self._subtitle or f"Private · on {_this_machine()}"
+        subtitle = p.fontMetrics().elidedText(subtitle, Qt.ElideRight, w - 58 - 56)
+        p.drawText(QRectF(58, h / 2 + 1, w - 110, 16), Qt.AlignLeft | Qt.AlignTop, subtitle)
 
 
 class Sidebar(QWidget):

@@ -192,9 +192,62 @@ class MikeWindow(QMainWindow):
         return True
 
     def _summon_after_tour(self) -> None:
-        self._show_full()
-        self.page.input.focus()
         self._tour = None
+        self._present()
+
+    # ── account ──────────────────────────────────────────
+    def _present(self, autostart: bool = False) -> None:
+        """Show Mike once startup (or the tour) is done — through the sign-in
+        card when this build requires an account, and otherwise with a
+        one-time offer to create one."""
+        from account import config as account_config
+        from account.manager import manager
+        account = manager()
+        if account_config.required() and not account.signed_in():
+            if not self._ask_account(required=True):
+                self._request_quit()
+                return
+        if not getattr(self, "_watching_account", False):
+            self._watching_account = True
+            account.changed.connect(self._on_account_changed)
+        if autostart:
+            # Launched at sign-in: be present, not in the way — Mike takes the
+            # corner and the taskbar, and the workspace waits to be opened.
+            self._go_corner()
+            return
+        self._show_full()
+        if account_config.configured() and not account.signed_in():
+            from config import preferences
+            if not preferences.get("account_offered", False):
+                preferences.set_value("account_offered", True)
+                QTimer.singleShot(450, lambda: self._ask_account(first_run=True))
+
+    def _ask_account(self, *, required: bool = False, first_run: bool = False) -> bool:
+        from ui.workspace import account_dialog
+        parent = self if self.isVisible() and not self.isMinimized() else None
+        return account_dialog.ask(parent, "create" if first_run else "sign_in",
+                                  first_run=first_run, required=required)
+
+    def _on_account_changed(self) -> None:
+        """Signed out while an account is required: back to the sign-in card."""
+        from account import config as account_config
+        from account.manager import manager
+        if (not account_config.required() or manager().signed_in()
+                or getattr(self, "_gating", False) or self._quitting):
+            return
+
+        def gate():
+            self._gating = True
+            try:
+                self.hide()
+                self.corner.dismiss()
+                if self._ask_account(required=True):
+                    self._show_full()
+                else:
+                    self._request_quit()
+            finally:
+                self._gating = False
+        QTimer.singleShot(0, gate)
 
     def _request_quit(self) -> None:
         logger.info("Quit requested.")
@@ -539,6 +592,12 @@ def run():
     # tray), so Qt must not quit when the last window closes.
     app.setQuitOnLastWindowClosed(False)
 
+    # Pick the saved sign-in back up before anything is drawn, so the profile
+    # row shows who's signed in from the first frame (refreshed in the
+    # background; offline is fine).
+    from account.manager import manager as account_manager
+    account_manager().restore()
+
     window = MikeWindow()
 
     _maybe_show_welcome(window)
@@ -547,12 +606,7 @@ def run():
     instance.activated.connect(window._show_full)
 
     if getattr(window, "_tour", None) is None:
-        if "--autostart" in sys.argv:
-            # Launched at sign-in: be present, not in the way — Mike takes the
-            # corner and the taskbar, and the workspace waits to be opened.
-            window._go_corner()
-        else:
-            window.show()
+        window._present(autostart="--autostart" in sys.argv)
 
     code = app.exec()
 
