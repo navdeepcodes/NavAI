@@ -709,7 +709,8 @@ class ActivityTab(_Tab):
             rows = []
         self.add(_label(
             f"Everything Mike has done on {_this_machine()} — files he wrote, apps "
-            "he opened, commands he ran — newest first.", style.BODY, style.INK_SOFT))
+            "he opened, commands he ran — newest first. Changes to files can be "
+            "undone.", style.BODY, style.INK_SOFT))
         if not rows:
             self.add(_empty_card(
                 "activity", "Nothing yet",
@@ -739,9 +740,37 @@ class ActivityTab(_Tab):
         if not ok and outcome:
             text.addWidget(_label(outcome[:160], style.CAPTION, style.STOP))
         row.addLayout(text, 1)
+        snapshot = self._snapshot(r.get("id")) if ok else None
+        if snapshot is not None:
+            undo = _button("Undo")
+            undo.setFixedHeight(26)
+            undo.setStyleSheet("padding:0 12px;")
+            undo.setToolTip("Put the file back the way it was before this")
+            _arm(undo, "Undo this?", lambda sid=snapshot["id"]: self._undo(sid))
+            row.addWidget(undo, 0, Qt.AlignVCenter)
         row.addWidget(_label(_rel_time(r.get("started_at", 0)), style.CAPTION,
-                             style.INK_MUTE, wrap=False), 0, Qt.AlignTop)
+                             style.INK_MUTE, wrap=False), 0,
+                      Qt.AlignVCenter if snapshot is not None else Qt.AlignTop)
         return w
+
+    @staticmethod
+    def _snapshot(activity_id) -> dict | None:
+        if activity_id is None:
+            return None
+        try:
+            from brain import revert_store
+            return revert_store.for_activity(activity_id)
+        except Exception:
+            return None
+
+    def _undo(self, snapshot_id: int) -> None:
+        from brain import revert_store
+        result = revert_store.undo(snapshot_id)
+        self.reload()
+        if result.get("status") != "success":
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Couldn't undo that",
+                                result.get("error") or "Something went wrong.")
 
 
 class _StatusDot(QWidget):

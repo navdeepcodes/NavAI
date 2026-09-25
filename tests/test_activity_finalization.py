@@ -28,7 +28,7 @@ def test_tool_end_after_retirement_still_completes_activity_row():
     from brain import activity_store, revert_store
     from brain.core_runtime import CoreRuntime
     from ui.controller.ui_controller import UIController
-    from ui.instrument.home import HomeSurface
+    from ui.workspace.workspace import MikeWorkspace
 
     app = QApplication.instance() or QApplication(sys.argv)
 
@@ -45,7 +45,7 @@ def test_tool_end_after_retirement_still_completes_activity_row():
             pass
 
     runtime = CoreRuntime()
-    page = HomeSurface({})
+    page = MikeWorkspace({})
     controller = UIController(runtime, page)
 
     worker = FakeWorker()
@@ -95,7 +95,7 @@ def test_denied_confirmation_after_retirement_marks_row_failed_not_stuck():
     from brain import activity_store
     from brain.core_runtime import CoreRuntime
     from ui.controller.ui_controller import UIController
-    from ui.instrument.home import HomeSurface
+    from ui.workspace.workspace import MikeWorkspace
 
     QApplication.instance() or QApplication(sys.argv)
 
@@ -112,7 +112,7 @@ def test_denied_confirmation_after_retirement_marks_row_failed_not_stuck():
             pass
 
     runtime = CoreRuntime()
-    page = HomeSurface({})
+    page = MikeWorkspace({})
     controller = UIController(runtime, page)
 
     worker = FakeWorker()

@@ -52,7 +52,6 @@ Ollama (MIT, installed separately) and is subject to its own licence, which
 | google-auth | 2.55.1 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth |
 | google-auth-httplib2 | 0.4.0 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/packages/google-auth-httplib2 |
 | google-auth-oauthlib | 1.4.0 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth-oauthlib |
-| google-genai | 2.10.0 | Apache-2.0 | https://github.com/googleapis/python-genai |
 | googleapis-common-protos | 1.75.0 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos |
 | h11 | 0.16.0 | MIT | https://github.com/python-hyper/h11 |
 | hf-xet | — | Apache-2.0 |  |
@@ -100,12 +99,10 @@ Ollama (MIT, installed separately) and is subject to its own licence, which
 | sniffio | 1.3.1 | MIT OR Apache-2.0 | https://github.com/python-trio/sniffio |
 | sounddevice | 0.5.5 | MIT | https://python-sounddevice.readthedocs.io/ |
 | soundfile | 0.14.0 | BSD 3-Clause License | https://github.com/bastibe/python-soundfile |
-| tenacity | 9.1.4 | Apache 2.0 | https://github.com/jd/tenacity |
 | tokenizers | — | Apache-2.0 |  |
 | tqdm | 4.68.3 | MPL-2.0 AND MIT | https://tqdm.github.io |
 | typing-inspection | 0.4.2 | MIT | https://github.com/pydantic/typing-inspection |
 | typing_extensions | 4.15.0 | PSF-2.0 | https://github.com/python/typing_extensions/issues |
 | uritemplate | 4.2.0 | BSD 3-Clause OR Apache-2.0 | https://uritemplate.readthedocs.org |
 | urllib3 | 2.7.0 | MIT | https://github.com/urllib3/urllib3/blob/main/CHANGES.rst |
-| websockets | 16.0 | BSD-3-Clause | https://github.com/python-websockets/websockets |
 | XlsxWriter | 3.2.9 | BSD-2-Clause | https://github.com/jmcnamara/XlsxWriter |

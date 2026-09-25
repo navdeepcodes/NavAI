@@ -130,6 +130,10 @@ analysis = Analysis(
         "_pytest",
         "pyinstaller",
         "PyInstaller",
+        # No longer used: Mike's tool schemas are plain JSON Schema now. Kept
+        # out explicitly so a stale install in the build environment can't
+        # drag its ~40 MB of dependencies back into the package.
+        "google.genai",
         # Qt modules Mike never loads. PySide6 is the single largest
         # contributor to bundle size; these are the ones with no call site.
         "PySide6.QtWebEngineCore",

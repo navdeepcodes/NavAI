@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QThread, QTimer
 
@@ -8,13 +9,14 @@ from brain import activity_store, conversation_store, projects
 from brain.core_runtime import CoreRuntime
 from config import preferences
 from ui.controller.core_worker import CoreRuntimeWorker
-from ui.instrument.edge import EdgeStrip
-from ui.instrument.home import HomeSurface
-from ui.instrument.invoke import InvokeLine
 from voice.speaker import Speaker
 from voice.voice_input import VoiceInputManager
 from voice.wake_word import WakeWordDetector
 from logs.logger import logger
+
+if TYPE_CHECKING:
+    from ui.workspace.corner import CornerPresence
+    from ui.workspace.workspace import MikeWorkspace
 
 
 class UIController(QObject):
@@ -22,9 +24,8 @@ class UIController(QObject):
     def __init__(
         self,
         runtime: CoreRuntime,
-        page: HomeSurface,
-        floating: InvokeLine | None = None,
-        edge: EdgeStrip | None = None,
+        page: MikeWorkspace,
+        floating: CornerPresence | None = None,
     ) -> None:
 
         super().__init__()
@@ -32,7 +33,6 @@ class UIController(QObject):
         self._runtime = runtime
         self._page = page
         self._floating = floating
-        self._edge = edge
 
         self._thread: QThread | None = None
         self._worker: CoreRuntimeWorker | None = None
@@ -178,7 +178,6 @@ class UIController(QObject):
 
         self._retire_active_worker()
 
-        self._mirror_edge("thinking")
 
         self._page.add_user_message(message, attachments=attachments)
 
@@ -301,50 +300,8 @@ class UIController(QObject):
             if self._floating and self._floating.isVisible():
                 self._floating.finish()
 
-    # The edge exists for when Mike has no other surface on screen. If the
-    # Home or the floating input is already up, a second strip saying the same
-    # thing is just clutter.
-    _EDGE_WORTH_A_GLANCE = ("working", "needs_user", "error")
-
-    def _edge_available(self) -> bool:
-
-        if self._edge is None:
-            return False
-
-        if self._floating is not None and self._floating.isVisible():
-            return False
-
-        window = self._page.window()
-        if window is not None and window.isVisible() and not window.isMinimized():
-            return False
-
-        return True
-
-    def _mirror_edge(self, state: str, text: str = "") -> None:
-        """
-        Reflects real state, but only states a person would actually want to
-        catch out of the corner of their eye. "Thinking" is not one of them.
-        """
-
-        if self._edge is None:
-            return
-
-        try:
-            if not self._edge_available():
-                self._edge.dismiss()
-                return
-
-            if state in self._EDGE_WORTH_A_GLANCE:
-                self._edge.show_state(state, text)
-            else:
-                self._edge.dismiss()
-
-        except Exception:
-            logger.exception("Edge surface update failed.")
-
     def _on_tool_start(self, description: str) -> None:
 
-        self._mirror_edge("working", description)
 
         self._page.hide_thinking()
 
@@ -379,7 +336,6 @@ class UIController(QObject):
         if self._action_card is not None and hasattr(self._action_card, "update_text"):
             self._action_card.update_text(description)
 
-        self._mirror_edge("working", description)
 
         if self._floating and self._floating.isVisible():
             self._floating.show_tool_status(description)
@@ -537,13 +493,6 @@ class UIController(QObject):
         )
         self._page.set_state("speaking" if still_speaking else "idle")
 
-        # The edge carries the answer only when the Home isn't already
-        # showing it — otherwise the same text would appear twice.
-        if answer and self._edge_available():
-            self._edge.show_message(answer)
-        elif self._edge is not None:
-            self._edge.dismiss()
-
         self._page.input.set_enabled(True)
         self._page.input.focus()
 
@@ -557,7 +506,6 @@ class UIController(QObject):
         # up as something Mike said.
         self._add_notice(readable, "error")
         self._page.set_state("error")
-        self._mirror_edge("error", readable)
 
         if self._floating and self._floating.isVisible():
             self._floating.set_response(readable)
@@ -579,7 +527,6 @@ class UIController(QObject):
 
         self._page.set_state("needs_user")
         self._page.confirm.ask(description)
-        self._mirror_edge("needs_user", "Waiting for your approval")
 
     def _resolve_confirmation(self, approved: bool) -> None:
 
@@ -960,7 +907,6 @@ class UIController(QObject):
         else:
             self._page.add_mike_message("Cancelled.")
         self._page.set_state("idle")
-        self._mirror_edge("idle")
 
         if self._floating and self._floating.isVisible():
             self._floating.set_response("Stopped.")

@@ -86,37 +86,6 @@ def test_transcribe_synthesized():
     os.unlink("/tmp/test_voice_unit.aiff")
 
 
-def test_voice_button_states():
-    """Test VoiceButton state changes."""
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance() or QApplication(sys.argv)
-
-    from ui.widgets.input.voice_button import VoiceButton
-
-    btn = VoiceButton()
-
-    btn.set_state("idle")
-    assert "Voice input" in btn.toolTip()
-
-    btn.set_state("recording")
-    assert btn.text() == "●"
-    assert "stop" in btn.toolTip().lower() or "Listening" in btn.toolTip()
-
-    btn.set_state("transcribing")
-    assert btn.text() == "…"
-    assert not btn.isEnabled()
-
-    btn.set_state("speaking")
-    assert btn.isEnabled()
-    assert "speaking" in btn.toolTip().lower()
-
-    btn.set_state("idle")
-    assert btn.isEnabled()
-
-    print("PASS: voice button states")
-
-
 def test_voice_manager_import():
     """VoiceInputManager creates without error."""
     from voice.voice_input import VoiceInputManager
@@ -132,6 +101,5 @@ if __name__ == "__main__":
     test_recorder_stop_without_start()
     test_transcribe_missing_file()
     test_transcribe_synthesized()
-    test_voice_button_states()
     test_voice_manager_import()
     print("\nAll voice unit tests passed.")

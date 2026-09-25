@@ -23,7 +23,6 @@ from brain.core_tools import (
     OLLAMA_TOOLS,
     friendly_tool_name,
 )
-from ui.widgets.conversation.tool_bubble import _parse_action
 from vision.analyzer import VisionAnalyzer
 
 
@@ -50,15 +49,6 @@ class TestToolDeclaration(unittest.TestCase):
             friendly_tool_name("see_screen", {}),
             "Looking at your screen",
         )
-
-
-class TestActionCardParsing(unittest.TestCase):
-
-    def test_vision_icon(self):
-        icon, label, detail = _parse_action("Looking at your screen")
-        self.assertEqual(icon, "◉")
-        self.assertEqual(label, "Looking at your screen")
-        self.assertEqual(detail, "")
 
 
 class TestVisionAnalyzerLocal(unittest.TestCase):

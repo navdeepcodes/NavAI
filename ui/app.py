@@ -94,7 +94,6 @@ class MikeWindow(QMainWindow):
             runtime=self.runtime,
             page=self.page,
             floating=self.corner,
-            edge=None,
         )
 
         self._settings_hooks["on_voice_toggle"] = self.controller.set_voice_enabled

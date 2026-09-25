@@ -177,3 +177,26 @@ def revert(snapshot_id: int) -> dict[str, Any]:
             return {"status": "success", "result": f"Removed {path.name} — it didn't exist before this."}
     except Exception as exc:
         return {"status": "error", "error": str(exc)}
+
+
+def undo(snapshot_id: int) -> dict[str, Any]:
+    """Reverts a change the way the user sees it: as an activity of its own.
+
+    The revert is recorded like any other change Mike makes, and revert()'s
+    own capture of the current state is linked to that new row — so if the
+    undo was itself a mistake, it can be undone the same way.
+    """
+    from brain import activity_store
+    from logs.logger import logger
+
+    row_id = activity_store.begin("Reverting a change")
+    try:
+        result = revert(snapshot_id)
+    except Exception:
+        logger.exception("Revert failed for snapshot %s", snapshot_id)
+        result = {"status": "error", "error": "Something went wrong."}
+    ok = result.get("status") == "success"
+    activity_store.complete(row_id, (result.get("result") if ok else result.get("error")) or "", ok)
+    if ok and row_id is not None:
+        attach_to_activity(row_id)
+    return result
