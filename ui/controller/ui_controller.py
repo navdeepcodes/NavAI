@@ -67,6 +67,12 @@ class UIController(QObject):
         # first message, so opening Mike and closing him again doesn't leave
         # empty chats cluttering History.
         self._conversation_id: int | None = None
+        self.mission_welcome = ""
+
+        # What the user is getting done, kept true from the files themselves.
+        from ui.controller.mission_tracker import MissionTracker
+        self._missions = MissionTracker(self)
+        self._missions.changed.connect(self._on_mission_changed)
 
         self._connect()
 
@@ -112,6 +118,10 @@ class UIController(QObject):
             lambda: self._resolve_confirmation(False)
         )
 
+        mission_bar = getattr(self._page, "mission", None)
+        if mission_bar is not None:
+            mission_bar.drop_requested.connect(self._drop_mission)
+
         if self._floating:
             self._floating.message_submitted.connect(
                 self._on_floating_submit
@@ -126,6 +136,7 @@ class UIController(QObject):
         # before the model warm-up below so the warmed prefix is the one the
         # next question will actually use.
         self.resume_recent_conversation()
+        self._missions.start()
 
         if preferences.get("wake_word_enabled", True):
             self._wake.start()
@@ -476,6 +487,9 @@ class UIController(QObject):
         except Exception:
             logger.debug("Could not save the conversation summary.", exc_info=True)
 
+        # A turn may have started, advanced or finished a mission.
+        self._missions.refresh()
+
         self._stream_bubble = None
         self._action_card = None
         self._response_text = ""
@@ -524,12 +538,14 @@ class UIController(QObject):
         """
 
         self._state_before_confirm = self._page.state()
+        logger.info("Asking the user to approve: %s", (description or "").splitlines()[0][:160] if description else "")
 
         self._page.set_state("needs_user")
         self._page.confirm.ask(description)
 
     def _resolve_confirmation(self, approved: bool) -> None:
 
+        logger.info("The user %s it.", "approved" if approved else "declined")
         self._page.confirm.hide()
 
         restore = getattr(self, "_state_before_confirm", "working")
@@ -746,8 +762,73 @@ class UIController(QObject):
         else:
             self._page.add_mike_message(text)
 
+    # =====================================================
+    # Missions
+    # =====================================================
+
+    def _on_mission_changed(self, mission, newly_done: list, _changes: list) -> None:
+        bar = getattr(self._page, "mission", None)
+        if bar is not None:
+            bar.set_mission(mission, newly_done)
+        if self._floating is not None and hasattr(self._floating, "set_mission"):
+            self._floating.set_mission(mission, newly_done)
+        if mission and mission.get("conversation_id") is None and self._conversation_id:
+            from brain import mission_store
+            mission_store.bind_conversation(mission["id"], self._conversation_id)
+
+    def _drop_mission(self) -> None:
+        from brain import mission_store
+        mission = self._missions.current
+        if not mission:
+            return
+        try:
+            mission_store.finish(mission["id"], "dropped")
+        except Exception:
+            logger.exception("Could not stop tracking the mission.")
+            return
+        self._add_notice(f"Stopped tracking “{mission['goal']}”.", "info")
+        self._missions.refresh()
+
+    def _resume_mission(self) -> bool:
+        """Open Mike into the mission you left, and say what moved since.
+
+        Everything said here is read from the files -- no model call -- so it
+        is there the instant the window is, and it is true.
+        """
+        from brain import mission_store
+        try:
+            mission = mission_store.active()
+            if mission is None:
+                return False
+            mission = mission_store.evaluate(mission["id"])["mission"]
+            changes = mission_store.changes_since_seen(mission["id"])
+        except Exception:
+            logger.exception("Could not resume the mission.")
+            return False
+        conv = mission.get("conversation_id")
+        if conv and conversation_store.get(conv):
+            self.open_conversation(int(conv))
+        # Back within half an hour and nothing moved: just be there. A welcome
+        # on every restart is the kind of thing people learn to ignore.
+        ago = mission_store.seen_ago(mission["id"])
+        if not changes and ago is not None and ago < 30 * 60:
+            return True
+        text = _welcome_back(mission, changes)
+        self.mission_welcome = text
+        self._page.add_mike_message(text)
+        if self._conversation_id is None:
+            self._conversation_id = conversation_store.create()
+            mission_store.bind_conversation(mission["id"], self._conversation_id)
+            self._notify_conversation()
+        conversation_store.add_message(self._conversation_id, "assistant", text)
+        self._runtime.note_assistant(text)
+        mission_store.mark_seen(mission["id"])
+        return True
+
     def resume_recent_conversation(self) -> None:
         import time as _time
+        if self._resume_mission():
+            return
         try:
             last = conversation_store.latest()
         except Exception:
@@ -942,6 +1023,18 @@ class UIController(QObject):
             return
         self._shutdown_done = True
 
+        self._missions.stop()
+        # What you saw this session is "seen": next time Mike reports only
+        # what moved while he was closed.
+        try:
+            from brain import mission_store
+            mission = mission_store.active()
+            if mission is not None:
+                mission_store.evaluate(mission["id"])
+                mission_store.mark_seen(mission["id"])
+        except Exception:
+            logger.debug("Could not settle the mission on quit.", exc_info=True)
+
         self._speaker.stop()
         self._wake.stop()
 
@@ -967,6 +1060,28 @@ class UIController(QObject):
             thread.wait(3000)
 
         self._retired_threads.clear()
+
+
+def _welcome_back(mission: dict, changes: list[str]) -> str:
+    from brain import mission_store
+    done, total = mission_store.progress(mission)
+    nxt = mission_store.next_step(mission)
+    due = f", due {mission['deadline']}" if mission.get("deadline") else ""
+    lines = [f"Welcome back — **{mission['goal']}**{due}."]
+    if changes:
+        lines.append("Since last time: " + "; ".join(changes) + ".")
+    elif any(f["role"] == "work" for f in mission.get("files", [])):
+        lines.append("Nothing in your files has changed since last time.")
+    if nxt is None:
+        lines.append(f"All {total} steps are done — say the word and I'll wrap it up.")
+    else:
+        measure = ""
+        if nxt["section"] and "words" in (nxt["evidence"] or ""):
+            measure = f" ({nxt['evidence'].split(' in ')[0]} so far)"
+        lines.append(f"{done} of {total} done. Next: **{nxt['title']}**{measure}.")
+    if mission.get("blocker"):
+        lines.append(f"Last time you were stuck on: {mission['blocker']}.")
+    return "\n\n".join(lines)
 
 
 def _humanize_error(error: str) -> str:

@@ -22,6 +22,8 @@ from logs.logger import logger
 # ceiling, and it has room to spare), and trimming now distinguishes the
 # conversation from the tool trace instead of treating them as one stream.
 MAX_HISTORY = 80
+#: Messages a reopened chat brings back into the model's context.
+RESTORE_MESSAGES = 12
 MAX_TOOL_LOG = 10
 SUMMARY_TRIGGER_TURNS = 6
 
@@ -166,11 +168,17 @@ class MikeCore:
         """Put a saved conversation back so Mike continues it with the same
         context he had: its user/assistant turns and its own summary."""
         self.reset_conversation()
-        self.history = [
+        # The most recent exchanges, not the whole chat: after a restart the
+        # model has lost its cache, and every restored token is re-read at
+        # this machine's cold speed (~60 tokens/s measured) before the first
+        # answer. A long chat restored whole cost minutes. The summary, and a
+        # mission's own record, carry what came before.
+        kept = [
             {"role": t["role"], "content": t["content"]}
             for t in turns
             if t.get("role") in ("user", "assistant") and t.get("content")
         ]
+        self.history = kept[-RESTORE_MESSAGES:]
         self.situation_summary = summary or ""
         self.trim_history()
 

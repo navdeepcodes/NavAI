@@ -83,6 +83,8 @@ _SPECIAL_TOOLS = frozenset({
     "read_spreadsheet",
     "edit_spreadsheet",
     "search_files",
+    "mission",
+    "write_document_section",
 })
 
 # Context size and generation limits are provider concerns and live at the
@@ -195,13 +197,10 @@ finds filenames.
 code, check_syntax tells you whether the file still parses. After starting a \
 server, check_port and check_url tell you whether it is actually serving. \
 Verify before you say something is done.
-- You are not reliable at arithmetic done in your head — this includes small, \
-simple-looking sums like "3 + 3", not only large totals. A wrong answer looks \
-exactly like a right one, at any size. Use calculate for any arithmetic you \
-are about to state as a fact, however trivial it looks: a quick sum, a single \
-addition, a percentage, a difference. If the number in your answer came from \
-you computing something rather than from something you were told, get it \
-from calculate first.
+- You are not reliable at arithmetic in your head, even for sums as small as \
+"3 + 3", and a wrong answer looks exactly like a right one. Any number you \
+worked out rather than were told (a sum, a percentage, a difference) comes \
+from calculate first, however trivial.
 - run_command gives you the exit code, stdout, and stderr. A non-zero exit code is \
 information, not a dead end — read the output and decide what to do. Use run_background \
 for anything that stays running, like a dev server, then list_processes or \
@@ -216,9 +215,8 @@ phrase it — judge intent, not wording. Only once that call succeeds may you \
 say "I'll remember that"; otherwise just "Got it."
 - Check recall_memory when the answer may depend on something they told you \
 before; with no query to summarise everything. forget_memory removes.
-- NEVER use remember for normal conversation or tool requests. Only for explicit "remember" requests. \
-This also means: don't casually say "I'll remember that" while chatting about something the user \
-mentioned in passing — that phrase is reserved for when you actually called the remember tool.
+- NEVER use remember for normal conversation or tool requests, and don't casually say \
+"I'll remember that" about something mentioned in passing.
 
 Working toward a goal:
 - When the user gives you something to accomplish rather than a single command, work through it: \
@@ -233,6 +231,13 @@ middle of a larger task — working toward a goal never skips that.
 - If you're missing something you need to continue, ask instead of guessing.
 - Stop and report clearly once the goal is met, once you're stuck, or once you run out of steps — \
 never say something is finished when it isn't.
+
+Missions:
+- When someone wants help getting a piece of work done (an assignment, a report), start a \
+mission first: a goal, the steps in order (for coursework, the sections its brief asks for), \
+their files, the brief and the deadline.
+- It's their work: help the way they ask, and put text in their document only when they ask.
+- Mark a step no file can show once they say they've done it.
 
 The user's home directory is {pathlib.Path.home()}.
 Paths like "Desktop/folder" or "Documents/file.txt" are relative to home.
@@ -298,10 +303,18 @@ class CoreRuntime:
         """Forget the current conversation entirely — turns and summary — so a
         new chat really starts clean. Call only when no turn is running."""
         self._core.reset_conversation()
+        self._last_mission_block = ""      # a new chat is told the mission in full
+
+    def note_assistant(self, text: str) -> None:
+        """Something Mike said without a model turn (the welcome back to a
+        mission), recorded so the next turn knows it was said."""
+        if text:
+            self._core.history.append({"role": "assistant", "content": text})
 
     def restore_conversation(self, turns: list[dict], summary: str = "") -> None:
         """Continue a saved conversation with the context it had."""
         self._core.restore_conversation(turns, summary)
+        self._last_mission_block = ""
 
     @property
     def situation_summary(self) -> str:
@@ -638,6 +651,15 @@ class CoreRuntime:
                         self._core.history.remove(nudge)
                     except ValueError:
                         pass
+            elif _promises_unperformed_action(collected_text) and self._already_nudged_this_turn():
+                # Given its chance, the model promised again and still did
+                # nothing. The user must not leave thinking it's under way.
+                # Measured: "I'll write the Discussion into your report now",
+                # twice, with no write -- the reply ended on a false claim.
+                logger.info("Reply still promised an action after its retry; saying it wasn't done.")
+                note = "\n\n(I haven't actually done that yet — say the word and I will.)"
+                self._core.history[-1]["content"] += note
+                yield ("token", note)
             return
 
         self._core.history.append({
@@ -683,6 +705,10 @@ class CoreRuntime:
                         "content": json.dumps({
                             "status": "cancelled",
                             "message": reason,
+                            # What a "no" means, so the model doesn't ask
+                            # again or wonder aloud whether it was denied.
+                            "note": "Nothing was done. Don't try it again unless they ask "
+                                    "for it; carry on with what they did ask.",
                         }),
                     })
                     self._core.add_tool_result(reason)
@@ -717,63 +743,6 @@ class CoreRuntime:
             )
             return
 
-        # Typing that was the last thing asked for, and that the readback
-        # confirms is in the field, is finished: a further model call only
-        # to say "Typed it" cost 8-11s measured. Verification is not skipped
-        # -- it is the condition; unverified typing still goes back to the
-        # model to check.
-        if len(tool_calls_raw) == 1 and tool_calls_raw[0].name == "type_text":
-            last_tool = self._core.history[-1]
-            if last_tool.get("role") == "tool":
-                result = json.loads(last_tool["content"])
-                args = tool_calls_raw[0].arguments or {}
-                typed = str(args.get("text") or "")
-                if (
-                    result.get("status") == "success"
-                    and result.get("verified")
-                    and _typing_finishes_request(self._last_user_text(), typed)
-                ):
-                    app = str(args.get("app") or "").strip()
-                    where = f" into {app[:1].upper() + app[1:]}" if app else ""
-                    summary = (f'Typed "{typed.strip()}"{where}.' if len(typed) <= 60
-                               else f"Typed it{where}.")
-                    self._core.history.append({"role": "assistant", "content": summary})
-                    yield ("token", summary)
-                    return
-
-        # "Open notepad" is finished once its window is seen; a second model
-        # call only to write "Notepad's open." cost ~4.4s measured. Only when
-        # the request was that and nothing more ("open notepad and type..."
-        # still goes back to the model), and only when the tool saw the window
-        # -- a launch with no window goes back to the model to deal with.
-        if len(tool_calls_raw) == 1 and tool_calls_raw[0].name == "open_application":
-            last_tool = self._core.history[-1]
-            args = tool_calls_raw[0].arguments or {}
-            if last_tool.get("role") == "tool" and not args.get("path"):
-                result = json.loads(last_tool["content"])
-                if (
-                    result.get("status") == "success"
-                    and str(result.get("result", "")).startswith("Opened ")
-                    and _is_bare_open_request(self._last_user_text())
-                ):
-                    app = str(args.get("name") or "it").strip()
-                    summary = f"Opened {app[:1].upper() + app[1:]}."
-                    self._core.history.append({"role": "assistant", "content": summary})
-                    yield ("token", summary)
-                    return
-
-        if len(tool_calls_raw) == 1 and depth == 0:
-            last_tool = self._core.history[-1]
-            if last_tool.get("role") == "tool":
-                result = json.loads(last_tool["content"])
-                if result.get("status") == "success":
-                    tc = tool_calls_raw[0]
-                    summary = _quick_summary(tc.name, tc.arguments or {})
-                    if summary:
-                        self._core.history.append({"role": "assistant", "content": summary})
-                        yield ("token", summary)
-                        return
-
         try:
             yield from self._streaming_loop(confirm_callback, cancel_event, depth + 1)
         except Exception:
@@ -786,11 +755,35 @@ class CoreRuntime:
     # Honest wrap-up (used when the step limit is reached)
     # =====================================================
 
-    def _last_user_text(self) -> str:
-        for m in reversed(self._core.history):
-            if m.get("role") == "user" and m.get("content") != _UNACTED_NUDGE:
-                return str(m.get("content") or "")
-        return ""
+    def _mission_context(self) -> str:
+        """The active mission, checked against its files as of this turn.
+
+        Given in full when it has changed since Mike last saw it, and as one
+        line otherwise -- this is recorded into history every turn, and the
+        same paragraph repeated turn after turn is prompt the model re-reads
+        for nothing.
+        """
+        try:
+            from brain import mission_store as ms
+            mission = ms.active()
+            if mission is None:
+                self._last_mission_block = ""
+                return ""
+            mission = ms.evaluate(mission["id"])["mission"]
+            if ms.complete_if_done(mission["id"]):
+                self._last_mission_block = ""
+                return (f"The user's mission “{mission['goal']}” just finished: every "
+                        "step is done, the sections as their file shows them.")
+            block = ms.context_line(mission)
+        except Exception:
+            logger.debug("Mission context unavailable.", exc_info=True)
+            return ""
+        if block == getattr(self, "_last_mission_block", ""):
+            nxt = ms.next_step(mission)
+            return (f"Active mission unchanged: {mission['goal']}"
+                    + (f"; next: {nxt['title']}." if nxt else "; all steps done."))
+        self._last_mission_block = block
+        return block
 
     def _already_nudged_this_turn(self) -> bool:
         """A nudge stays in history only while its retry runs, so finding one
@@ -955,6 +948,12 @@ class CoreRuntime:
                 return self._execute_read_document(args)
             if function_name == "search_files":
                 return self._execute_search_files(args)
+            if function_name == "mission":
+                return _execute_mission(args)
+            if function_name == "write_document_section":
+                from tools.filesystem.document_writer import write_section
+                return write_section(str(args.get("path") or ""), str(args.get("heading") or ""),
+                                     str(args.get("text") or ""))
             return self._execute_spreadsheet(function_name, args)
 
         # These return structured evidence — exit codes, diffs, line numbers,
@@ -1110,9 +1109,7 @@ class CoreRuntime:
             )
         if function_name == "type_text":
             text = str(args.get("text") or "")
-            app = str(args.get("app") or "") or _app_named_in_request(
-                self._last_user_text(), text, SESSION)
-            return SESSION.type_text(text, app=app or None)
+            return SESSION.type_text(text, app=str(args.get("app") or "") or None)
         if function_name == "press_keys":
             return SESSION.press_keys(str(args.get("key") or ""), args.get("modifiers") or [])
         if function_name == "scroll_ui":
@@ -1549,6 +1546,14 @@ class CoreRuntime:
         if context_block:
             parts.append(context_block)
 
+        mission_block = self._mission_context()
+        if mission_block:
+            parts.append(mission_block)
+
+        files_block = _files_mentioned(message)
+        if files_block:
+            parts.append(files_block)
+
         memories = (
             memory_store.auto_recall(message, project_id=self._core.project_id)
             if message else []
@@ -1699,16 +1704,13 @@ _UNACTED_NUDGE = (
     "this note — the user can't see it.)"
 )
 
-# Verbs of acting on the computer. "Let me explain" or "I'll keep it short"
-# are not promises of an action and must not trigger a retry.
-_ACTION_VERBS = (
-    r"open|switch|type|launch|start|click|bring|focus|check|look|read|search|"
-    r"find|close|press|navigate|go|run|create|write|save|send|play|scroll|"
-    r"select|paste|copy|delete|move|rename|download|install"
-)
+# Mike committing himself to something, whatever the verb. It was a list of
+# verbs, and "I'll set up a mission for your lab report" slipped past it:
+# nothing was started while the user was told it was. A false alarm costs
+# one short extra call (the nudge says to just answer if no action is
+# needed); "let me know" is the user's move, not Mike's.
 _PROMISE = re.compile(
-    rf"\b(?:I'll|I will|I'm going to|I am going to|let me|lemme)\s+"
-    rf"(?:now\s+|just\s+|quickly\s+|first\s+)?(?:{_ACTION_VERBS})\b",
+    r"\b(?:I'll|I will|I'm going to|I am going to|let me|lemme)\b(?!\s+know\b)",
     re.IGNORECASE,
 )
 _PROGRESSIVE = re.compile(
@@ -1719,85 +1721,101 @@ _PROGRESSIVE = re.compile(
 )
 
 
-_BARE_OPEN = re.compile(
-    r"^(?:hey\s+mike[\s,]*)?(?:please\s+|can you\s+|could you\s+)?"
-    r"(?:open|launch|start)\s+(?:up\s+)?(?:the\s+|my\s+)?[\w .+'-]{1,40}?"
-    r"(?:\s+app)?(?:\s+please)?[\s.!?]*$",
-    re.IGNORECASE,
-)
+_PATH = re.compile(r"(?:[A-Za-z]:\\|\\\\|~[\\/])[^\n\"<>|?*]*?\.(?:docx|pdf|pptx|md|txt|doc|odt|xlsx|csv)\b", re.I)
 
 
-def _is_bare_open_request(text: str) -> bool:
-    """'open notepad', 'please launch spotify' -- a request that is complete
-    once the app is open. Anything with a second step is not."""
-    text = re.sub(r"^\s*(?:hey|hi|ok|okay)?\s*mike\s*[,!.]?\s*", "", text, flags=re.IGNORECASE).strip()
-    if re.search(r"\b(?:and|then|to|so|with|in)\b|[,;:]", text, re.IGNORECASE):
-        return False
-    return bool(_BARE_OPEN.match(text))
+def _files_mentioned(message: str) -> str:
+    """What is in the files the user just named, read from disk.
 
-
-_STEP_WORDS = re.compile(r"\b(?:and|then|press|enter|save|send|click|search|submit)\b", re.IGNORECASE)
-_TYPE_HEAD = re.compile(
-    r"\s*(?:please\s+|can you\s+|could you\s+)?"
-    r"(?:(?:open|launch|start)\s+(?:up\s+)?(?:the\s+|my\s+)?[\w .+'-]{1,40}?\s*(?:,\s*)?(?:and\s+|then\s+|and then\s+)?)?"
-    r"(?:type|write)\s*(?:out\s+)?:?\s*[\"'“]?",
-    re.IGNORECASE,
-)
-_TYPE_TAIL = re.compile(
-    r"\s*[\"'”]?\s*(?:(?:in|into|on)\s+(?:the\s+|my\s+)?[\w .+'-]{1,40}?)?\s*(?:please)?[\s.!]*",
-    re.IGNORECASE,
-)
-
-
-def _typing_finishes_request(message: str, typed: str) -> bool:
-    """True when typing `typed` was the last step the user asked for:
-    "type hello in notepad", "open notepad and type: meeting at 5pm".
-    Anything after the text ("... and press enter") means there is more."""
-    msg = re.sub(r"^\s*(?:hey|hi|ok|okay)?\s*mike\s*[,!.]?\s*", "", message, flags=re.IGNORECASE)
-    typed = typed.strip()
-    i = msg.lower().find(typed.lower()) if typed else -1
-    if i < 0:
-        return False
-    head, tail = msg[:i], msg[i + len(typed):]
-    if _STEP_WORDS.search(tail) or len(re.findall(r"\b(?:and|then)\b", head, re.IGNORECASE)) > 1:
-        return False
-    return bool(_TYPE_HEAD.fullmatch(head) and _TYPE_TAIL.fullmatch(tail))
-
-
-_NAMED_TARGET = re.compile(
-    r"\b(?:in|into|on)\s+(?:the\s+|my\s+)?([A-Za-z][\w.+'-]*(?:\s+[A-Za-z][\w.+'-]*){0,2}?)"
-    r"(?:\s+(?:app|window|tab))?[\s.!?]*$",
-    re.IGNORECASE,
-)
-
-
-def _app_named_in_request(message: str, typed: str, session) -> str | None:
-    """The app the user said to type into, when the model left it out.
-
-    Measured in the installed app: "type hello from mike in notepad" was
-    called with no app, the keystrokes went into the browser that happened to
-    be in front, and Mike said it had typed into Notepad. The user named the
-    target; that is not a guess to leave to the model. Only a name that is
-    not part of the text being typed and that matches an open window counts
-    -- "type: see you in class" never goes looking for an app called class.
+    Facts for the model to think with, not a decision made for it: a brief's
+    own words, a document's sections and how much is written under each. With
+    them the model can plan from the brief without spending a turn reading it,
+    and see what's already done. Files already part of the active mission are
+    in its block and not repeated.
     """
-    tail = message
-    if typed and typed in message:
-        tail = message[message.rfind(typed) + len(typed):]
-    match = _NAMED_TARGET.search(tail.strip())
-    if not match:
-        return None
-    name = match.group(1).strip()
+    from brain import mission_checks as checks
+    from brain import mission_store as ms
+
     try:
-        windows = session.controller().list_windows()
+        mission = ms.active()
     except Exception:
-        return None
-    wanted = name.casefold()
-    for w in windows:
-        if wanted in (w.app or "").casefold() or wanted in (w.title or "").casefold():
-            logger.info("Typing target taken from the request: %s", name)
-            return name
-    return None
+        mission = None
+    known = {f["path"].casefold() for f in (mission or {}).get("files", [])}
+    lines = []
+    for raw in dict.fromkeys(_PATH.findall(message or "")):
+        path = Path(raw.strip().strip("'\"")).expanduser()
+        if not path.is_file() or str(path).casefold() in known:
+            continue
+        try:
+            lines.append(checks.describe_file(path))
+        except Exception:
+            logger.debug("Could not describe %s", path, exc_info=True)
+    if not lines:
+        return ""
+    block = ("Files the user mentioned, read just now (no need to read them again):\n"
+             + "\n".join(lines))
+    if mission is None:
+        # What Mike could do with them, said where it's relevant; whether it
+        # fits what they want is the model's call. Measured: with the mission
+        # tool only listed among 46, the model planned the report out loud and
+        # never started one, so nothing was tracked.
+        block += ("\nIf this is work they're getting done, a mission (mission tool) keeps "
+                  "their plan and checks these files as they write, across restarts.")
+    return block
+
+
+def _execute_mission(args: dict) -> dict:
+    """The mission tool: Mike's own record of what the user is getting done.
+
+    Every answer is the state as it now stands, read back from the store, so
+    the model reports what is true rather than what it asked for.
+    """
+    from brain import mission_store as ms
+
+    action = str(args.get("action") or "").strip().lower()
+    try:
+        current = ms.active()
+        if action == "start" and current is not None:
+            # Already started (in an earlier turn, or before a restart): the
+            # model gets the state, not an error to recover from.
+            return {"status": "success",
+                    "result": "Already tracking this as a mission.\n" + ms.context_line(current)}
+        if action == "start":
+            steps = args.get("steps") or []
+            if isinstance(steps, str):
+                steps = [s for s in re.split(r"\n|;", steps) if s.strip()]
+            files = args.get("files") or []
+            if isinstance(files, str):
+                files = [files]
+            brief = args.get("brief") or []
+            if isinstance(brief, str):
+                brief = [brief]
+            mission = ms.start(str(args.get("goal") or ""), [str(s) for s in steps],
+                               files=[str(f) for f in files], brief=[str(b) for b in brief],
+                               deadline=str(args.get("deadline") or ""))
+            note = ("" if any(f["role"] == "brief" for f in mission["files"]) else
+                    "\n(No brief attached, so section lengths come from the steps or a "
+                    f"{ms.checks.DEFAULT_MIN_WORDS}-word minimum; action=file adds one.)")
+            return {"status": "success", "result": "Mission started.\n" + ms.context_line(mission) + note}
+
+        mission = ms.active()
+        if mission is None:
+            return {"status": "error", "error": "There is no active mission. Start one first."}
+        if action == "step":
+            said = ms.set_step(mission["id"], args.get("step"), str(args.get("status") or "done"),
+                               str(args.get("note") or ""))
+            return {"status": "success", "result": said + "\n" + ms.context_line(ms.get(mission["id"]))}
+        if action == "file":
+            updated = ms.add_file(mission["id"], str(args.get("path") or ""))
+            return {"status": "success", "result": "File added.\n" + ms.context_line(updated)}
+        if action == "finish":
+            said = ms.finish(mission["id"], str(args.get("status") or "done"))
+            return {"status": "success", "result": said}
+        if action in ("status", "check"):
+            return {"status": "success", "result": ms.context_line(ms.evaluate(mission["id"])["mission"])}
+        return {"status": "error", "error": "action is one of: start, step, file, finish."}
+    except ms.MissionError as exc:
+        return {"status": "error", "error": str(exc)}
 
 
 def _promises_unperformed_action(text: str) -> bool:
@@ -1811,50 +1829,8 @@ def _promises_unperformed_action(text: str) -> bool:
     last = sentences[-1]
     if last.endswith("?"):
         return False           # asking the user something is a real answer
-    return bool(_PROMISE.search(last) or _PROGRESSIVE.match(last))
-
-
-def _quick_summary(function_name: str, args: dict) -> str | None:
-    """
-    Short spoken summary for simple, self-contained tool calls, skipping the
-    second LLM round. Returning None here forces a real follow-up turn instead —
-    required for create_folder/create_file/delete_path, since those are often
-    one step in a larger goal (create folder, write a file into it, verify) and
-    the model needs to see the result to decide whether to continue.
-    """
-    if function_name == "open_browser":
-        return "Done, opened the browser."
-    if function_name == "open_url":
-        url = args.get("url", "")
-        if "youtube" in url.lower():
-            return "Done, opened YouTube."
-        if "google" in url.lower():
-            return "Done, opened Google."
-        if "github" in url.lower():
-            return "Done, opened GitHub."
-        if "reddit" in url.lower():
-            return "Done, opened Reddit."
-        if "twitter" in url.lower() or "x.com" in url.lower():
-            return "Done, opened X."
-        if "wikipedia" in url.lower():
-            return "Done, opened Wikipedia."
-        return "Done, opened the link."
-    if function_name == "search_web":
-        return None
-    if function_name == "create_folder":
-        return None
-    if function_name == "create_file":
-        return None
-    if function_name == "delete_path":
-        return None
-    if function_name == "remember":
-        return "Got it, I'll remember that."
-    if function_name == "forget_memory":
-        return None
-    if function_name == "recall_memory":
-        return None
-    if function_name == "list_directory":
-        return None
-    if function_name == "run_command":
-        return None
-    return None
+    # "Let me explain: ..." goes on to say it -- the content is the answer.
+    promise = _PROMISE.search(last)
+    if promise and ":" in last[promise.end():]:
+        promise = None
+    return bool(promise or _PROGRESSIVE.match(last))

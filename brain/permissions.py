@@ -35,7 +35,8 @@ ABILITIES: dict[str, tuple[str, str, frozenset[str]]] = {
                    "read_spreadsheet", "edit_spreadsheet", "search_files",
                    "read_lines", "edit_file", "multi_edit", "project_overview",
                    "project_tree", "search_code", "check_syntax",
-                   "ide_context", "ide_open_file", "ide_apply_edit"}),
+                   "ide_context", "ide_open_file", "ide_apply_edit",
+                   "write_document_section", "mission"}),
     ),
     "commands": (
         "Run commands",

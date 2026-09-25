@@ -41,6 +41,8 @@ COMPUTE_TYPE = "int8"  # no GPU on this machine -- INT8 is the fast CPU path
 #: Transcription shares the CPU with the chat model; four threads was faster
 #: (2.1s vs 2.9s for all cores) because it stops fighting the LLM for them.
 CPU_THREADS = 4
+#: How long without voice before the model's memory is given back.
+IDLE_UNLOAD_SECONDS = 600
 
 
 class WhisperRecognizer(SpeechRecognizer):
@@ -60,6 +62,7 @@ class WhisperRecognizer(SpeechRecognizer):
         self._model_size = model_size
         self._model = None
         self._load_lock = threading.Lock()
+        self._idle_timer: threading.Timer | None = None
 
     def available(self) -> tuple[bool, str]:
         try:
@@ -69,17 +72,58 @@ class WhisperRecognizer(SpeechRecognizer):
         return True, f"local Whisper ({self._model_size}, CPU)"
 
     def prewarm(self) -> None:
-        """Load (downloading on first ever run) the model now.
+        """Make sure the model is on disk — download it now, don't load it.
 
         Loading lazily on the first spoken command meant the first "Hey
-        Mike" froze on the model download showing only "transcribing".
-        Called from a background thread at startup so the model is ready —
-        or well on its way — by the time anyone speaks.
+        Mike" froze on the model download showing only "transcribing", so
+        the download happens at startup. Loading it did too, and that cost
+        2.2GB of committed memory for everyone, all the time, whether or not
+        they ever spoke -- measured, alongside the 11GB chat model, it pushed
+        the laptop to its commit limit and every reply slowed with paging.
+        The load now happens when listening starts (warm), overlapping the
+        user's own speech.
         """
+        try:
+            from faster_whisper.utils import download_model
+            try:
+                download_model(self._model_size, local_files_only=True)   # already here: no network
+            except Exception:
+                download_model(self._model_size)
+        except Exception:
+            logger.exception("Whisper download check failed; first transcription will fetch the model.")
+
+    def warm(self) -> None:
+        """Start loading the model now, in the background — called when
+        listening starts, so it loads while the user is still speaking."""
+        self._touch()
+        if self._model is not None:
+            return
+        threading.Thread(target=self._warm, name="whisper-warm", daemon=True).start()
+
+    def _warm(self) -> None:
         try:
             self._get_model()
         except Exception:
-            logger.exception("Whisper prewarm failed; first transcription will load the model.")
+            logger.exception("Whisper warm load failed; transcription will retry.")
+
+    def _touch(self) -> None:
+        """Voice is in use: (re)start the countdown to letting the model go."""
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+        self._idle_timer = threading.Timer(IDLE_UNLOAD_SECONDS, self.unload)
+        self._idle_timer.daemon = True
+        self._idle_timer.start()
+
+    def unload(self) -> None:
+        """Release the model after a while without voice, so its memory goes
+        back to the chat model and the rest of the machine."""
+        with self._load_lock:
+            if self._model is None:
+                return
+            self._model = None
+        import gc
+        gc.collect()
+        logger.info("Speech-to-text model released after %d idle minutes.", IDLE_UNLOAD_SECONDS // 60)
 
     def _get_model(self):
         with self._load_lock:
@@ -128,6 +172,7 @@ class WhisperRecognizer(SpeechRecognizer):
         """
         def _run() -> None:
             try:
+                self._touch()
                 model = self._get_model()
                 segments, _info = model.transcribe(audio_path, beam_size=1)
                 text = " ".join(segment.text.strip() for segment in segments).strip()

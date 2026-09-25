@@ -58,6 +58,16 @@ class VoiceInputManager(QObject):
         self.state_changed.emit("recording")
         self._poll_timer.start()
 
+        # Load speech-to-text while the user is still talking, rather than
+        # holding its memory all day in case they ever do.
+        try:
+            from voice.recognizer import get_recognizer
+            warm = getattr(get_recognizer(), "warm", None)
+            if warm is not None:
+                warm()
+        except Exception:
+            logger.debug("Could not start loading speech-to-text.", exc_info=True)
+
     def _check_auto_stop(self) -> None:
         if self._state != "recording":
             self._poll_timer.stop()

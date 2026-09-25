@@ -311,6 +311,25 @@ TOOL_DECLARATIONS = [
     ),
 
     types.FunctionDeclaration(
+        name="write_document_section",
+        description=(
+            "Put text into a Word document (.docx) under a heading: replaces "
+            "that section, or adds it at the end. The only way to write into a "
+            ".docx (never write_file). Only when the user asked for it to go in "
+            "the file, and only with their own data and results, never made-up ones."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "heading": {"type": "string", "description": "e.g. Discussion"},
+                "text": {"type": "string", "description": "The section's text; blank lines split paragraphs"},
+            },
+            "required": ["path", "heading", "text"],
+        },
+    ),
+
+    types.FunctionDeclaration(
         name="calculate",
         description=(
             "Work out an arithmetic expression exactly. Use this for any number "
@@ -494,8 +513,8 @@ TOOL_DECLARATIONS = [
             "Get what the user is currently looking at in their code editor: "
             "the project, the open file, the cursor position, any selected "
             "code, and the errors or warnings the editor is reporting. "
-            "Use this when the user asks about 'this file', 'this code', "
-            "'this error', or what they're working on."
+            "Use this when the user asks about 'this code' or 'this error' "
+            "in their editor. Not for documents: use read_document."
         ),
     ),
 
@@ -958,9 +977,16 @@ TOOL_DECLARATIONS = [
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "The text to type"},
-                "app": {"type": "string", "description": "Running app to type into; it is brought to the front first, so no separate focus_app"},
+                "app": {"type": "string", "description": (
+                    "The app the text goes into: the one the user named, else the one "
+                    "they have focused. It is brought to the front first, so no "
+                    "separate focus_app")},
             },
-            "required": ["text"],
+            # Where keystrokes land is a choice the model has to make, not
+            # whatever window happens to be in front. Measured: with "app"
+            # optional, "type hello from mike in notepad" was called without
+            # it and typed into the YouTube tab that had just opened.
+            "required": ["text", "app"],
         },
     ),
 
@@ -1013,6 +1039,42 @@ TOOL_DECLARATIONS = [
             "to find out what is available before switching, or to confirm a "
             "window or dialog actually appeared."
         ),
+    ),
+
+    types.FunctionDeclaration(
+        name="mission",
+        description=(
+            "Keep track of a piece of work the user is getting done over time (an "
+            "assignment, a report, an application), so the plan and progress "
+            "survive closing Mike and restarting. start: a short goal, the steps "
+            "in order (for coursework, the sections its brief asks for, plus "
+            "anything around them), the files they write in, the brief if there is "
+            "one, and the deadline they gave. A step about a section of their "
+            "document is checked from the file and ticks when it's written; mark "
+            "the others with step when the user says they're done. file adds a "
+            "file; finish when it's done or they want to drop it."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["start", "step", "file", "finish"]},
+                "goal": {"type": "string"},
+                "steps": {"type": "array", "items": {"type": "string"}},
+                # Was "the documents they write in": the model then listed only
+                # the report, and the brief it had just been shown was left out.
+                "files": {"type": "array", "items": {"type": "string"},
+                          "description": "Full paths of every file the work involves: "
+                                         "the brief and the ones they write in"},
+                "brief": {"type": "string",
+                          "description": "Which of those is the brief, if it's a Word or text file"},
+                "deadline": {"type": "string"},
+                "step": {"type": "string", "description": "Step number or name"},
+                "status": {"type": "string", "description": "done/todo/blocked; finish: done/dropped"},
+                "note": {"type": "string"},
+                "path": {"type": "string"},
+            },
+            "required": ["action"],
+        },
     ),
 
     types.FunctionDeclaration(
@@ -1091,6 +1153,9 @@ _CONFIRM_ACTIONS = frozenset({
     # write_file does, and a spreadsheet has no revision history to fall back
     # on. Reading one is free.
     "edit_spreadsheet",
+    # Writing into someone's own document — their assignment — is theirs to
+    # allow, every time.
+    "write_document_section",
     # Memory is user data with no undo and no copy on disk to restore from.
     # Saving and recalling stay free; erasing is the boundary, exactly as it
     # is for files. "forget everything" reaching the database unprompted was
@@ -1163,6 +1228,28 @@ def confirmation_detail(function_name: str, args: dict) -> str:
             f"  body starts: {body[:120]!r}\n"
             "This leaves the machine and cannot be recalled."
         )
+
+    if function_name == "write_document_section":
+        # Whether this replaces something they wrote is read from the file.
+        import os
+
+        path = str(args.get("path") or "?")
+        heading = str(args.get("heading") or "?")
+        text = " ".join(str(args.get("text") or "").split())
+        existing = 0
+        try:
+            from brain import mission_checks
+
+            shape = mission_checks.outline(path) or {}
+            found = mission_checks.find_section(shape.get("sections", {}), heading)
+            existing = shape["sections"][found] if found else 0
+        except Exception:
+            pass
+        action = (f"Replace the “{heading}” section ({existing} words now)"
+                  if existing else f"Add a “{heading}” section")
+        return (f"{action} in {os.path.basename(path)}\n"
+                f"  new text ({len(text.split())} words) starts: {text[:140]!r}\n"
+                "A copy of the current version is kept first.")
 
     if function_name == "edit_spreadsheet":
         # Current values come from the file, so the user sees what is being
@@ -1450,6 +1537,15 @@ def friendly_tool_name(function_name: str, args: dict) -> str:
         if a.get("button") == "right":
             verb = "Right-clicking"
         return f"{verb} {target}" if target else f"{verb} in the window"
+    if function_name == "write_document_section":
+        return f"Writing “{_clip(a.get('heading', 'a section'), 30)}” into {path or 'your document'}"
+    if function_name == "mission":
+        return {
+            "start": f"Setting up: {_clip(a.get('goal', 'the plan'), 40)}",
+            "step": "Updating your plan",
+            "file": f"Adding {path or _short_path(a.get('path'))} to your plan",
+            "finish": "Wrapping up the plan",
+        }.get(str(a.get("action", "")).lower(), "Checking your progress")
     if function_name == "scroll_ui":
         try:
             dy = float(a.get("dy") or 0)

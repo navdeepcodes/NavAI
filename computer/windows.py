@@ -67,6 +67,7 @@ from computer.base import (
     UIElement,
     WindowInfo,
 )
+from hostplatform.foreground import bring_to_front
 
 # ══ SendInput plumbing ═════════════════════════════════════
 # pywin32 wraps the legacy, deprecated mouse_event/keybd_event; SendInput is
@@ -302,9 +303,13 @@ def _automation():
     real call, not at import time."""
     global _AUTOMATION
     if _AUTOMATION is None:
-        import comtypes.gen.UIAutomationClient as uia_module
+        # Through _uia() (GetModule), not a bare import of the generated
+        # bindings: when Windows updates UIAutomationCore.dll, importing
+        # bindings made from the old one raises "Typelib different than
+        # module" (seen after a Windows update on this machine), while
+        # GetModule regenerates them.
         _AUTOMATION = _cc.CreateObject(
-            "{ff48dba4-60ef-4201-aa87-54103eef594e}", interface=uia_module.IUIAutomation
+            "{ff48dba4-60ef-4201-aa87-54103eef594e}", interface=_uia().IUIAutomation
         )
     return _AUTOMATION
 
@@ -851,31 +856,10 @@ class WindowsController(ComputerController):
                 f"No running application named {name!r}. Check list_windows "
                 "for what is running."
             ))
-        # SetForegroundWindow refuses to steal focus from a process Windows
-        # does not consider to have "input permission" — verified on this
-        # machine: a bare call silently failed to raise a background window.
-        # Attaching this thread's input queue to the target window's thread
-        # is the documented workaround.
-        if win32gui.IsIconic(hwnd):
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
-        current_thread = win32api.GetCurrentThreadId()
-        attached = False
-        try:
-            if target_thread != current_thread:
-                attached = bool(ctypes.windll.user32.AttachThreadInput(
-                    current_thread, target_thread, True))
-            win32gui.SetForegroundWindow(hwnd)
-        except Exception as exc:
-            return ActionResult(False, error=f"Could not activate: {exc}")
-        finally:
-            if attached:
-                ctypes.windll.user32.AttachThreadInput(current_thread, target_thread, False)
-        time.sleep(0.2)
-        ok = win32gui.GetForegroundWindow() == hwnd
-        if not ok:
+        if not bring_to_front(hwnd):
             return ActionResult(False, error=(
                 f"Asked Windows to bring {name!r} to the front, but it did "
                 "not become the foreground window."
             ))
         return ActionResult(True, f"activated {name}")
+

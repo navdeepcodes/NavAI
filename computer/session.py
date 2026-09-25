@@ -16,6 +16,7 @@ there now.
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 from computer.base import (
@@ -244,6 +245,18 @@ class ComputerSession:
         return looks_irreversible(found.label) if found else None
 
     # -- actions ------------------------------------------------------
+    def _own_window_in_front(self) -> list[str] | None:
+        """None unless this process's own window is the one in front; then
+        the other apps that are open, for the model to pick from."""
+        try:
+            windows = self.controller().list_windows()
+        except Exception:
+            return None
+        me = os.getpid()
+        if not any(w.frontmost and w.pid == me for w in windows):
+            return None
+        return sorted({w.app for w in windows if w.pid != me and w.app})[:8]
+
     def _ensure_front(self) -> str:
         """Bring the observed application forward before acting on it.
 
@@ -384,6 +397,19 @@ class ComputerSession:
         # applies: type into the application that was observed, not whatever
         # happens to be in front now.
         note = self._ensure_front()
+        # While the user talks to Mike in its own window, that window is in
+        # front, and keystrokes with no app named would land in Mike's own
+        # composer. Measured in the installed app: "type hello from mike in
+        # notepad" called with no app typed into whatever was in front while
+        # Mike reported Notepad. Nothing is typed; the model is told what is
+        # open so it can name the app.
+        mine = self._own_window_in_front()
+        if mine is not None:
+            return {"status": "error", "error": (
+                "Nothing was typed: Mike's own window is in front, so the text "
+                "would have gone into Mike. Give the app to type into"
+                + (f" (open now: {', '.join(mine)})." if mine else ".")
+            )}
 
         # Where the text is about to go. Typing is aimed by focus, not by the
         # last click, and the two are not always the same control -- measured:

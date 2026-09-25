@@ -60,18 +60,11 @@ def _bring_browser_forward() -> None:
     action that produces no visible sign of having happened reads as a
     failure regardless of what actually occurred underneath.
 
-    Windows refuses a bare SetForegroundWindow from a process it doesn't
-    consider to have "input permission" -- computer/windows.py's
-    activate_app already found and verified the fix (attach this thread's
-    input queue to the target window's thread first); mirrored here rather
-    than imported, since hostplatform sits below computer/ in this
-    codebase's layering and importing upward would invert that.
+    Windows refuses a bare SetForegroundWindow from a thread it doesn't
+    consider to have "input permission"; hostplatform.foreground handles that.
     """
     try:
-        import ctypes
-
         import win32api
-        import win32con
         import win32gui
         import win32process
 
@@ -101,20 +94,8 @@ def _bring_browser_forward() -> None:
         if not found:
             return
 
-        hwnd = found[0]
-        if win32gui.IsIconic(hwnd):
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
-        current_thread = win32api.GetCurrentThreadId()
-        attached = False
-        try:
-            if target_thread != current_thread:
-                attached = bool(ctypes.windll.user32.AttachThreadInput(
-                    current_thread, target_thread, True))
-            win32gui.SetForegroundWindow(hwnd)
-        finally:
-            if attached:
-                ctypes.windll.user32.AttachThreadInput(current_thread, target_thread, False)
+        from hostplatform.foreground import bring_to_front
+        bring_to_front(found[0])
     except Exception:
         pass
 

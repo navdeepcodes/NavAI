@@ -214,6 +214,9 @@ class MikeWindow(QMainWindow):
             # Launched at sign-in: be present, not in the way — Mike takes the
             # corner and the taskbar, and the workspace waits to be opened.
             self._go_corner()
+            # With the mission they left, if there is one -- once the event
+            # loop runs, so nothing in the window's first show can undo it.
+            QTimer.singleShot(0, self._show_mission_in_corner)
             return
         self._show_full()
         if account_config.configured() and not account.signed_in():
@@ -221,6 +224,11 @@ class MikeWindow(QMainWindow):
             if not preferences.get("account_offered", False):
                 preferences.set_value("account_offered", True)
                 QTimer.singleShot(450, lambda: self._ask_account(first_run=True))
+
+    def _show_mission_in_corner(self) -> None:
+        welcome = getattr(self.controller, "mission_welcome", "")
+        if welcome:
+            self.corner.set_response(welcome.replace("**", ""))
 
     def _ask_account(self, *, required: bool = False, first_run: bool = False) -> bool:
         from ui.workspace import account_dialog
@@ -401,7 +409,11 @@ class MikeWindow(QMainWindow):
     def showEvent(self, event):
         super().showEvent(event)
         self._ensure_taskbar_button()
-        self.corner.dismiss()
+        # The full window coming forward replaces the corner -- but a first
+        # show that is itself a minimise (starting at sign-in, straight to the
+        # corner) must not dismiss the corner it was sent there to show.
+        if not self.isMinimized():
+            self.corner.dismiss()
 
     _RESIZE_MARGIN = 6      # logical px; scaled to the display below
 
@@ -473,7 +485,13 @@ class MikeWindow(QMainWindow):
             self.controller.voice_shortcut_pressed()
             return
         if event.key() == Qt.Key_Escape:
-            if self.page.showing_overlay():
+            confirm = getattr(self.page, "confirm", None)
+            if confirm is not None and confirm.isVisible():
+                # "Don't do this (Esc)", as the card says: this action is
+                # declined and Mike carries on, rather than the whole turn
+                # being cancelled.
+                confirm.denied.emit()
+            elif self.page.showing_overlay():
                 self.page.close_overlays()
             else:
                 # Stops whatever Mike is doing — a running turn, or just the

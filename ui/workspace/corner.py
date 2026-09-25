@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 from ui.panel import style
 from ui.panel.mark import PresenceMark
 from ui.workspace.icons import IconButton
+from ui.workspace.mission_bar import MissionLine
 
 #: How much of an answer the corner shows before offering the full window.
 ANSWER_CHARS = 320
@@ -87,6 +88,11 @@ class CornerPresence(QWidget):
         col = QVBoxLayout(self._card)
         col.setContentsMargins(14, 12, 10, 10)
         col.setSpacing(8)
+
+        # ── the mission you're on, if there is one: one quiet line ──
+        self._mission = MissionLine()
+        self._mission.clicked.connect(self.expand_requested.emit)
+        col.addWidget(self._mission)
 
         # ── what Mike is doing — only while he's doing something ──
         self._status_row = QWidget()
@@ -238,6 +244,10 @@ class CornerPresence(QWidget):
             self._show_status(text, busy=state in _BUSY)
         elif state == "speaking":
             self._hide_status()
+
+    def set_mission(self, mission: dict | None, newly_done: list[str] | None = None) -> None:
+        if self._mission.set_mission(mission, newly_done) and self.isVisible():
+            self._resize_to_content()
 
     def show_tool_status(self, text: str) -> None:
         self.mark.set_state("working")

@@ -128,6 +128,11 @@ def edit_file(
         return {"status": "error", "error": f"No such file: {file}", "reason": NOT_FOUND}
     if file.is_dir():
         return {"status": "error", "error": f"{file} is a directory, not a file."}
+    try:
+        from tools.filesystem.file_manager import refuse_non_text
+        refuse_non_text(file)
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}
 
     if not old_text:
         return {

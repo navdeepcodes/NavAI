@@ -66,6 +66,10 @@ def test_promises_are_recognised():
         "Notepad is already open, but it's showing YouTube. I'll switch back to "
         'Notepad and type "hello from mike" in it.')
     assert _promises_unperformed_action("Sure! Let me check what's in Notepad.")
+    # whatever the verb: this one slipped past a list of verbs
+    assert _promises_unperformed_action(
+        "Got it. I'll set up a mission for your lab report, then look at what "
+        "you've written so far and fill in the missing sections.")
 
 
 def test_real_answers_are_left_alone():
@@ -75,6 +79,7 @@ def test_real_answers_are_left_alone():
     assert not _promises_unperformed_action("I'll open it — which browser do you want?")
     assert not _promises_unperformed_action("I opened Notepad and typed it. Anything else?")
     assert not _promises_unperformed_action("")
+    assert not _promises_unperformed_action("Let me know if you want the rest.")
 
 
 def test_a_promise_without_a_tool_call_gets_one_chance_to_act(monkeypatch):
@@ -93,32 +98,28 @@ def test_the_second_chance_is_given_only_once(monkeypatch):
     brain = _Scripted("I'll open Notepad.", "I'll open Notepad now.", "never reached")
     rt, ran = _runtime(brain, monkeypatch)
 
-    list(rt.process_streaming("open notepad", confirm_callback=lambda d: True))
+    events = list(rt.process_streaming("open notepad", confirm_callback=lambda d: True))
+    text = "".join(p for k, p in events if k == "token")
 
     assert len(brain.calls) == 2, "one retry, never a loop"
     assert ran == []
+    # and the user is told it didn't happen, rather than left with the promise
+    assert "haven't actually done that" in text
 
 
-def test_bare_open_requests_are_recognised():
-    from brain.core_runtime import _is_bare_open_request
-    for ok in ["open notepad", "Open Notepad.", "please launch spotify", "hey mike, open calculator",
-               "start the settings app"]:
-        assert _is_bare_open_request(ok), ok
-    for multi in ["open notepad and type: meeting at 5pm", "open notepad, then type hi",
-                  "open chrome to youtube", "open the report in word", "what can you open?"]:
-        assert not _is_bare_open_request(multi), multi
-
-
-def test_open_an_app_finishes_without_a_second_model_call(monkeypatch):
-    brain = _Scripted(("open_application", {"name": "notepad"}), "never reached")
+def test_after_an_action_the_model_says_what_happened(monkeypatch):
+    """No canned reply: the model reads the verified result and answers in
+    its own words -- including when the request had more in it."""
+    brain = _Scripted(("open_application", {"name": "notepad"}), "Notepad's open.")
     rt, ran = _runtime(brain, monkeypatch)
 
     events = list(rt.process_streaming("open notepad", confirm_callback=lambda d: True))
     text = "".join(p for k, p in events if k == "token")
 
     assert ran == [("open_application", {"name": "notepad"})]
-    assert len(brain.calls) == 1
-    assert text.strip() == "Opened Notepad."
+    assert len(brain.calls) == 2
+    assert "Opened notepad" in str(brain.calls[1][-1].get("content"))   # it saw the result
+    assert text.strip() == "Notepad's open."
 
 
 def test_a_launch_with_no_window_is_not_reported_as_opened(monkeypatch):
@@ -134,15 +135,6 @@ def test_a_launch_with_no_window_is_not_reported_as_opened(monkeypatch):
     assert "Opened" not in text
 
 
-def test_after_a_promise_the_retry_open_still_finishes_in_one_call(monkeypatch):
-    brain = _Scripted("Opening Notepad for you.", ("open_application", {"name": "notepad"}), "never reached")
-    rt, _ = _runtime(brain, monkeypatch)
-
-    list(rt.process_streaming("open notepad", confirm_callback=lambda d: True))
-
-    assert len(brain.calls) == 2
-
-
 def test_open_then_more_goes_back_to_the_model(monkeypatch):
     brain = _Scripted(("open_application", {"name": "notepad"}),
                       ("type_text", {"text": "meeting at 5pm", "app": "notepad"}), "Typed it.")
@@ -154,75 +146,54 @@ def test_open_then_more_goes_back_to_the_model(monkeypatch):
     assert len(brain.calls) == 3
 
 
-def test_typing_as_the_last_step_is_recognised():
-    from brain.core_runtime import _typing_finishes_request as done
-    assert done("type hello from mike in notepad", "hello from mike")
-    assert done("open notepad and type: meeting at 5pm", "meeting at 5pm")
-    assert done('hey mike, type "see you at 6" into the notepad window', "see you at 6")
-    assert not done("type hello and press enter", "hello")
-    assert not done("type hello in notepad then save it", "hello")
-    assert not done("search for cats and open notepad and type hi", "hi")
-    assert not done("what's 2+2", "4")
-
-
-def _typing_runtime(monkeypatch, verified, message, *replies):
-    brain = _Scripted(*replies)
-    rt, ran = _runtime(brain, monkeypatch)
-    monkeypatch.setattr(rt, "_execute_tool", lambda name, args: ran.append(name) or {
-        "status": "success", "result": "typed", "verified": verified})
-    events = list(rt.process_streaming(message, confirm_callback=lambda d: True))
-    return brain, "".join(p for k, p in events if k == "token")
-
-
-def test_verified_typing_finishes_without_a_second_model_call(monkeypatch):
-    brain, text = _typing_runtime(
-        monkeypatch, True, "type hello from mike in notepad",
-        ("type_text", {"text": "hello from mike", "app": "notepad"}), "never reached")
-    assert len(brain.calls) == 1
-    assert text.strip() == 'Typed "hello from mike" into Notepad.'
-
-
-def test_unverified_typing_still_goes_back_to_the_model(monkeypatch):
-    brain, _ = _typing_runtime(
-        monkeypatch, False, "type hello from mike in notepad",
-        ("type_text", {"text": "hello from mike", "app": "notepad"}), "Let me check.", "It's there.")
-    assert len(brain.calls) >= 2
-
-
-def test_typing_with_more_to_do_goes_back_to_the_model(monkeypatch):
-    brain, _ = _typing_runtime(
-        monkeypatch, True, "type hello and press enter",
-        ("type_text", {"text": "hello"}), ("press_keys", {"key": "return"}), "Done.")
-    assert len(brain.calls) == 3
-
-
 class _Desk:
-    """A session whose open windows are the given (app, title) pairs."""
+    """A controller whose open windows are (app, pid, frontmost)."""
 
     def __init__(self, *windows):
         from computer.base import WindowInfo
-        self._windows = [WindowInfo(app=a, title=t) for a, t in windows]
+        self._windows = [WindowInfo(app=a, title=a, pid=pid, frontmost=front) for a, pid, front in windows]
+        self.typed = []
 
-    def controller(self):
-        return self
+    def available(self):
+        return True, "available"
 
     def list_windows(self):
         return self._windows
 
+    def frontmost_app(self):
+        return next(w.app for w in self._windows if w.frontmost)
 
-def test_the_app_the_user_named_is_the_typing_target():
-    from brain.core_runtime import _app_named_in_request as named
-    desk = _Desk(("chrome", "YouTube - Google Chrome"), ("Notepad", "Untitled - Notepad"))
-    assert named("type hello from mike in notepad", "hello from mike", desk) == "notepad"
-    assert named("write 'lab at 3' into the Notepad window", "lab at 3", desk) == "Notepad"
+    def type_text(self, text):
+        from computer.base import ActionResult
+        self.typed.append(text)
+        return ActionResult(True, "typed")
 
 
-def test_words_that_are_not_an_open_window_are_left_alone():
-    from brain.core_runtime import _app_named_in_request as named
-    desk = _Desk(("chrome", "YouTube - Google Chrome"), ("Notepad", "Untitled - Notepad"))
-    assert named("type: see you in class", "see you in class", desk) is None
-    assert named("type hello in word", "hello", desk) is None          # Word isn't open
-    assert named("type hello", "hello", desk) is None
+def test_typing_with_no_app_never_goes_into_mikes_own_window():
+    """With no app named, keystrokes go to the window in front -- and while
+    the user talks to Mike, that is Mike's own composer."""
+    import os
+    from computer.session import ComputerSession
+
+    desk = _Desk(("Mike", os.getpid(), True), ("Notepad", 4242, False), ("chrome", 4343, False))
+    session = ComputerSession()
+    session._controller = desk
+    r = session.type_text("hello from mike")
+    assert r["status"] == "error" and "Nothing was typed" in r["error"]
+    assert "Notepad" in r["error"] and "chrome" in r["error"]
+    assert desk.typed == []
+
+
+def test_typing_with_no_app_goes_to_the_app_in_front_when_it_isnt_mike():
+    import os
+    from computer.session import ComputerSession
+
+    desk = _Desk(("Mike", os.getpid(), False), ("Notepad", 4242, True))
+    session = ComputerSession()
+    session._controller = desk
+    session._focused = lambda: None
+    session.type_text("hello")
+    assert desk.typed == ["hello"]
 
 
 def test_an_ordinary_answer_costs_no_extra_call(monkeypatch):

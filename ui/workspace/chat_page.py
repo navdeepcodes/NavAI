@@ -34,6 +34,7 @@ from ui.panel.mike_panel import (
 )
 from ui.workspace.composer import Composer, _ChipIcon
 from ui.workspace.icons import draw
+from ui.workspace.mission_bar import MissionBar
 from ui.workspace.pen import StreamingPen
 from ui.workspace.steps import StepsCard
 from ui.workspace.thinking import ThinkingLine
@@ -542,6 +543,9 @@ class ChatPage(QWidget):
 
         self.brain_banner = _BrainBanner()
         dcol.addWidget(self.brain_banner)
+        # what you're getting done, in view above where you type
+        self.mission = MissionBar()
+        dcol.addWidget(self.mission)
 
         self.confirm = ConfirmCard()
         self.confirm.visibility_changed.connect(

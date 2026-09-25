@@ -78,6 +78,7 @@ class MikeWorkspace(QWidget):
         self.conversation = self.chat.conversation
         self.confirm = self.chat.confirm
         self.activity = self.chat.activity
+        self.mission = self.chat.mission
 
         # the profile row and Settings need to hear about each other
         self._hooks.setdefault("profile_changed", self._on_profile_changed)
