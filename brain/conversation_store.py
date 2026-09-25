@@ -215,3 +215,31 @@ def delete(conversation_id: int) -> None:
         _db().commit()
     except Exception:
         logger.exception("Could not delete a conversation.")
+
+
+def delete_all() -> None:
+    """Erase every saved conversation (Settings → Privacy → Delete all chats)."""
+    try:
+        _db().execute("DELETE FROM conversation_messages")
+        _db().execute("DELETE FROM conversations")
+        _db().commit()
+    except Exception:
+        logger.exception("Could not delete all conversations.")
+
+
+def export_all() -> list[dict[str, Any]]:
+    """Every conversation with its messages, oldest first — for data export."""
+    try:
+        rows = _db().execute(
+            "SELECT id, title, created_at, updated_at FROM conversations ORDER BY id"
+        ).fetchall()
+    except Exception:
+        logger.exception("Could not export conversations.")
+        return []
+    out = []
+    for r in rows:
+        item = dict(r)
+        item["messages"] = messages(int(item["id"]))
+        if item["messages"]:
+            out.append(item)
+    return out

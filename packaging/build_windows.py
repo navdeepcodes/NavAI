@@ -89,6 +89,10 @@ def main() -> None:
     print(f"Building Mike {version} for Windows.\n")
 
     _pregenerate_comtypes()
+    # The open-source licences screen lists exactly what this build bundles.
+    print("-> Writing open-source licence notices...")
+    subprocess.run([sys.executable, str(PACKAGING_DIR / "generate_notices.py")],
+                   cwd=REPO_ROOT, check=True)
     _run_pyinstaller()
     zip_path = _zip_release(version)
 

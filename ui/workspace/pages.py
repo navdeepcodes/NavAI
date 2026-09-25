@@ -379,7 +379,32 @@ class GeneralTab(_Tab):
             _row("Accent", "Mike's colour, used sparingly.", swatches),
             _row("Reduce motion", "Calmer, simpler animations everywhere in Mike.", motion),
         ]))
+
+        self.add(_group("Startup and notifications"))
+        from hostplatform import autostart
+        login = Switch(autostart.is_enabled())
+        if autostart.supported():
+            login.toggled.connect(self._set_login)
+            login_desc = "Mike starts quietly in the corner when you sign in to Windows."
+        else:
+            login.setEnabled(False)
+            login_desc = "Available in the installed app on Windows."
+        self._login = login
+        notify = Switch(bool(preferences.get("notifications_enabled", True)))
+        notify.toggled.connect(lambda on: preferences.set_value("notifications_enabled", on))
+        self.add(_rows_card([
+            _row("Open Mike when you sign in", login_desc, login),
+            _row("Notifications", "A quiet notification when Mike finishes or needs you "
+                 "while his window is closed.", notify),
+        ]))
         self.body.addStretch(1)
+
+    def _set_login(self, on: bool) -> None:
+        from config import preferences
+        from hostplatform import autostart
+        ok = autostart.set_enabled(on)
+        preferences.set_value("launch_at_login", on if ok else autostart.is_enabled())
+        self._login.set_on(autostart.is_enabled())
 
     def _save(self) -> None:
         from config import preferences
@@ -775,55 +800,166 @@ class _IconTile(QWidget):
 
 # ══ Privacy ════════════════════════════════════════════════
 
-class PrivacyTab(_Tab):
+class PermissionsTab(_Tab):
+    """What Mike is allowed to do — enforced by the runtime, not just hidden."""
 
     def build(self) -> None:
-        self.add(_group("Stays on this machine"))
+        from brain import permissions
+
+        self.add(_label(
+            "Choose what Mike can do for you. Anything you turn off is removed from "
+            "what Mike can even plan with — and refused if he tries.",
+            style.BODY, style.INK_SOFT))
+        rows = []
+        for key, (title, desc, _tools) in permissions.ABILITIES.items():
+            sw = Switch(permissions.is_enabled(key))
+            sw.toggled.connect(lambda on, k=key: permissions.set_enabled(k, on))
+            rows.append(_row(title, desc, sw))
+        self.add(_rows_card(rows))
+        note = _label(
+            "Whatever is on here, Mike always shows you anything that can't be quietly "
+            "undone — deleting, overwriting, sending — and waits for your OK.",
+            style.SMALL, style.INK_MUTE)
+        note.setContentsMargins(4, 4, 4, 0)
+        self.add(note)
+        self.body.addStretch(1)
+
+
+class PrivacyTab(_Tab):
+
+    def __init__(self, hooks: dict | None = None, parent=None) -> None:
+        self._hooks = hooks or {}
+        super().__init__(parent)
+
+    def build(self) -> None:
+        self.add(_group("Private by design"))
         card, col = _card()
         col.setContentsMargins(20, 16, 20, 16)
+        col.setSpacing(10)
         col.addWidget(_label(
-            f"Everything Mike does happens on {_this_machine()}. The model runs "
-            "locally, your files are read locally, and nothing — not your "
-            "messages, not your screen, not your memory — is sent to a server. "
-            "There is no account and no telemetry.", style.BODY, style.INK))
+            f"Mike thinks on {_this_machine()}. Your chats, files, screen and voice are "
+            "processed here, not on our servers. There's no account, no analytics and "
+            "no telemetry — we don't receive your data.", style.BODY, style.INK))
+        read = _button("Read the Privacy Policy")
+        read.clicked.connect(lambda: _open_doc("privacy", self))
+        col.addWidget(read, 0, Qt.AlignLeft)
         self.add(card)
 
-        self.add(_group("Before Mike changes anything"))
-        card2, col2 = _card()
-        col2.setContentsMargins(20, 16, 20, 16)
-        col2.addWidget(_label(
-            "Mike asks first before anything he can't quietly undo — deleting "
-            "or overwriting a file, sending a message, running something that "
-            "changes your system. You approve each one, in the moment, and you "
-            "can stop him at any time with Stop or Esc.", style.BODY, style.INK_SOFT))
-        self.add(card2)
+        self.add(_group("When Mike uses the internet"))
+        self.add(_rows_card([
+            _row("Downloading his brain and voice",
+                 "Once, the first time they're needed — from Ollama and Hugging Face. "
+                 "Your conversations aren't sent.", None),
+            _row("Searches and websites you ask for",
+                 "Your search words go to the search engine; sites open in your browser. "
+                 "Turn off in Permissions → Use the web.", None),
+            _row("Gmail, if you connect it",
+                 "Sends email you approve and reads your inbox when you ask, through Google.",
+                 None),
+        ]))
 
-        self.add(_group("Where your data lives"))
-        rows: list[QWidget] = []
-        try:
-            from config import preferences
-            from brain import memory_store
-            for title, path in (("Chats, memory and activity", memory_store.db_path()),
-                                ("Preferences", preferences.path())):
-                w = QWidget()
-                c = QVBoxLayout(w)
-                c.setContentsMargins(0, 12, 0, 12)
-                c.setSpacing(3)
-                c.addWidget(_label(title, style.BODY, style.INK, QFont.Weight.Medium))
-                p = _label(path, style.CAPTION, style.INK_MUTE)
-                p.setTextInteractionFlags(Qt.TextSelectableByMouse)
-                c.addWidget(p)
-                rows.append(w)
-        except Exception:
-            pass
-        if rows:
-            self.add(_rows_card(rows))
+        self.add(_group("Your data"))
+        export = _button("Export…")
+        export.clicked.connect(self._export)
+        chats = _button("Delete all")
+        _arm(chats, "Delete all chats?", self._delete_chats)
+        activity = _button("Clear")
+        _arm(activity, "Clear activity?", self._clear_activity)
+        folder = _button("Open")
+        folder.clicked.connect(self._open_folder)
+        self._status = _label("", style.SMALL, style.GOOD)
+        self.add(_rows_card([
+            _row("Export my data", "Everything Mike keeps — chats, memory, activity, "
+                 "settings — as readable files in one zip.", export),
+            _row("Delete all chats", "Every saved conversation, permanently.", chats),
+            _row("Clear activity history", "The record of what Mike did on this computer.",
+                 activity),
+            _row("Data folder", self._data_dir(), folder),
+        ]))
+        self.add(self._status)
+
+        self.add(_group("Start over"))
+        reset = _button("Reset…")
+        _arm(reset, "Erase everything?", self._reset)
+        self.add(_rows_card([
+            _row("Reset Mike", "Erase chats, memory, activity, logs and settings, and "
+                 "disconnect Gmail — like a fresh install. Mike closes afterwards.", reset),
+        ]))
         self.body.addStretch(1)
+
+    # ── actions ──
+    @staticmethod
+    def _data_dir() -> str:
+        try:
+            from hostplatform import storage
+            return str(storage.data_dir())
+        except Exception:
+            return ""
+
+    def _say(self, text: str) -> None:
+        self._status.setText(text)
+        QTimer.singleShot(4000, lambda: self._status.setText(""))
+
+    def _export(self) -> None:
+        import time
+        from PySide6.QtCore import QStandardPaths
+        from PySide6.QtWidgets import QFileDialog
+        docs = QStandardPaths.writableLocation(QStandardPaths.DocumentsLocation)
+        name = f"Mike data {time.strftime('%Y-%m-%d')}.zip"
+        path, _ = QFileDialog.getSaveFileName(self, "Export my data",
+                                              f"{docs}/{name}", "Zip archive (*.zip)")
+        if not path:
+            return
+        try:
+            from brain import data_export
+            data_export.export_zip(path)
+            self._say(f"Saved to {path}")
+        except Exception as exc:
+            self._status.setStyleSheet(f"color:{style.STOP};background:transparent;")
+            self._say(f"Couldn't export: {exc}")
+
+    def _delete_chats(self) -> None:
+        from brain import data_export
+        data_export.delete_all_chats()
+        hook = self._hooks.get("chats_deleted")
+        if hook:
+            hook()
+        self._say("All chats deleted.")
+
+    def _clear_activity(self) -> None:
+        from brain import data_export
+        data_export.clear_activity()
+        self._say("Activity history cleared.")
+
+    def _open_folder(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self._data_dir()))
+
+    def _reset(self) -> None:
+        from brain import data_export
+        data_export.reset_everything()
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(self, "Mike has been reset",
+                                "Everything has been erased. Mike will close now — "
+                                "open him again to start fresh.")
+        hook = self._hooks.get("quit_app")
+        if hook:
+            hook()
+
+
+def _open_doc(key: str, parent) -> None:
+    from ui.workspace import legal_view
+    legal_view.show(key, parent.window() if parent is not None else None)
 
 
 # ══ About ══════════════════════════════════════════════════
 
 class AboutTab(_Tab):
+
+    def __init__(self, hooks: dict | None = None, parent=None) -> None:
+        self._hooks = hooks or {}
+        super().__init__(parent)
 
     def build(self) -> None:
         from ui.panel.mark import PresenceMark
@@ -858,6 +994,7 @@ class AboutTab(_Tab):
             from config.ollama import OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL
         except Exception:
             OLLAMA_CHAT_MODEL, OLLAMA_VISION_MODEL = "a local model", "a local model"
+        self.add(self._brain_card())
         self.add(_rows_card([
             _row("Language model", f"{OLLAMA_CHAT_MODEL} · runs through Ollama, on-device",
                  None),
@@ -872,8 +1009,114 @@ class AboutTab(_Tab):
             _row("Talk to Mike", "", _key_hint("F6")),
             _row("Stop Mike", "", _key_hint("Esc")),
             _row("New line in a message", "", _key_hint("Shift+Enter")),
+            _row("Settings", "", _key_hint("Ctrl+,")),
         ]))
+
+        self.add(_group("Help"))
+        report = _button("Create report…")
+        report.clicked.connect(self._report)
+        rows = [_row("Report a problem",
+                     "Saves a file with technical details and Mike's logs, which can "
+                     "include parts of what you asked. Nothing is sent — you choose "
+                     "whether to share it.", report)]
+        from config import settings
+        site = _button("Open")
+        site.clicked.connect(lambda: self._open_url(settings.WEBSITE))
+        rows.append(_row("Website", settings.WEBSITE.replace("https://", ""), site))
+        if getattr(settings, "SUPPORT_EMAIL", ""):
+            mail = _button("Email")
+            mail.clicked.connect(lambda: self._open_url(f"mailto:{settings.SUPPORT_EMAIL}"))
+            rows.append(_row("Contact support", settings.SUPPORT_EMAIL, mail))
+        self.add(_rows_card(rows))
+        self._report_status = _label("", style.SMALL, style.GOOD)
+        self.add(self._report_status)
+
+        self.add(_group("Legal"))
+        legal_rows = []
+        for key, label, desc in (("privacy", "Privacy Policy", "What Mike keeps, and when it uses the internet."),
+                                 ("terms", "Terms of Use", "The agreement for using Mike."),
+                                 ("licences", "Open-source licences", "The open-source software Mike is built on.")):
+            b = _button("Read")
+            b.clicked.connect(lambda _=False, k=key: _open_doc(k, self))
+            legal_rows.append(_row(label, desc, b))
+        self.add(_rows_card(legal_rows))
+        foot = _label(f"© {settings.PUBLISHER}. Mike {settings.VERSION}.", style.CAPTION,
+                      style.INK_MUTE)
+        foot.setContentsMargins(4, 6, 0, 0)
+        self.add(foot)
         self.body.addStretch(1)
+
+    # ── brain status ──
+    def _brain_card(self) -> QWidget:
+        self._brain_title = _label("Checking…", style.BODY, style.INK, QFont.Weight.Medium)
+        self._brain_detail = _label("", style.SMALL, style.INK_MUTE)
+        self._brain_dot = _StatusDot(True)
+        self._brain_btn = _button("Check again")
+        w = QWidget()
+        row = QHBoxLayout(w)
+        row.setContentsMargins(0, 14, 0, 14)
+        row.setSpacing(12)
+        row.addWidget(self._brain_dot, 0, Qt.AlignTop)
+        text = QVBoxLayout()
+        text.setSpacing(3)
+        text.addWidget(self._brain_title)
+        text.addWidget(self._brain_detail)
+        row.addLayout(text, 1)
+        row.addWidget(self._brain_btn, 0, Qt.AlignVCenter)
+        health = self._hooks.get("brain_health") if hasattr(self, "_hooks") else None
+        self._health = health
+        if health is not None:
+            health.changed.connect(self._show_brain)
+            self._brain_btn.clicked.connect(self._brain_action)
+            self._show_brain(health.last)
+            if health.last.get("state") == "checking":
+                health.check()
+        return _rows_card([w])
+
+    def _show_brain(self, h: dict) -> None:
+        try:
+            state = h.get("state")
+            ok = state in ("ready", "no_model")
+            self._brain_dot._ok = ok
+            self._brain_dot.update()
+            self._brain_title.setText(h.get("title", ""))
+            self._brain_detail.setText(h.get("detail", ""))
+            self._brain_btn.setText("Start Ollama" if h.get("can_start") else "Check again")
+            self._brain_btn.setEnabled(state not in ("checking", "starting"))
+        except RuntimeError:
+            pass        # this tab was rebuilt; the old labels are gone
+
+    def _brain_action(self) -> None:
+        if self._health is None:
+            return
+        if self._health.last.get("can_start"):
+            self._health.start_ollama()
+        else:
+            self._health.check()
+
+    @staticmethod
+    def _open_url(url: str) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl(url))
+
+    def _report(self) -> None:
+        import time
+        from PySide6.QtCore import QStandardPaths
+        from PySide6.QtWidgets import QFileDialog
+        desk = QStandardPaths.writableLocation(QStandardPaths.DesktopLocation)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save problem report", f"{desk}/Mike problem report {time.strftime('%Y-%m-%d %H%M')}.zip",
+            "Zip archive (*.zip)")
+        if not path:
+            return
+        try:
+            from brain import support_bundle
+            support_bundle.create(path)
+            self._report_status.setText(f"Saved to {path}. Open it to see what's inside before sharing.")
+        except Exception as exc:
+            self._report_status.setStyleSheet(f"color:{style.STOP};background:transparent;")
+            self._report_status.setText(f"Couldn't create the report: {exc}")
 
 
 # ══ the settings surface ═══════════════════════════════════
@@ -954,6 +1197,7 @@ class SettingsPage(QWidget):
     TABS = [
         ("general", "General"),
         ("voice", "Voice"),
+        ("permissions", "Permissions"),
         ("memory", "Memory"),
         ("activity", "Activity"),
         ("privacy", "Privacy"),
@@ -1004,8 +1248,10 @@ class SettingsPage(QWidget):
         if key == "activity":
             return ActivityTab()
         if key == "privacy":
-            return PrivacyTab()
-        return AboutTab()
+            return PrivacyTab(self._hooks)
+        if key == "permissions":
+            return PermissionsTab()
+        return AboutTab(self._hooks)
 
     def open_tab(self, key: str) -> None:
         if key not in dict(self.TABS):

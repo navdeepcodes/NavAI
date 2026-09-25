@@ -95,6 +95,9 @@ analysis = Analysis(
         # with it). Registered at startup by ui.panel.style.load_fonts() --
         # without these files every surface falls back to Segoe UI.
         (os.path.join(REPO_ROOT, "ui", "fonts"), os.path.join("ui", "fonts")),
+        # The Privacy Policy, Terms and open-source licences, shown in
+        # Settings -> About and on first run; they must ship with the app.
+        (os.path.join(REPO_ROOT, "docs", "legal"), os.path.join("docs", "legal")),
         # The VS Code bridge extension. Without this the editor integration
         # is unreachable for anyone who didn't clone the repo: ide/bridge.py
         # starts, listens on 8787, and nothing ever connects, because the

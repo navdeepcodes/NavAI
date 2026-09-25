@@ -21,7 +21,7 @@ from brain.core_tools import (
     friendly_tool_name,
     needs_confirmation,
 )
-from brain import environment, memory_store
+from brain import environment, memory_store, permissions
 from brain.mike_core import MikeCore
 from config.ollama import (
     OLLAMA_CHAT_MODEL,
@@ -412,7 +412,7 @@ class CoreRuntime:
                 )
 
             messages = self._build_messages()
-            result = self._brain.complete(messages, OLLAMA_TOOLS, max_tokens=1)
+            result = self._brain.complete(messages, permissions.allowed_tools(OLLAMA_TOOLS), max_tokens=1)
             # complete() reports a failed request by returning an error rather
             # than raising, so a bare call here looked successful even when
             # the server rejected it outright -- the first version of this
@@ -512,7 +512,7 @@ class CoreRuntime:
 
         # Fit the request to this brain before sending it. Tool schemas are
         # never truncated — a model holding half a definition calls it wrongly.
-        plan = plan_request(messages, OLLAMA_TOOLS, self._capabilities)
+        plan = plan_request(messages, permissions.allowed_tools(OLLAMA_TOOLS), self._capabilities)
         if not plan.fits:
             note = plan.error.human()
             self._core.history.append({"role": "assistant", "content": note})
@@ -832,7 +832,7 @@ class CoreRuntime:
         ChatResult so this method is provider-independent like the rest."""
 
         messages = self._build_messages()
-        plan = plan_request(messages, OLLAMA_TOOLS, self._capabilities)
+        plan = plan_request(messages, permissions.allowed_tools(OLLAMA_TOOLS), self._capabilities)
         if not plan.fits:
             return ChatResult(text=plan.error.human(), error=plan.error)
         return self._brain.complete(plan.messages, plan.tools)
@@ -926,6 +926,13 @@ class CoreRuntime:
         function_name: str,
         args: dict,
     ) -> dict:
+
+        # The user's own Permissions come first: a tool they switched off never
+        # runs, whatever the model asked for.
+        refused = permissions.blocked(function_name)
+        if refused:
+            logger.info("Refused %s: turned off in Permissions.", function_name)
+            return {"status": "error", "error": refused}
 
         # Checked before anything runs, so a malformed call fails with a
         # message the model can act on instead of a bare "Validation failed."

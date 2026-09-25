@@ -108,7 +108,7 @@ def test_settings_holds_everything_that_is_not_a_conversation():
     from ui.workspace.pages import SettingsPage
 
     keys = [k for k, _ in SettingsPage.TABS]
-    assert keys == ["general", "voice", "memory", "activity", "privacy", "about"]
+    assert keys == ["general", "voice", "permissions", "memory", "activity", "privacy", "about"]
     page = SettingsPage({})
     for key in keys:
         page.open_tab(key)

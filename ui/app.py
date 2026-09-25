@@ -104,6 +104,7 @@ class MikeWindow(QMainWindow):
         self._settings_hooks["new_conversation"] = self.controller.new_conversation
         self._settings_hooks["open_conversation"] = self.controller.open_conversation
         self._settings_hooks["current_conversation"] = lambda: self.controller.conversation_id
+        self._settings_hooks["quit_app"] = self._request_quit
 
         self.setCentralWidget(self.page)
 
@@ -131,6 +132,9 @@ class MikeWindow(QMainWindow):
 
         self.controller.startup()
         self.page.set_wake_listening(self.controller.wake_listening)
+        # Is Mike's brain ready? Asked in the background once the window is up,
+        # so a stopped or missing Ollama is explained before the first question.
+        QTimer.singleShot(900, self.page.health.check)
 
     def _set_wake(self, enabled: bool) -> None:
         self.controller.set_wake_word_enabled(enabled)
@@ -145,6 +149,9 @@ class MikeWindow(QMainWindow):
 
     def _ambient_signal(self, state: str) -> None:
         if state not in self._AMBIENT:
+            return
+        from config import preferences
+        if not preferences.get("notifications_enabled", True):
             return
         if self.isVisible() and not self.isMinimized():
             return
@@ -469,16 +476,21 @@ class MikeWindow(QMainWindow):
 
 
 def _maybe_show_welcome(window) -> None:
-    """The first-install tour, shown exactly once per machine."""
+    """The first-install tour (once per machine), ending with agreeing to the
+    Terms and Privacy Policy — and just that agreement, on its own, if the
+    documents have changed since it was last accepted."""
+    from brain import legal
     from config import preferences
 
-    if preferences.get("welcome_tour_shown", False):
+    first_time = not preferences.get("welcome_tour_shown", False)
+    if not first_time and legal.accepted():
         return
     try:
         from ui.welcome import WelcomeWindow
 
         preferences.set_value("welcome_tour_shown", True)
-        tour = WelcomeWindow()
+        tour = WelcomeWindow(consent_only=not first_time)
+        tour.declined.connect(window._request_quit)
         window._tour = tour
 
         screen = QApplication.primaryScreen().availableGeometry()
@@ -495,6 +507,16 @@ def _maybe_show_welcome(window) -> None:
 def run():
     app = QApplication(sys.argv)
     app.setApplicationName("Mike")
+
+    # No crash goes unrecorded (crash.log + the log), and only one Mike runs:
+    # a second launch brings the running one forward and exits.
+    from ui.system.lifecycle import SingleInstance, install_crash_handlers
+    install_crash_handlers()
+    instance = SingleInstance()
+    if not instance.claim():
+        logger.info("Mike is already running; asked it to come forward.")
+        os._exit(0)
+    app._single_instance = instance
 
     # Garbage-collect only on the GUI thread. Mike's busy background threads
     # (wake word, Piper, speech-to-text, workers) would otherwise trigger
@@ -523,13 +545,20 @@ def run():
     _maybe_show_welcome(window)
 
     app.aboutToQuit.connect(window._teardown)
+    instance.activated.connect(window._show_full)
 
     if getattr(window, "_tour", None) is None:
-        window.show()
+        if "--autostart" in sys.argv:
+            # Launched at sign-in: be present, not in the way — Mike takes the
+            # corner and the taskbar, and the workspace waits to be opened.
+            window._go_corner()
+        else:
+            window.show()
 
     code = app.exec()
 
     window._teardown()
+    instance.release()
 
     _flush_std_streams()
     os._exit(code)

@@ -82,6 +82,16 @@ class MikeWorkspace(QWidget):
         # the profile row and Settings need to hear about each other
         self._hooks.setdefault("profile_changed", self._on_profile_changed)
 
+        # Is the brain ready? Checked at startup and on demand; the chat shows
+        # a banner with the fix, Settings shows the live status.
+        from ui.workspace.health import BrainHealth
+        self.health = BrainHealth(self)
+        self.health.changed.connect(self.chat.brain_banner.show_health)
+        self.chat.brain_banner.start_requested.connect(self.health.start_ollama)
+        self.chat.brain_banner.retry_requested.connect(self.health.check)
+        self._hooks["brain_health"] = self.health
+        self._hooks.setdefault("chats_deleted", self._on_chats_deleted)
+
         from config import preferences
         if bool(preferences.get("sidebar_collapsed", False)):
             self._sidebar_open = False
@@ -266,6 +276,15 @@ class MikeWorkspace(QWidget):
         """Whether "Hey Mike" is really live, so hints only promise what works."""
         self.chat._hero.set_wake_listening(on)
 
+    def _on_chats_deleted(self) -> None:
+        """Every chat was erased from Settings: start fresh, empty the rail."""
+        hook = self._hooks.get("new_conversation")
+        if hook:
+            hook()
+        self.refresh_conversations()
+        if self._settings is not None and self.showing_overlay():
+            self.stack.setCurrentWidget(self._settings)
+
     def _on_profile_changed(self) -> None:
         self.sidebar.refresh_profile()
 
@@ -288,6 +307,10 @@ class MikeWorkspace(QWidget):
 
     def add_notice(self, text, kind="error"):
         self.chat.add_notice(text, kind)
+        if kind == "error":
+            # an error is often the brain going away — re-check, so the banner
+            # can offer the fix
+            self.health.check()
 
     def add_action_card(self, text):
         return self.chat.add_action_card(text)

@@ -28,19 +28,34 @@ from hostplatform import storage
 # still cannot encode degrades to a marker rather than destroying the log
 # line, since a log that loses records under pressure is worse than a log
 # with an odd glyph in it.
-_file = logging.FileHandler(str(storage.log_path()), encoding="utf-8", errors="replace")
-_console = logging.StreamHandler(stream=sys.stdout)
-try:
-    # Python 3.7+: retarget the console stream itself, so this survives a
-    # console whose own codepage is narrower than what Mike logs.
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
+#
+# Rotating, not append-forever: a plain FileHandler grew mike.log without
+# limit on a machine Mike lives on for months. Four files of 2 MB keep days of
+# history for "Report a problem" while never costing more than 8 MB of disk.
+from logging.handlers import RotatingFileHandler
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s",
-    handlers=[_file, _console],
-)
+_file = RotatingFileHandler(str(storage.log_path()), maxBytes=2_000_000,
+                            backupCount=3, encoding="utf-8", errors="replace")
+_handlers: list[logging.Handler] = [_file]
+# The packaged app is windowed: there is no console, and sys.stdout is None.
+# Only log to a console when there is one.
+if sys.stdout is not None:
+    try:
+        # Python 3.7+: retarget the console stream itself, so this survives a
+        # console whose own codepage is narrower than what Mike logs.
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    _handlers.append(logging.StreamHandler(stream=sys.stdout))
+
+# Attached explicitly rather than through logging.basicConfig(), which does
+# nothing at all if anything else configured logging first — a library, a
+# test runner — and would silently leave Mike with no log file.
+_root = logging.getLogger()
+_root.setLevel(logging.INFO)
+_format = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+for _h in _handlers:
+    _h.setFormatter(_format)
+    _root.addHandler(_h)
 
 logger = logging.getLogger("Mike")

@@ -1019,7 +1019,7 @@ class _SettingsView(QScrollArea):
         self._section("MEMORY", self._memory_line(), action=("Forget all", self._forget_all))
         self._col.addSpacing(14)
         self._section("PRIVACY", f"Everything Mike does stays on {_this_machine()}. "
-                      "No account, no cloud, nothing sent anywhere.")
+                      "No account, no analytics — your conversations stay here.")
         self._col.addStretch(1)
 
     def _section(self, label: str, detail: str, action=None) -> None:
@@ -1309,7 +1309,7 @@ class MikePanel(QWidget):
             f"I'm Mike. I live on {_this_machine()} — and unlike a chat "
             "window, I can actually use it.\n\n"
             "Open things, find files, write something, fix code that won't "
-            "work. I check before changing anything, and nothing leaves "
+            "work. I check before changing anything, and your chats stay on "
             "this machine."
         )
 

@@ -196,6 +196,89 @@ class _NoticeIcon(QWidget):
             p.drawRoundedRect(QRectF(5, 5, 8, 8), 2, 2)
 
 
+class _BrainBanner(QFrame):
+    """When Mike's brain isn't ready: what's wrong, and the one-click fix."""
+
+    start_requested = Signal()
+    retry_requested = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        from PySide6.QtWidgets import QPushButton
+        self.setObjectName("brainBanner")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 12, 12, 12)
+        row.setSpacing(12)
+        self._icon = _NoticeIcon("error")
+        row.addWidget(self._icon, 0, Qt.AlignTop)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        self._title = QLabel("")
+        self._title.setFont(style.font(style.BODY, QFont.Weight.DemiBold))
+        self._title.setStyleSheet(f"color:{style.INK};background:transparent;")
+        text.addWidget(self._title)
+        self._detail = QLabel("")
+        self._detail.setWordWrap(True)
+        self._detail.setFont(style.font(style.SMALL))
+        self._detail.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
+        text.addWidget(self._detail)
+        row.addLayout(text, 1)
+
+        def button(label, primary=False):
+            b = QPushButton(label)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFont(style.font(style.SMALL, QFont.Weight.DemiBold))
+            if primary:
+                b.setStyleSheet(
+                    f"QPushButton{{background:{style.accent()};color:#17140F;border:none;"
+                    f"border-radius:9px;padding:7px 14px;}}")
+            else:
+                b.setStyleSheet(
+                    f"QPushButton{{background:transparent;color:{style.INK_SOFT};"
+                    f"border:1px solid {style.HAIRLINE};border-radius:9px;padding:6px 12px;}}"
+                    f"QPushButton:hover{{color:{style.INK};border-color:{style.INK_MUTE};}}")
+            row.addWidget(b, 0, Qt.AlignVCenter)
+            return b
+
+        self._start = button("Start it for me", primary=True)
+        self._start.clicked.connect(self.start_requested.emit)
+        self._get = button("Get Ollama", primary=True)
+        self._get.clicked.connect(self._open_download)
+        self._retry = button("Try again")
+        self._retry.clicked.connect(self.retry_requested.emit)
+        self._close = button("Dismiss")
+        self._close.clicked.connect(self.hide)
+        self.hide()
+
+    def _open_download(self) -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        from brain.ollama_launcher import DOWNLOAD_URL
+        QDesktopServices.openUrl(QUrl(DOWNLOAD_URL))
+
+    def show_health(self, h: dict) -> None:
+        state = h.get("state")
+        if state in ("ready", "checking"):
+            self.hide()
+            return
+        problem = state in ("not_running", "not_installed")
+        self._icon._kind = "error" if problem else "info"
+        self._icon.update()
+        self._title.setText(h.get("title", ""))
+        self._detail.setText(h.get("detail", ""))
+        self._start.setVisible(state == "not_running" and bool(h.get("can_start")))
+        self._get.setVisible(state == "not_installed")
+        self._retry.setVisible(problem)
+        self._close.setVisible(state == "no_model")
+        tint = QColor(style.STOP if problem else style.accent())
+        tint.setAlpha(20)
+        border = style.STOP if problem else style.HAIRLINE
+        self.setStyleSheet(
+            f"QFrame#brainBanner{{background:rgba({tint.red()},{tint.green()},{tint.blue()},"
+            f"{tint.alpha()});border:1px solid {border};border-radius:14px;}}")
+        self.show()
+
+
 class ConfirmCard(_Confirm):
     """The confirmation, in the workspace's type scale, with a long preview
     (an edit's before/after) kept scrollable so the buttons never leave the
@@ -386,7 +469,7 @@ class _Hero(QWidget):
             self._sub.setText(
                 f"I live on {_this_machine()} and can actually use it — open things, "
                 "find and write files, read your screen, fix code. I check before "
-                "changing anything, and nothing leaves this machine.")
+                "changing anything, and your conversations stay on this computer.")
             preferences.set_value("onboarding_complete", True)
         else:
             h = datetime.now().hour
@@ -454,8 +537,11 @@ class ChatPage(QWidget):
         # ── the composer: confirm + input, along the bottom ──
         dock = QWidget()
         dcol = QVBoxLayout(dock)
-        dcol.setContentsMargins(0, 6, 0, 18)
+        dcol.setContentsMargins(0, 6, 0, 10)
         dcol.setSpacing(10)
+
+        self.brain_banner = _BrainBanner()
+        dcol.addWidget(self.brain_banner)
 
         self.confirm = ConfirmCard()
         self.confirm.visibility_changed.connect(
@@ -467,6 +553,13 @@ class ChatPage(QWidget):
         self.input.attachment_removed.connect(self._remove_attachment)
         self.input.stop_requested.connect(self.activity.stop_requested.emit)
         dcol.addWidget(self.input)
+        # The line every AI product owes its users.
+        self._disclaimer = QLabel("Mike can make mistakes. Check anything important.")
+        self._disclaimer.setAlignment(Qt.AlignHCenter)
+        self._disclaimer.setFont(style.font(style.MICRO))
+        self._disclaimer.setStyleSheet(f"color:{style.INK_MUTE};background:transparent;")
+        dcol.addSpacing(-4)
+        dcol.addWidget(self._disclaimer)
         outer.addWidget(_centred(dock))
 
         self.setAcceptDrops(True)

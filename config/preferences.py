@@ -75,6 +75,14 @@ DEFAULTS: dict[str, Any] = {
     # the workspace reopens the way it was left.
     "sidebar_collapsed": False,
 
+    # Launch readiness. Abilities the user switched off (comma-separated keys
+    # from brain/permissions.py); whether Mike opens at sign-in and how; tray
+    # notifications; which version of the Terms/Privacy Policy was accepted.
+    "abilities_off": "",
+    "launch_at_login": False,
+    "notifications_enabled": True,
+    "terms_accepted_version": "",
+
     # Who Mike is talking to. A real profile surface edits these; they're used
     # for a warmer greeting and nothing is sent anywhere.
     "profile_name": "",

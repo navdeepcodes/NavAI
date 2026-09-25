@@ -33,7 +33,7 @@ CARDS = (
         "title": "This is Mike.",
         "body": "He lives on this computer — not in a browser tab, not on "
                 "someone's server. Everything he thinks happens here, and "
-                "nothing you say leaves the machine.",
+                "your conversations stay on this computer.",
     },
     {
         "art": "doing",
@@ -53,11 +53,23 @@ CARDS = (
     {
         "art": "safe",
         "title": "He checks before he changes anything.",
+        "key": "safe",
         "body": "Anything that edits, deletes or sends gets shown to you "
                 "first. Stop (or Esc) halts him mid-task at any time, and closing "
                 "the window just tucks him into the corner.",
     },
 )
+
+
+#: The last card: agreeing to the Terms and Privacy Policy. Shown at the end of
+#: the tour, and on its own when the documents change.
+CONSENT = {
+    "art": "sign",
+    "title": "One last thing.",
+    "body": ("Mike runs on this computer and keeps your data here. Before you "
+             "start, please read the {terms} and {privacy}. By continuing, you "
+             "agree to them."),
+}
 
 
 class _Art(QWidget):
@@ -95,6 +107,22 @@ class _Art(QWidget):
         accent = style.qaccent()
         ink = QColor(style.INK)
         mute = QColor(style.INK_FAINT)
+
+        if self._kind == "sign":
+            from PySide6.QtCore import QPointF
+            from ui.workspace import handwriting as hw
+            if not hasattr(self, "_begin"):
+                self._begin = hw.Script("Let's begin", seed=11) if hw.available() else None
+            script = self._begin
+            if script is not None:
+                scale, pace = 2.0, 1.2
+                t = min(self._t * pace, script.duration + 1.0)
+                origin = QPointF(cx - script.width * scale / 2, cy + 16)
+                tip = script.paint(p, origin, scale, t, QColor(style.INK), accent)
+                _x, _y, down = script.pen_at(t)
+                hw.paint_pen(p, tip, 34, accent, accent.darker(210),
+                             down and t < script.duration)
+            return
 
         if self._kind == "presence":
             # The first thing Mike ever does: write "Hello", by hand, with the
@@ -185,13 +213,20 @@ class WelcomeWindow(QWidget):
     """The tour itself. Emits finished() when it closes, however it closes."""
 
     finished = Signal()
+    #: The person chose not to accept the Terms — Mike should quit.
+    declined = Signal()
 
     SHADOW = 20
     WIDTH = 560
     HEIGHT = 470
 
-    def __init__(self) -> None:
+    def __init__(self, consent_only: bool = False) -> None:
         super().__init__()
+        from brain import legal
+        # the tour's cards, then the consent card unless it's already agreed
+        self._cards = [] if consent_only else list(CARDS)
+        if consent_only or not legal.accepted():
+            self._cards.append(CONSENT)
         self._index = 0
         self.setWindowTitle("Welcome to Mike")
         self.setFixedSize(self.WIDTH, self.HEIGHT)
@@ -226,7 +261,7 @@ class WelcomeWindow(QWidget):
                                  self.SHADOW + 34, self.SHADOW + 22)
         outer.setSpacing(0)
 
-        self._art = _Art(CARDS[0]["art"])
+        self._art = _Art(self._cards[0]["art"])
         outer.addWidget(self._art)
         outer.addSpacing(18)
 
@@ -243,11 +278,13 @@ class WelcomeWindow(QWidget):
         self._body.setStyleSheet(
             f"color:{style.INK_SOFT};background:transparent;line-height:150%;")
         self._body.setMinimumHeight(86)
+        self._body.setTextFormat(Qt.RichText)
+        self._body.linkActivated.connect(self._open_link)
         outer.addWidget(self._body)
         outer.addStretch(1)
 
         bottom = QHBoxLayout()
-        self._dots = _Dots(len(CARDS))
+        self._dots = _Dots(len(self._cards))
         bottom.addWidget(self._dots, 0, Qt.AlignVCenter)
         bottom.addStretch(1)
 
@@ -258,7 +295,7 @@ class WelcomeWindow(QWidget):
             f"QPushButton{{background:transparent;color:{style.INK_MUTE};"
             f"border:none;padding:9px 14px;}}"
             f"QPushButton:hover{{color:{style.INK};}}")
-        self._skip.clicked.connect(self._close)
+        self._skip.clicked.connect(self._skip_pressed)
         bottom.addWidget(self._skip)
 
         self._next = QPushButton("Next")
@@ -273,15 +310,27 @@ class WelcomeWindow(QWidget):
         outer.addLayout(bottom)
 
     # ── behaviour ───────────────────────────────────────────
+    def _consent_showing(self) -> bool:
+        return self._cards[self._index] is CONSENT
+
     def _render(self) -> None:
-        card = CARDS[self._index]
+        card = self._cards[self._index]
         self._art.set_kind(card["art"])
         self._title.setText(card["title"])
-        self._body.setText(card["body"])
+        link = (f'<a href="{{0}}" style="color:{style.accent()};'
+                f'text-decoration:none;font-weight:600;">{{1}}</a>')
+        self._body.setText(card["body"].format(
+            terms=link.format("terms", "Terms of Use"),
+            privacy=link.format("privacy", "Privacy Policy")))
         self._dots.set_active(self._index)
-        last = self._index == len(CARDS) - 1
-        self._next.setText("Start using Mike" if last else "Next")
-        self._skip.setVisible(not last)
+        self._dots.setVisible(len(self._cards) > 1)
+        last = self._index == len(self._cards) - 1
+        consent = self._consent_showing()
+        self._next.setText("Agree and start" if consent else
+                           ("Start using Mike" if last else "Next"))
+        # On the consent card, "Skip" becomes a way out rather than a way past.
+        self._skip.setText("Quit" if consent else "Skip")
+        self._skip.setVisible(consent or not last)
 
         # Cross-fade rather than a hard cut, so moving between cards reads as
         # one surface changing its mind rather than four separate screens.
@@ -296,11 +345,33 @@ class WelcomeWindow(QWidget):
             fade.start()
 
     def _advance(self) -> None:
-        if self._index >= len(CARDS) - 1:
+        if self._consent_showing():
+            from brain import legal
+            legal.accept()
+            self._close()
+            return
+        if self._index >= len(self._cards) - 1:
             self._close()
             return
         self._index += 1
         self._render()
+
+    def _skip_pressed(self) -> None:
+        """Skip jumps past the tour — but never past the consent card."""
+        if self._consent_showing():
+            self._art.stop()
+            self.close()
+            self.declined.emit()
+            return
+        if self._cards and self._cards[-1] is CONSENT:
+            self._index = len(self._cards) - 1
+            self._render()
+            return
+        self._close()
+
+    def _open_link(self, key: str) -> None:
+        from ui.workspace import legal_view
+        legal_view.show(key, self)
 
     def _close(self) -> None:
         self._art.stop()
@@ -309,7 +380,8 @@ class WelcomeWindow(QWidget):
 
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key_Escape:
-            self._close()
+            if not self._consent_showing():
+                self._skip_pressed()
             return
         if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Right):
             self._advance()

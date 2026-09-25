@@ -35,3 +35,16 @@ GROQ_MODEL = os.getenv(
     "GROQ_MODEL",
     "llama-3.3-70b-versatile"
 )
+
+# ── Publishing ────────────────────────────────────────────────
+# Who ships Mike and where people find help. Shown in Settings → About and
+# filled into the Privacy Policy and Terms (docs/legal/*.md, {placeholders}).
+# SUPPORT_EMAIL is deliberately empty until there is a real inbox behind it:
+# the app hides the "Email support" link rather than show an address nobody
+# reads.
+PUBLISHER = "Huddlecode"
+WEBSITE = "https://huddlecode.com"
+SUPPORT_EMAIL = ""
+#: Bump when the Privacy Policy or Terms change materially; people are asked
+#: to accept the new version on their next launch.
+LEGAL_VERSION = "2026-09-25"
