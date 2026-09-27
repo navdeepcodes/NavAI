@@ -41,6 +41,8 @@ API = "https://api.cloudflare.com/client/v4"
 #: The redirects registered on the OAuth client, exactly.
 CALLBACK_PATH = "/cloudflare/callback"
 CALLBACK_PORTS = (53682, 53683, 53684)
+#: How many times a sign-in that trips on the way is started again by itself.
+RESTARTS = 2
 
 #: Renew the access token this long before it expires, in the background, so
 #: no question waits for it. Renewing doesn't withdraw the old token --
@@ -313,17 +315,41 @@ def connect(open_browser: Callable[[str], object] = webbrowser.open,
             timeout: float = 300, cancel: threading.Event | None = None) -> dict:
     """Blocking: opens Cloudflare in the browser and waits for Allow. Returns
     {"account_id", "account_name"}; raises CloudflareError with a sentence a
-    person can read. Run it off the UI thread."""
-    verifier, challenge = pkce_pair()
-    state = secrets.token_urlsafe(16)
+    person can read. Run it off the UI thread.
+
+    A sign-in that trips on the way starts again by itself, in the same tab.
+    Measured with a brand-new account: making it mid-sign-in lost Cloudflare's
+    own sign-in cookie ("The CSRF value from the token does not match"), Mike
+    took that as the answer and stopped listening -- and a moment later the
+    same browser brought a good code to a port nobody was on. By the second
+    time round the student is signed in and sees just Authorize. Only a No
+    from the student, or tripping again and again, ends it."""
+    flows: dict[str, str] = {}              # every authorization started: state -> verifier
+    restarts: list[str] = []
+
+    def start() -> str:
+        verifier, challenge = pkce_pair()
+        state = secrets.token_urlsafe(16)
+        flows[state] = verifier
+        return authorize_url(receiver.redirect_uri, challenge, state)
+
+    def again(query: dict[str, str]) -> str | None:
+        state = query.get("state")
+        if query.get("error") == "access_denied" or len(restarts) >= RESTARTS \
+                or (state and state not in flows):
+            return None
+        restarts.append(query.get("error_description") or query.get("error") or "no code")
+        logger.info("Cloudflare sign-in tripped (%s); starting it again.", restarts[-1][:160])
+        return start()
+
     try:
         receiver = Receiver(path=CALLBACK_PATH, ports=CALLBACK_PORTS,
-                            success="Fast mode is on.")
+                            success="Fast mode is on.", again=again)
     except OSError as exc:
         raise CloudflareError("Something on this computer is using the ports Mike needs to "
                               "connect. Close other sign-in windows and try again.") from exc
     try:
-        open_browser(authorize_url(receiver.redirect_uri, challenge, state))
+        open_browser(start())
         deadline = time.monotonic() + timeout
         result = None
         while result is None and time.monotonic() < deadline:
@@ -334,7 +360,8 @@ def connect(open_browser: Callable[[str], object] = webbrowser.open,
         receiver.close()
     if not result:
         raise CloudflareError("Cloudflare didn't answer in time. Try connecting again.")
-    if result.get("state") != state:
+    verifier = flows.get(result.get("state", ""))
+    if verifier is None:
         raise CloudflareError("That answer wasn't for this request. Try connecting again.")
     if "code" not in result:
         detail = result.get("error_description") or result.get("error") or ""

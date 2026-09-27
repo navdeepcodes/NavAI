@@ -497,3 +497,78 @@ def test_reset_mike_forgets_the_fast_mode_connection_too(cloudflare_api):
         if t.name == "cloudflare-revoke":
             t.join(5)                     # revoked through the stand-in, not the real Cloudflare
     assert any(url == cloudflare.REVOKE_URL for url, _ in cloudflare_api["posts"])
+
+
+# ── a sign-in that trips on the way ──────────────────────────────────────
+
+def _no_follow(url):
+    """GET the way a browser would, without following a redirect: (status, Location)."""
+    import http.client
+    u = urlparse(url)
+    conn = http.client.HTTPConnection(u.hostname, u.port, timeout=5)
+    conn.request("GET", f"{u.path}?{u.query}")
+    response = conn.getresponse()
+    response.read()
+    return response.status, response.getheader("Location")
+
+
+def _tripping_browser(plan):
+    """Answers each authorization in turn: "trip" (Cloudflare's CSRF hiccup,
+    seen making a brand-new account mid-sign-in), "code", or "code-for-first"
+    (the student went back to the first page and authorized there)."""
+    from urllib.parse import urlencode
+    seen = {"states": [], "statuses": []}
+
+    def open_browser(url):
+        def run():
+            current = url
+            for step in plan:
+                q = {k: v[0] for k, v in parse_qs(urlparse(current).query).items()}
+                seen["states"].append(q["state"])
+                answer = {"trip": {"error": "request_forbidden", "state": q["state"],
+                                   "error_description": "The CSRF value from the token does not match"},
+                          "code": {"code": "the-code", "state": q["state"]},
+                          "code-for-first": {"code": "the-code", "state": seen["states"][0]}}[step]
+                status, location = _no_follow(f"{q['redirect_uri']}?{urlencode(answer)}")
+                seen["statuses"].append(status)
+                if status != 302:
+                    return
+                assert location.startswith(cloudflare.AUTH_URL), "back to Cloudflare, not elsewhere"
+                current = location
+        threading.Thread(target=run, daemon=True).start()
+    return open_browser, seen
+
+
+def test_a_sign_in_that_trips_starts_again_in_the_same_tab(cloudflare_api):
+    browser, seen = _tripping_browser(["trip", "code"])
+    info = cloudflare.connect(open_browser=browser, timeout=10)
+    assert info["account_id"] == "acct123"
+    assert seen["statuses"] == [302, 200] and seen["states"][0] != seen["states"][1]
+    assert cloudflare_api["posts"][0][1]["code_verifier"]
+
+
+def test_a_late_code_for_the_first_try_is_still_taken(cloudflare_api):
+    """Measured: the good code came a moment after the hiccup -- to a port
+    nobody was listening on any more."""
+    browser, _ = _tripping_browser(["trip", "code-for-first"])
+    assert cloudflare.connect(open_browser=browser, timeout=10)["account_id"] == "acct123"
+
+
+def test_tripping_again_and_again_is_said_not_looped(cloudflare_api):
+    browser, seen = _tripping_browser(["trip"] * (cloudflare.RESTARTS + 1))
+    with pytest.raises(cloudflare.CloudflareError, match="CSRF"):
+        cloudflare.connect(open_browser=browser, timeout=10)
+    assert seen["statuses"][-1] == 200
+
+
+def test_open_cloudflare_again_after_a_failure_is_a_new_try(monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    QApplication.instance() or QApplication([])
+    from ui.workspace.fast_mode_dialog import FastModeDialog
+    dialog = FastModeDialog()
+    started = []
+    monkeypatch.setattr(dialog, "_connect", lambda: started.append(1))
+    dialog._url = "https://dash.cloudflare.com/oauth2/auth?state=old"
+    dialog._connected("Cloudflare didn't connect: ...")
+    dialog._reopen()
+    assert started == [1], "not the old link, which nothing listens for any more"

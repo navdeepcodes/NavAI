@@ -40,6 +40,7 @@ class FastModeDialog(QDialog):
         super().__init__(parent)
         self._cancel: threading.Event | None = None
         self._url = ""
+        self._failed = False            # the last try ended in an error
         self.setWindowTitle("Mike — Fast mode")
         self.setModal(True)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -151,6 +152,13 @@ class FastModeDialog(QDialog):
         threading.Thread(target=work, name="cloudflare-connect", daemon=True).start()
 
     def _reopen(self) -> None:
+        if self._failed:
+            # The last try has ended and nothing listens for its link any more
+            # (measured: reopened, authorized -- "127.0.0.1 refused to
+            # connect"). A new try, then.
+            self._failed = False
+            self._connect()
+            return
         if self._url:
             from PySide6.QtCore import QUrl
             from PySide6.QtGui import QDesktopServices
@@ -158,6 +166,7 @@ class FastModeDialog(QDialog):
 
     def _connected(self, error: str) -> None:
         if error:
+            self._failed = True
             self.p_browser.show_error(error)
             return
         self._go(self.p_done)

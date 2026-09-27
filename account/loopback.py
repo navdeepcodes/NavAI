@@ -18,6 +18,7 @@ import platform
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Callable
 from urllib.parse import parse_qs, urlparse
 
 #: Tried in order, so the redirect URL is predictable if a project prefers to
@@ -50,12 +51,17 @@ class Receiver:
     """
 
     def __init__(self, path: str = PATH, ports: tuple[int, ...] = PORTS,
-                 success: str = "You're signed in.") -> None:
+                 success: str = "You're signed in.",
+                 again: Callable[[dict[str, str]], str | None] | None = None) -> None:
+        """`again`: asked about a redirect that brought no code -- the URL to
+        send that same browser tab to instead (a fresh sign-in), or None to
+        take the answer as it is."""
         self.result: dict[str, str] | None = None
         self._done = threading.Event()
         self._path = path
         self._ports = ports
         self._success = success
+        self._again = again
         self._server = self._bind()
         # handle_request() returns every half second, so close() is prompt.
         self._server.timeout = 0.5
@@ -81,6 +87,20 @@ class Receiver:
                     return
                 query = {k: v[0] for k, v in parse_qs(url.query).items()}
                 ok = "code" in query
+                onward = None
+                if not ok and receiver._again is not None:
+                    try:
+                        onward = receiver._again(query)
+                    except Exception:
+                        onward = None
+                if onward:
+                    # Tripped on the way: back to the provider in this same
+                    # tab, and still listening for the answer.
+                    self.send_response(302)
+                    self.send_header("Location", onward)
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
                 page = _PAGE.format(
                     title=receiver._success if ok else "That didn't work.",
                     body=("You can close this tab and go back to Mike." if ok else
