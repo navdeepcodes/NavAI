@@ -64,14 +64,23 @@ class EngineProvider(OpenAICompatibleProvider):
 
     # -- the engine, or Ollama -------------------------------------------
     def _ready(self) -> bool:
+        from brain.engine import EngineClosing
+
         if self._fallback is not None:
             return False
         try:
             self._engine.start()
+        except EngineClosing:
+            raise           # Mike is quitting: Ollama loading 9GB in its place would outlive it
         except Exception as exc:
             logger.warning("Mike's model engine couldn't start (%s); using Ollama instead.", exc)
             from brain.providers import get_provider
-            self._fallback = get_provider(provider="ollama")
+            # Plain Ollama: Fast mode already stands in front of this provider.
+            # Asked for as Mike's chat brain it came wrapped in a second Fast
+            # mode, which tried Cloudflare again the moment the first had put
+            # it to rest (measured: an allowance-exhausted call 17s after the
+            # outer one had stepped back).
+            self._fallback = get_provider(provider="ollama", fast_mode=False)
             self._caps = None
             return False
         self._base_url = self._engine.base_url + "/v1"

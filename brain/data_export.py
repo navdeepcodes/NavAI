@@ -103,6 +103,11 @@ def _erase_traces() -> None:
         session_store.clear()
     except Exception:
         logger.exception("Could not remove the account sign-in during reset.")
+    try:
+        from account import cloudflare
+        cloudflare.disconnect(background=True)      # Fast mode's sign-in to Cloudflare
+    except Exception:
+        logger.exception("Could not remove the Fast mode connection during reset.")
     import logging
     from logging.handlers import RotatingFileHandler
     from hostplatform import storage
@@ -131,7 +136,9 @@ def _erase_traces() -> None:
             lifecycle._crash_file.truncate()
     except Exception:
         pass
-    for path in (storage.recordings_dir() / "voice_input.wav", storage.token_path()):
+    for path in (storage.recordings_dir() / "voice_input.wav",
+                 storage.recordings_dir() / "voice_input_early.wav",    # read while you're still talking
+                 storage.token_path()):
         try:
             path.unlink(missing_ok=True)
         except Exception:

@@ -477,6 +477,7 @@ class _Thinking(QWidget):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._index = 0
+        self._hint = ""        # what Mike is doing, once known -- shown instead of the words
         self._t = 0.0          # seconds, continuous — every motion derives from this
         self._elapsed = 0
         self.setFixedHeight(30)
@@ -495,6 +496,13 @@ class _Thinking(QWidget):
         half-torn-down widget."""
         self._frame.stop()
         self._rotate.stop()
+
+    def set_hint(self, text: str) -> None:
+        """What Mike is doing ("Writing style.css"), in place of the rotating
+        words: it's true, and it changes when what he's doing does."""
+        self._hint = " ".join((text or "").split())
+        if self._hint:
+            self._rotate.stop()
 
     def _on_frame(self) -> None:
         self._t += self._FRAME_MS / 1000.0
@@ -541,11 +549,13 @@ class _Thinking(QWidget):
 
         # The word, with a soft highlight passing through it -- subtle enough to
         # be a sign of life, not a spinner.
-        word = THINKING_WORDS[self._index]
+        word = self._hint or THINKING_WORDS[self._index]
         font = style.voice(15)
         p.setFont(font)
         fm = p.fontMetrics()
         tx = cx + 3.2 + 12.0
+        if self._hint:                           # a file name can be long; the panel isn't
+            word = fm.elidedText(word, Qt.ElideMiddle, int(self.width() - tx - 28))
         tw = max(1.0, float(fm.horizontalAdvance(word)))
         baseline = cy + (fm.ascent() - fm.descent()) / 2.0
 
@@ -1562,6 +1572,12 @@ class MikePanel(QWidget):
         self._drop_resting()
         self._thinking = _Thinking()
         self._insert(self._thinking)
+
+    def thinking_hint(self, text: str) -> None:
+        """What Mike is getting ready to do, while he writes it out."""
+        if self._thinking is None:
+            self.show_thinking()
+        self._thinking.set_hint(text)
 
     def hide_thinking(self) -> None:
         if self._thinking is not None:

@@ -324,3 +324,176 @@ def test_switching_coding_and_fast_mode_is_saved():
     finally:
         preferences.set_value("abilities_on", "")
         preferences.set_value("fast_mode", True)
+
+
+# ── keeping the token good ───────────────────────────────────────────────
+
+def _saved(**over):
+    now = time.time()
+    data = {"access_token": "current", "refresh_token": "r0", "account_id": "acct123",
+            "issued_at": now - 1000, "expires_at": now + 3000}
+    data.update(over)
+    cloudflare._save(data)
+
+
+def _token_posts(api):
+    return [fields for url, fields in api["posts"] if url == cloudflare.TOKEN_URL]
+
+
+def test_a_token_with_time_left_is_used_without_asking_cloudflare(cloudflare_api):
+    _saved()
+    assert cloudflare.access_token() == "current" and _token_posts(cloudflare_api) == []
+
+
+def test_a_token_in_its_last_minutes_is_renewed_in_the_background(cloudflare_api):
+    """Renewing doesn't withdraw the old token (measured: still accepted 23s
+    later), so it carries on while the new one is fetched."""
+    _saved(expires_at=time.time() + 200)
+    assert cloudflare.access_token() == "current", "nobody waits on the renewal"
+    for _ in range(200):
+        if cloudflare.connection()["access_token"] != "current":
+            break
+        time.sleep(0.02)
+    assert cloudflare.connection()["access_token"].startswith("access-")
+    assert cloudflare.connection()["refresh_token"].startswith("refresh-")
+
+
+def test_a_just_issued_token_that_is_refused_gets_a_moment_and_another_go(cloudflare_api, monkeypatch):
+    """Measured: refused 0.4s after it was issued, accepted a second later."""
+    monkeypatch.setattr(cloudflare, "SETTLE", 0.01)
+    _saved(issued_at=time.time())
+    assert cloudflare.retry_token() == "current" and _token_posts(cloudflare_api) == []
+
+
+def test_an_older_refused_token_is_renewed(cloudflare_api, monkeypatch):
+    monkeypatch.setattr(cloudflare, "SETTLE", 0.01)
+    _saved()
+    assert cloudflare.retry_token().startswith("access-")
+    assert _token_posts(cloudflare_api)[-1]["grant_type"] == "refresh_token"
+
+
+def test_a_connection_cloudflare_wont_renew_is_forgotten_and_said_once(cloudflare_api, monkeypatch):
+    monkeypatch.setattr(cloudflare, "SETTLE", 0.01)
+    _saved()
+    cloudflare_api["refuse"] = True
+    assert cloudflare.retry_token() is None and not cloudflare.connected()
+    assert cloudflare.take_lost() and not cloudflare.take_lost()
+
+
+def test_a_renewal_by_another_mike_is_used_not_forgotten(cloudflare_api, monkeypatch):
+    """Two Mikes for a moment, one handing over to the next: the second to
+    renew presents a refresh token the first has just spent."""
+    import json
+    from account import session_store
+    _saved(expires_at=0)
+
+    def post(url, data=None, timeout=None, **_):
+        now = time.time()
+        theirs = {"access_token": "theirs", "refresh_token": "r1", "account_id": "acct123",
+                  "issued_at": now, "expires_at": now + 3600}
+        session_store._write_private(cloudflare._file(),
+                                     session_store._encode(json.dumps(theirs).encode()))
+        return _Resp(400, {"error": "invalid_grant"})
+
+    monkeypatch.setattr(cloudflare.requests, "post", post)
+    assert cloudflare.access_token() == "theirs" and cloudflare.connected()
+
+
+def test_a_read_that_meets_the_file_being_replaced_keeps_the_connection(cloudflare_api, monkeypatch):
+    """Windows won't open a file for the instant it's being replaced; that
+    read used to be taken for a broken file -- and the connection forgotten."""
+    from pathlib import Path
+    _saved()
+    monkeypatch.setattr(cloudflare, "_cache", None)
+    real_read = Path.read_bytes
+    fails = [1]
+
+    def read_bytes(self):
+        if fails and self == cloudflare._file():
+            fails.pop()
+            raise PermissionError(13, "being replaced")
+        return real_read(self)
+
+    monkeypatch.setattr(Path, "read_bytes", read_bytes)
+    assert cloudflare.connection()["access_token"] == "current" and cloudflare._file().exists()
+
+
+def test_a_save_waits_out_a_reader_holding_the_file(cloudflare_api, monkeypatch):
+    """A rotated refresh token lost to that instant can't be got back: the old
+    one is already spent."""
+    from account import session_store
+    real = session_store._write_private
+    fails = [1]
+
+    def write(path, data):
+        if fails:
+            fails.pop()
+            raise PermissionError(13, "open elsewhere")
+        real(path, data)
+
+    monkeypatch.setattr(session_store, "_write_private", write)
+    _saved()
+    monkeypatch.setattr(cloudflare, "_cache", None)
+    assert cloudflare.connection()["access_token"] == "current"
+
+
+def test_an_http_failure_keeps_its_status():
+    class Refused:
+        status_code, text = 401, "{}"
+
+        def json(self):
+            return {"errors": [{"code": 10000, "message": "Authentication error"}]}
+
+    assert fast._Cloud("m")._http_error(Refused()).status == 401
+
+
+def test_a_refused_token_is_tried_again_rather_than_resting(monkeypatch):
+    """Measured: the first call after a renewal was refused, and Fast mode
+    rested for three minutes on the slow local model."""
+    refused = BrainError(kind="unavailable", message="rejected", status=401)
+    p, local, _ = _provider(monkeypatch)
+    calls = []
+
+    def cloud_stream(messages, tools=None, *, cancel=None):
+        calls.append(1)
+        if len(calls) == 1:
+            yield StreamEvent(kind="error", error=refused)
+            return
+        yield StreamEvent(kind="text", text="cloud")
+        yield StreamEvent(kind="done")
+
+    monkeypatch.setattr(p._cloud, "stream", cloud_stream)
+    monkeypatch.setattr(cloudflare, "retry_token", lambda: "token")
+    assert _texts(p.stream([{"role": "user", "content": "hi"}])) == "cloud"
+    assert len(calls) == 2 and local.calls == 0 and p.status() == "on"
+
+
+def test_a_connection_cloudflare_no_longer_accepts_is_said(monkeypatch):
+    refused = BrainError(kind="unavailable", message="rejected", status=401)
+    p, local, _ = _provider(monkeypatch, cloud_events=[StreamEvent(kind="error", error=refused)])
+
+    def gone():
+        cloudflare._lost.set()
+        return None
+
+    monkeypatch.setattr(cloudflare, "retry_token", gone)
+    assert _texts(p.stream([{"role": "user", "content": "hi"}])) == "local"
+    notice = p.take_notice()
+    assert "stopped accepting" in notice and "Settings" in notice
+
+
+def test_reset_mike_forgets_the_fast_mode_connection_too(cloudflare_api):
+    """"Back to a fresh install" left Cloudflare connected, and the early
+    voice recording (read while you're still talking) behind."""
+    from brain import data_export
+    from hostplatform import storage
+    _saved()
+    early = storage.recordings_dir() / "voice_input_early.wav"
+    early.parent.mkdir(parents=True, exist_ok=True)
+    early.write_bytes(b"RIFF")
+    data_export._erase_traces()
+    assert not cloudflare.connected() and not early.exists()
+    for t in threading.enumerate():
+        if t.name == "cloudflare-revoke":
+            t.join(5)                     # revoked through the stand-in, not the real Cloudflare
+    assert any(url == cloudflare.REVOKE_URL for url, _ in cloudflare_api["posts"])

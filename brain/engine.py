@@ -48,6 +48,18 @@ class EngineUnavailable(RuntimeError):
     pass
 
 
+class EngineClosing(EngineUnavailable):
+    """Mike is quitting: no server is started any more."""
+
+
+#: Set once Mike starts quitting, and checked under the same lock as launching
+#: a server -- a warm-up still on its way must not leave one behind. Measured:
+#: "Quitting" logged at 13:09:57.49, a server launched at 13:09:57, the process
+#: gone before it was tied to Mike's -- and 9GB resident with no Mike, three
+#: times in one day.
+_closing = threading.Event()
+
+
 def _ollama_lib() -> Path:
     return Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "lib" / "ollama"
 
@@ -183,6 +195,7 @@ class LocalEngine:
         self.port = 0
         self._proc: subprocess.Popen | None = None
         self._lock = threading.Lock()
+        self._launch = threading.Lock()     # launching + tying to Mike, vs. stopping
         self._prefix_ready = threading.Event()
         self.device: Device | None = None
 
@@ -239,6 +252,8 @@ class LocalEngine:
         with self._lock:
             if self.running():
                 return
+            if _closing.is_set():
+                raise EngineClosing("Mike is closing")
             exe, env = self._server()
             blob, digest = model_blob(self.model)
             self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -248,13 +263,22 @@ class LocalEngine:
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             if background and sys.platform == "win32":
                 flags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
-            self._proc = subprocess.Popen(self._args(exe, blob), env=env, stdout=log,
-                                          stderr=subprocess.STDOUT, creationflags=flags)
-            _kill_with_parent(self._proc)
+            with self._launch:
+                # Asked again, together with the launch and the tie: quitting
+                # waits for this block, then stops whatever it started.
+                if _closing.is_set():
+                    log.close()
+                    raise EngineClosing("Mike is closing")
+                proc = self._proc = subprocess.Popen(self._args(exe, blob), env=env, stdout=log,
+                                                     stderr=subprocess.STDOUT, creationflags=flags)
+                _kill_with_parent(proc)
             t0 = time.monotonic()
             while time.monotonic() - t0 < START_TIMEOUT:
-                if self._proc.poll() is not None:
-                    raise EngineUnavailable(f"the model server exited (code {self._proc.returncode})")
+                if proc.poll() is not None:
+                    if _closing.is_set():
+                        raise EngineClosing("Mike is closing")
+                    raise EngineUnavailable(f"the model server exited (code {proc.returncode})"
+                                            + self._exit_reason())
                 try:
                     if requests.get(self.base_url + "/health", timeout=2).status_code == 200:
                         logger.info("Model server up in %.1fs on port %d.", time.monotonic() - t0, self.port)
@@ -277,8 +301,22 @@ class LocalEngine:
         except Exception:
             pass
 
+    def _exit_reason(self) -> str:
+        """Why the server stopped, from its log, when it's a reason a person
+        can act on -- otherwise only an exit code reached the log and the
+        chat ("exited (code 1)", while the log said it was out of memory)."""
+        try:
+            tail = (self.state_dir / "server.log").read_text(encoding="utf-8", errors="replace")[-6000:]
+        except OSError:
+            return ""
+        low = tail.lower()
+        if "failed to allocate" in low or "out of memory" in low or "outofdevicememory" in low:
+            return ": not enough free memory to load the model"
+        return ""
+
     def stop(self) -> None:
-        proc, self._proc = self._proc, None
+        with self._launch:
+            proc, self._proc = self._proc, None
         if proc is not None and proc.poll() is None:
             proc.kill()
             try:
@@ -403,5 +441,8 @@ def engine() -> LocalEngine:
 
 
 def shutdown() -> None:
+    """Mike is quitting: stop the server, and start no other. A launch
+    already under way is waited for, then stopped with the rest."""
+    _closing.set()
     if _ENGINE is not None:
         _ENGINE.stop()

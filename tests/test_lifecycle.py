@@ -306,7 +306,7 @@ import pytest  # noqa: E402
 @pytest.mark.parametrize("case", CASES)
 def test_lifecycle(case):
     env = dict(os.environ)
-    env["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-lifecycle-")
+    env["MIKE_DATA_DIR"] = data_dir = tempfile.mkdtemp(prefix="mike-lifecycle-")
     env.setdefault("PYTHONIOENCODING", "utf-8")
     result = subprocess.run(
         [sys.executable, os.path.abspath(__file__), case],
@@ -314,8 +314,10 @@ def test_lifecycle(case):
         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     )
     assert result.returncode == 0, (
-        f"{case} failed (exit {result.returncode}): "
+        f"{case} failed (exit {result.returncode}; its log is in {data_dir}): "
         + result.stdout[-3000:] + " " + result.stderr[-3000:])
+    import shutil
+    shutil.rmtree(data_dir, ignore_errors=True)       # kept when it failed: the log says why
 
 
 if __name__ == "__main__":

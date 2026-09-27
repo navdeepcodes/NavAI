@@ -83,6 +83,22 @@ def allowance_left() -> bool:
     return time.time() >= _allowance_gone_until
 
 
+def _connection_lost() -> bool:
+    try:
+        from account import cloudflare
+        return cloudflare.take_lost()
+    except Exception:
+        return False
+
+
+def _renew_quietly() -> None:
+    try:
+        from account import cloudflare
+        cloudflare.access_token()
+    except Exception:
+        logger.debug("Couldn't renew the Cloudflare token at startup.", exc_info=True)
+
+
 class _Cloud(OpenAICompatibleProvider):
     """Workers AI's OpenAI-compatible endpoint, on the connected account."""
 
@@ -175,6 +191,11 @@ class WorkersAIProvider(BrainProvider):
         one sentence to the student -- otherwise answers just get slow, or
         fast again, for no reason they can see."""
         was, self._answered_last = self._answered_last, who
+        if who == "local" and _connection_lost():
+            self._notice = ("Cloudflare stopped accepting Mike's connection, so Fast mode is off "
+                            "and the model on this computer is answering. To have Fast mode "
+                            "back, connect again in Settings, under Speed.")
+            return
         if was == who or not fast_mode_on():
             return
         if who == "local":
@@ -249,12 +270,27 @@ class WorkersAIProvider(BrainProvider):
     def translate_error(self, exc: Exception) -> BrainError:
         return self._local.translate_error(exc)
 
+    def _cloud_start(self, messages, tools, cancel) -> tuple[StreamEvent | None, Iterator[StreamEvent]]:
+        """The cloud's first event, and the rest of its stream. A refusal
+        (401/403) is Cloudflare not accepting the token -- not yet, just after
+        it was renewed, or not any more: cloudflare.retry_token decides, and
+        it's tried at most twice more. Measured: the first call after a
+        renewal was refused, and put Fast mode to rest for three minutes."""
+        from account import cloudflare
+
+        for attempt in range(3):
+            events = self._cloud.stream(messages, tools, cancel=cancel)
+            first = next(events, None)
+            refused = first is not None and first.kind == "error" and first.error.status in (401, 403)
+            if not refused or attempt == 2 or not cloudflare.retry_token():
+                return first, events
+        return first, events
+
     def stream(self, messages: list[dict], tools: list[dict] | None = None, *,
                cancel: Any = None) -> Iterator[StreamEvent]:
         if self._use_cloud() and self._cloud._key():
             t0 = time.monotonic()
-            events = self._cloud.stream(messages, tools, cancel=cancel)
-            first = next(events, None)
+            first, events = self._cloud_start(messages, tools, cancel)
             if first is not None and first.kind != "error":
                 self._answered_by("cloud")
                 yield first
@@ -271,7 +307,13 @@ class WorkersAIProvider(BrainProvider):
 
     def complete(self, messages, tools=None, *, max_tokens=None) -> ChatResult:
         if self._use_cloud() and self._cloud._key():
-            result = self._cloud.complete(messages, tools, max_tokens=max_tokens)
+            from account import cloudflare
+
+            for attempt in range(3):         # a refused token: as in _cloud_start
+                result = self._cloud.complete(messages, tools, max_tokens=max_tokens)
+                if result.error is None or result.error.status not in (401, 403) \
+                        or attempt == 2 or not cloudflare.retry_token():
+                    break
             if result.error is None:
                 return result
             self._rest(result.error)
@@ -286,6 +328,10 @@ class WorkersAIProvider(BrainProvider):
         memory and a busy GPU the student gets to keep); it starts the first
         time it's needed, from its saved prompt, in seconds."""
         if self._use_cloud():
+            # Renew the Cloudflare token now if it's due -- after Mike was
+            # closed for a while it always is -- so the first question neither
+            # waits for it nor meets a token too new to be accepted yet.
+            threading.Thread(target=_renew_quietly, name="cloudflare-token", daemon=True).start()
             threading.Thread(target=self._prepare_local, args=(system, tools),
                              name="prepare-local-model", daemon=True).start()
             return "cloud"

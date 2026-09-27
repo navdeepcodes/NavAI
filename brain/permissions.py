@@ -95,11 +95,16 @@ def _editor_connected() -> bool:
         return False
 
 
-def _cloud_answering() -> bool:
-    """Fast mode is on and has allowance left: the cloud model answers."""
+def _fast_mode_on() -> bool:
+    """Fast mode is connected and switched on -- whichever model is answering
+    this minute. When the day's allowance runs out the local model carries on
+    with the same tools: a coding task continues (slower, and the notice says
+    so), and the local model's saved reading of the prompt, prepared while the
+    cloud answered, still fits. Taking the tools away at that moment changed
+    the prompt, and the first local answer read all of it again (171s)."""
     try:
         from brain.providers import workers_ai_provider as fast
-        return fast.fast_mode_on() and fast.allowance_left()
+        return fast.fast_mode_on()
     except Exception:
         return False
 
@@ -109,13 +114,13 @@ def disabled() -> set[str]:
 
     Coding starts off only to keep the local model's prompt short -- its 16
     tool schemas were a quarter of every prompt, read at laptop speed. So it's
-    on whenever that cost isn't there: the editor is connected, or Fast mode's
-    cloud model is answering (a student asking it to build something, with no
-    editor open, had no way to run a server or check a page). Switched off in
-    Settings, it stays off either way."""
+    on whenever that cost isn't there: the editor is connected, or Fast mode
+    is on (a student asking it to build something, with no editor open, had
+    no way to run a server or check a page). Switched off in Settings, it
+    stays off either way."""
     off = _pref_set(_PREF) | (DEFAULT_OFF - _pref_set(_PREF_ON))
     if ("coding" in off and "coding" not in _pref_set(_PREF)
-            and (_editor_connected() or _cloud_answering())):
+            and (_editor_connected() or _fast_mode_on())):
         off.discard("coding")
     return off
 

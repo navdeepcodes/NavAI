@@ -63,6 +63,15 @@ class UIController(QObject):
         self._speech_pump_timer.setInterval(100)
         self._speech_pump_timer.timeout.connect(self._pump_speech)
 
+        # A step being written out (several files' content): which one, once
+        # it has taken more than a moment -- a quick one would only flash.
+        self._preparing_timer = QTimer()
+        self._preparing_timer.setSingleShot(True)
+        self._preparing_timer.setInterval(400)
+        self._preparing_timer.timeout.connect(self._show_preparing)
+        self._preparing = ""
+        self._preparing_shown = False
+
         self._wake_heard.connect(self._on_wake_word)
         self._wake = WakeWordDetector(on_wake=self._wake_heard.emit)
 
@@ -244,6 +253,7 @@ class UIController(QObject):
         )
         self._notify_conversation()
 
+        self._stop_preparing()
         self._page.show_thinking()
 
         self._page.input.set_enabled(False)
@@ -278,6 +288,7 @@ class UIController(QObject):
         self._worker.tool_start.connect(self._on_tool_start)
         self._worker.tool_progress.connect(self._on_tool_progress)
         self._worker.tool_end.connect(self._on_tool_end)
+        self._worker.preparing.connect(self._on_preparing)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.confirmation_needed.connect(
@@ -289,8 +300,29 @@ class UIController(QObject):
 
         self._thread.start()
 
+    def _on_preparing(self, label: str) -> None:
+        """Mike has started writing a step out -- several files' content can
+        take a while: say which, instead of a line of unrelated thoughts."""
+        self._preparing = label
+        if self._preparing_shown:
+            self._page.thinking_hint(label)
+        elif not self._preparing_timer.isActive():
+            self._preparing_timer.start()
+
+    def _show_preparing(self) -> None:
+        if self._preparing and self._worker is not None:
+            self._preparing_shown = True
+            self._page.thinking_hint(self._preparing)
+            if self._floating and self._floating.isVisible():
+                self._floating.show_tool_status(self._preparing)
+
+    def _stop_preparing(self) -> None:
+        self._preparing_timer.stop()
+        self._preparing, self._preparing_shown = "", False
+
     def _on_token(self, text: str) -> None:
 
+        self._stop_preparing()
         self._page.hide_thinking()
 
         if self._stream_bubble is None:
@@ -376,7 +408,7 @@ class UIController(QObject):
 
     def _on_tool_start(self, description: str) -> None:
 
-
+        self._stop_preparing()
         self._page.hide_thinking()
 
         # What Mike said before this step is finished: give it its full
@@ -489,6 +521,7 @@ class UIController(QObject):
 
     def _on_finished(self) -> None:
 
+        self._stop_preparing()
         self._page.hide_thinking()
 
         # Fast mode switched models this turn (the day's allowance ran out,
@@ -587,6 +620,7 @@ class UIController(QObject):
 
     def _on_error(self, error: str) -> None:
 
+        self._stop_preparing()
         self._page.hide_thinking()
 
         readable = _humanize_error(error)
@@ -1005,6 +1039,7 @@ class UIController(QObject):
             (old_worker.token, self._on_token),
             (old_worker.tool_start, self._on_tool_start),
             (old_worker.tool_progress, self._on_tool_progress),
+            (old_worker.preparing, self._on_preparing),
             (old_worker.finished, self._on_finished),
             (old_worker.error, self._on_error),
             (old_worker.confirmation_needed, self._show_confirmation),

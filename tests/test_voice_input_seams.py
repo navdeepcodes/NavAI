@@ -42,7 +42,10 @@ def test_get_recognizer_returns_a_real_windows_backend():
     from voice.recognizer.windows import WhisperRecognizer
 
     recognizer = get_recognizer()
-    assert isinstance(recognizer, WhisperRecognizer)
+    # Fast mode stands in front of it (Cloudflare's Whisper while connected);
+    # the local backend behind is what answers offline.
+    local = getattr(recognizer, "_local", recognizer)
+    assert isinstance(local, WhisperRecognizer)
     ok, why = recognizer.available()
     assert isinstance(ok, bool) and isinstance(why, str) and why
 

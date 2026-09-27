@@ -667,6 +667,19 @@ class ChatPage(QWidget):
         self._insert(self._thinking)
         self._thinking.start()
 
+    def thinking_hint(self, text: str) -> None:
+        """What Mike is getting ready to do, while he writes it out: a step
+        with several files' content streams for many seconds, and a line of
+        unrelated thoughts over it reads as stuck."""
+        card = self._live_card()
+        if card is not None:
+            card.set_thinking(True, text)
+            return
+        if self._thinking is None:
+            self.show_thinking()
+        if self._thinking is not None:
+            self._thinking.set_hint(text)
+
     def hide_thinking(self) -> None:
         if self._ledger is not None:
             self._ledger.set_thinking(False)

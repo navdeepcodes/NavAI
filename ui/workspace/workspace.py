@@ -341,6 +341,9 @@ class MikeWorkspace(QWidget):
     def hide_thinking(self):
         self.chat.hide_thinking()
 
+    def thinking_hint(self, text):
+        self.chat.thinking_hint(text)
+
     def set_state(self, state):
         self.chat.set_state(state)
 

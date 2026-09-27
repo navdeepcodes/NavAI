@@ -534,6 +534,18 @@ class OllamaProvider(BrainProvider):
                 detail=text,
                 retry_safe=True,
             )
+        # The model couldn't be loaded: Ollama reports it as a 500 too, and it
+        # was being told as a tool call the server couldn't parse. Retrying
+        # straight away doesn't free memory -- measured, two retries cost 53s
+        # and failed the same way -- so it isn't retry-safe.
+        if "out of memory" in low or "out-of-memory" in low or "failed to allocate" in low:
+            return BrainError(
+                kind="unavailable",
+                message=("There isn't enough free memory on this computer to run the model "
+                         "right now. Closing a few apps (a browser with many tabs, a game) "
+                         "usually frees enough."),
+                detail=text,
+            )
         # The XML/JSON parse failures Ollama returns as HTTP 500 when a model
         # emits tool syntax its parser can't read. Almost always a symptom of
         # a mangled prompt rather than a broken model, so it is retry-safe and

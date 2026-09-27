@@ -104,10 +104,19 @@ class CloudRecognizer(SpeechRecognizer):
             raise RuntimeError("not connected")
         with open(audio_path, "rb") as fh:
             audio = base64.b64encode(fh.read()).decode("ascii")
-        response = requests.post(
-            f"{API}/accounts/{account}/ai/run/{MODEL}",
-            headers={"Authorization": f"Bearer {token}"},
-            json={"audio": audio, "language": "en"}, timeout=TIMEOUT)
+        for attempt in range(3):
+            response = requests.post(
+                f"{API}/accounts/{account}/ai/run/{MODEL}",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"audio": audio, "language": "en"}, timeout=TIMEOUT)
+            # Refused: a token too new to be known everywhere, or withdrawn --
+            # cloudflare.retry_token decides. Cheaper than loading 2.2GB of
+            # local Whisper for this one clip.
+            if response.status_code not in (401, 403) or attempt == 2:
+                break
+            token = cloudflare.retry_token()
+            if not token:
+                break
         if response.status_code != 200:
             raise RuntimeError(f"{response.status_code} {response.text[:300]}")
         body = response.json()

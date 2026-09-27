@@ -55,12 +55,14 @@ class StreamEvent:
     `kind` is one of:
       text       — a chunk of assistant prose, in `text`
       tool_call  — a completed tool call, in `tool_call`
+      preparing  — a tool call still being written: its name, and the
+                   arguments that are whole so far, in `tool_call`
       error      — the model or provider failed, in `error`; the loop stops
       done       — the turn finished; `truncated` says whether it finished
                    because the model was done or because it ran out of room
     """
 
-    kind: Literal["text", "tool_call", "error", "done"]
+    kind: Literal["text", "tool_call", "preparing", "error", "done"]
     text: str = ""
     tool_call: ToolCall | None = None
     error: "BrainError | None" = None
@@ -111,6 +113,8 @@ class BrainError:
     message: str
     detail: str = ""
     retry_safe: bool = False
+    #: The HTTP status, when the failure was an HTTP answer (0 otherwise).
+    status: int = 0
 
     def human(self) -> str:
         return self.message

@@ -14,6 +14,8 @@ class CoreRuntimeWorker(QObject):
     tool_start = Signal(str)
     tool_progress = Signal(str)
     tool_end = Signal(str)
+    #: A tool call still being written: what it will do ("Writing style.css")
+    preparing = Signal(str)
     finished = Signal()
     error = Signal(str)
     #: (what Mike wants to do, the session-long approval on offer or "")
@@ -65,6 +67,8 @@ class CoreRuntimeWorker(QObject):
                     self.tool_progress.emit(payload)
                 elif event_type == "tool_end":
                     self.tool_end.emit(payload)
+                elif event_type == "preparing":
+                    self.preparing.emit(payload)
 
             self.finished.emit()
 

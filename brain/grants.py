@@ -40,6 +40,9 @@ class SessionGrants:
     def __init__(self) -> None:
         self.roots: list[Path] = []
         self.commands: set[str] = set()
+        #: Where commands ran with the student's OK -- the project as they
+        #: work it (tests run from its root), even with no marker file in it.
+        self.workdirs: list[Path] = []
 
     # -- what an action touches -------------------------------------------
     @staticmethod
@@ -52,11 +55,11 @@ class SessionGrants:
         raw = [str(p) for p in raw if p and str(p).strip()]
         return [resolve_path(p) for p in raw]
 
-    @staticmethod
-    def _project_root(path: Path) -> Path | None:
+    def _project_root(self, path: Path) -> Path | None:
         """The project a file belongs to: the connected editor's folder if
-        it's inside it, else the nearest folder that looks like a project,
-        else the file's own folder -- never a home folder or a whole drive."""
+        it's inside it; else the nearest of the folders commands ran in and
+        the nearest folder that looks like a project; else the file's own
+        folder -- never a home folder or a whole drive."""
         root = None
         try:
             from ide import manager
@@ -66,10 +69,19 @@ class SessionGrants:
         except Exception:
             pass
         if root is None:
+            home = _key(Path.home())
+            found = [w for w in self.workdirs if _within(path, w)]
             for parent in [path.parent, *path.parent.parents]:
-                if any((parent / m).exists() for m in _MARKERS):
-                    root = parent
+                if _key(parent) == home or parent.parent == parent:
+                    # A home folder's .vscode is VS Code's own, not a project's:
+                    # reaching it dropped the offer for every project without
+                    # a marker of its own.
                     break
+                if any((parent / m).exists() for m in _MARKERS):
+                    found.append(parent)
+                    break
+            if found:
+                root = max(found, key=lambda f: len(_key(f)))      # the nearest
         root = root or path.parent
         home = Path.home()
         if _key(root) in (_key(home), _key(home.parent)) or root.parent == root:
@@ -110,6 +122,16 @@ class SessionGrants:
             command = self._command(args)
             if command:
                 self.commands.add(command)
+
+    def note_approved(self, name: str, args: dict) -> None:
+        """The student let this run: a command's folder is one they work in."""
+        cwd = str(args.get("cwd") or "").strip() if name in COMMAND_TOOLS else ""
+        if not cwd:
+            return
+        from tools.filesystem.path_utils import resolve_path
+        folder = resolve_path(cwd)
+        if not any(_key(folder) == _key(w) for w in self.workdirs):
+            self.workdirs.append(folder)
 
     def covers(self, name: str, args: dict) -> bool:
         if name in EDIT_TOOLS:

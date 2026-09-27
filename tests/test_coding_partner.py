@@ -178,3 +178,50 @@ def test_the_card_offers_the_session_approval_but_never_for_the_permanent():
     assert not card._always.isVisibleTo(card)
     card.ask("Run npm test")
     assert not card._always.isVisibleTo(card)
+
+
+def test_vs_codes_own_folder_in_home_does_not_hide_a_project(tmp_path, monkeypatch):
+    """VS Code keeps a .vscode folder in the home folder. The search for a
+    project's marker reached it, the home folder was (rightly) refused -- and
+    the offer to allow edits was dropped for every project without a marker."""
+    from pathlib import Path
+    from brain.grants import SessionGrants
+    home = tmp_path / "home"
+    (home / ".vscode").mkdir(parents=True)
+    proj = home / "source" / "calc"
+    (proj / "calc").mkdir(parents=True)
+    (proj / "tests").mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    edit = {"path": str(proj / "calc" / "stats.py"), "old_text": "a", "new_text": "b"}
+    assert SessionGrants().offer("edit_file", edit) == "Allow edits in calc this session"
+
+
+def test_the_folder_the_tests_ran_in_is_the_project(tmp_path, monkeypatch):
+    """No marker file: the folder commands ran in, with the student's OK, is
+    the project as they work it -- the tests next to the code included."""
+    from pathlib import Path
+    from brain.grants import SessionGrants
+    home = tmp_path / "home"
+    proj = home / "source" / "calc"
+    (proj / "calc").mkdir(parents=True)
+    (proj / "tests").mkdir()
+    monkeypatch.setattr(Path, "home", lambda: home)
+    g = SessionGrants()
+    g.note_approved("run_command", {"command": "python -m unittest", "cwd": str(proj)})
+    g.grant("edit_file", {"path": str(proj / "calc" / "stats.py")})
+    assert g.covers("edit_file", {"path": str(proj / "tests" / "test_stats.py")})
+    assert not g.covers("edit_file", {"path": str(home / "source" / "other.py")})
+
+
+def test_the_local_model_keeps_the_coding_tools_when_the_allowance_runs_out(monkeypatch):
+    """The same tools either side of the switch: a coding task carries on
+    (slower), and the local model's saved reading of the prompt still fits --
+    taking the tools away changed the prompt, and it was read again (171s)."""
+    import time
+    from brain import permissions
+    from brain.providers import workers_ai_provider as fast
+    monkeypatch.setattr(permissions, "_editor_connected", lambda: False)
+    monkeypatch.setattr(fast, "fast_mode_on", lambda: True)
+    monkeypatch.setattr(fast, "_allowance_gone_until", time.time() + 3600)
+    assert not fast.allowance_left()
+    assert permissions.is_enabled("coding")

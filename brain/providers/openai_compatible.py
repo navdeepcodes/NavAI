@@ -33,6 +33,7 @@ from brain.providers.base import (
     StreamEvent,
     ToolCall,
 )
+from brain.providers.partial_json import PartialJSON
 from logs.logger import logger
 
 DEFAULT_TIMEOUT = 120
@@ -371,7 +372,8 @@ class OpenAICompatibleProvider(BrainProvider):
 
                 for fragment in (delta.get("tool_calls") or []):
                     index = fragment.get("index", 0)
-                    slot = partial.setdefault(index, {"name": "", "arguments": "", "id": None})
+                    slot = partial.setdefault(index, {"name": "", "arguments": "", "id": None,
+                                                      "reader": PartialJSON(), "said": 0})
                     if fragment.get("id"):
                         slot["id"] = fragment["id"]
                     function = fragment.get("function") or {}
@@ -379,6 +381,15 @@ class OpenAICompatibleProvider(BrainProvider):
                         slot["name"] += function["name"]
                     if function.get("arguments"):
                         slot["arguments"] += function["arguments"]
+                        slot["reader"].feed(function["arguments"])
+                    # Each time another argument is whole, what the call is
+                    # so far -- "Writing style.css" while its content streams.
+                    reader = slot["reader"]
+                    if slot["name"] and reader.values > slot["said"]:
+                        slot["said"] = reader.values
+                        so_far = reader.value()
+                        yield StreamEvent(kind="preparing", tool_call=ToolCall(
+                            name=slot["name"], arguments=so_far if isinstance(so_far, dict) else {}))
 
         except Exception as exc:
             yield StreamEvent(kind="error", error=self.translate_error(exc))
@@ -547,8 +558,16 @@ class OpenAICompatibleProvider(BrainProvider):
         )
 
     def _http_error(self, response) -> BrainError:
-        """Map an HTTP failure to a canonical error. The response body is
-        included as detail but the request — which carries the key — is not."""
+        """Map an HTTP failure to a canonical error, keeping its status: a
+        caller that can do something about one (renew a token on a 401) acts
+        on the number, not on the wording."""
+        error = self._describe_http_error(response)
+        error.status = int(getattr(response, "status_code", 0) or 0)
+        return error
+
+    def _describe_http_error(self, response) -> BrainError:
+        """The response body is included as detail but the request — which
+        carries the key — is not."""
         # Error bodies are not standardised across "OpenAI-compatible"
         # endpoints — Gemini returns a JSON *list*, others a dict, some plain
         # text. Anything unexpected must still produce an error, never an

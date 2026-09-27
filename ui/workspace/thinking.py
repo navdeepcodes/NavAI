@@ -46,6 +46,25 @@ THOUGHTS = (
 )
 _REASSURING_TAIL = 2
 
+#: The widest a thought is written, in pen units -- the clock sits past it.
+_WIDEST = 330.0
+#: A longer hint is written smaller, down to this much of the usual size.
+_SMALLEST = 0.72
+#: What the pen has no strokes for, as it would be written by hand.
+_PLAIN = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "…": "...", "—": "-", "–": "-"})
+
+
+def _fitted(text: str) -> str:
+    """A hint the pen can write in the space: plain characters, and shortened
+    only when even smaller writing wouldn't fit it."""
+    text = " ".join(text.translate(_PLAIN).split())
+    if not hw.available():
+        return text
+    cut = text
+    while len(cut) > 12 and hw.Script(cut if cut == text else cut + "...").width > _WIDEST / _SMALLEST:
+        cut = cut[:-3].rstrip()
+    return cut if cut == text else cut + "..."
+
 
 class ThinkingLine(QWidget):
     """A thought, handwritten by the nib, held, faded, and replaced."""
@@ -57,6 +76,7 @@ class ThinkingLine(QWidget):
     _LONG_WAIT_S = 11.0    # past here, stay on the reassuring tail
     _SHOW_ELAPSED_S = 8.0  # past here, also show how long it's been
     _PACE = 1.35           # a little quicker than a careful hand
+    _HINT_WRITE_S = 1.4    # a step's name is news: written in this long, whatever its length
 
     def __init__(self, size: int = 16, parent=None) -> None:
         super().__init__(parent)
@@ -70,6 +90,8 @@ class ThinkingLine(QWidget):
         self._phase_start = 0.0
         self._index = 0
         self._script: hw.Script | None = None
+        self._hint = ""
+        self._pace = self._PACE
         self._frame = QTimer(self)
         self._frame.timeout.connect(self._on_frame)
         self._pick_first()
@@ -96,10 +118,26 @@ class ThinkingLine(QWidget):
         super().hideEvent(e)
         self._frame.stop()
 
+    def set_hint(self, text: str) -> None:
+        """What Mike is doing, once it's known ("Writing style.css"): written
+        like a thought, then held -- not faded for the next one -- until it
+        changes or the wait is over. The clock keeps counting."""
+        text = _fitted(text or "")
+        if not text or text == self._hint:
+            return
+        self._hint = text
+        self._script = hw.Script(text) if hw.available() else None
+        # A thought takes 5-7s to write at the easy pace; a file name that
+        # changes with each file can't: the same hand, quicker.
+        self._pace = (max(self._PACE, self._script.duration / self._HINT_WRITE_S)
+                      if self._script else self._PACE)
+        self._phase, self._phase_start = "write", self._t
+
     # ── the clock ─────────────────────────────────────────
     def _set(self, index: int) -> None:
         self._index = index
         self._script = hw.Script(THOUGHTS[index]) if hw.available() else None
+        self._pace = self._PACE
         self._phase, self._phase_start = "write", self._t
 
     def _pick_first(self) -> None:
@@ -119,7 +157,7 @@ class ThinkingLine(QWidget):
         self._set(choice)
 
     def _write_time(self) -> float:
-        return (self._script.duration / self._PACE) if self._script else 1.2
+        return (self._script.duration / self._pace) if self._script else 1.2
 
     def _on_frame(self) -> None:
         dt = self._FRAME_MS / 1000.0
@@ -132,7 +170,7 @@ class ThinkingLine(QWidget):
         since = self._t - self._phase_start
         if self._phase == "write" and since >= self._write_time():
             self._phase, self._phase_start = "hold", self._t
-        elif self._phase == "hold" and since >= self._HOLD_S:
+        elif self._phase == "hold" and since >= self._HOLD_S and not self._hint:
             self._phase, self._phase_start = "fade", self._t
         elif self._phase == "fade" and since >= self._FADE_S:
             self._phase, self._phase_start = "gap", self._t
@@ -145,6 +183,8 @@ class ThinkingLine(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         sc = self._scale
+        if self._script is not None and self._script.width > _WIDEST:
+            sc *= _WIDEST / self._script.width       # a long hint, written smaller
         baseline = QPointF(4.0, self.height() * 0.62)
         ink = QColor(style.INK_SOFT)
         wet = QColor(style.accent())
@@ -156,19 +196,19 @@ class ThinkingLine(QWidget):
             label = f"{secs}s" if secs < 60 else f"{secs // 60}m {secs % 60:02d}s"
             p.setFont(style.font(style.CAPTION))
             p.setPen(QColor(style.INK_MUTE))
-            widest = 330.0 * sc
+            widest = _WIDEST * self._scale
             p.drawText(int(baseline.x() + widest + 26), int(baseline.y()), label)
 
         if self._script is None:
             # no stroke data: a plain, honest line rather than nothing
             p.setFont(style.font(self._size))
             p.setPen(ink)
-            p.drawText(int(baseline.x()), int(baseline.y()), THOUGHTS[self._index])
+            p.drawText(int(baseline.x()), int(baseline.y()), self._hint or THOUGHTS[self._index])
             return
 
         script = self._script
         if self._phase == "write":
-            t, opacity, pen = since * self._PACE, 1.0, True
+            t, opacity, pen = since * self._pace, 1.0, True
         elif self._phase == "hold":
             t, opacity, pen = script.duration + 1.0, 1.0, True
         elif self._phase == "fade":

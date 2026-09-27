@@ -88,12 +88,14 @@ def get_provider(
     model: str | None = None,
     vision_model: str | None = None,
     refresh: bool = False,
+    fast_mode: bool = True,
 ) -> BrainProvider:
     """The brain for this session.
 
     Defaults come from config so existing behaviour is unchanged, but every
     part is overridable — which is what makes runtime model switching a
-    configuration change rather than a code change.
+    configuration change rather than a code change. `fast_mode=False`: the
+    local brain alone, without Cloudflare in front of it.
     """
     from config import ollama as ollama_config
 
@@ -113,7 +115,7 @@ def get_provider(
         model = model or ollama_config.OLLAMA_CHAT_MODEL
         vision_model = vision_model or ollama_config.OLLAMA_VISION_MODEL
 
-    key = f"{provider}:{model}:{vision_model}"
+    key = f"{provider}:{model}:{vision_model}:{'fast' if fast_mode else 'local'}"
     if not refresh and key in _CACHE:
         return _CACHE[key]
 
@@ -152,7 +154,7 @@ def get_provider(
             f"{', '.join(available_providers())}."
         )
 
-    if provider in ("engine", "ollama") and (model or ollama_config.OLLAMA_CHAT_MODEL) \
+    if fast_mode and provider in ("engine", "ollama") and (model or ollama_config.OLLAMA_CHAT_MODEL) \
             == ollama_config.OLLAMA_CHAT_MODEL:
         # Mike's chat brain, with Fast mode in front: the student's own
         # Cloudflare account answers when it's connected and switched on, and

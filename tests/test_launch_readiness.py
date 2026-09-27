@@ -92,7 +92,7 @@ def test_every_tool_belongs_to_a_permission():
     from brain.core_tools import OLLAMA_TOOLS
     from brain import permissions
 
-    always = {"calculate"}          # pure arithmetic, touches nothing
+    always = {"calculate", "think"}  # arithmetic, and a note to itself: touch nothing
     for tool in OLLAMA_TOOLS:
         name = tool["function"]["name"]
         assert name in always or permissions.ability_of(name), (

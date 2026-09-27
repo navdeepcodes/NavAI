@@ -21,8 +21,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+_OWN_DATA_DIR = None
 if "MIKE_DATA_DIR" not in os.environ:
-    os.environ["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-test-")
+    _OWN_DATA_DIR = os.environ["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-test-")
 
 # Tests never talk to the real Mike accounts project. Accounts are off unless
 # a test points them somewhere (tests/test_account_e2e.py uses a local
@@ -163,3 +164,22 @@ def _gc_only_on_main_thread():
 def _collect_between_tests():
     yield
     _gc.collect()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """The throwaway data folder goes with the run -- each run left one behind
+    (261 of them in TEMP). Only the folder made above, never a MIKE_DATA_DIR
+    the run was pointed at."""
+    if not _OWN_DATA_DIR:
+        return
+    import logging
+    import shutil
+
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        # Mike's log file is in there, and Windows won't delete an open file.
+        # Only that one: pytest's own handlers hang off the root logger too.
+        if str(getattr(handler, "baseFilename", "")).startswith(_OWN_DATA_DIR):
+            root.removeHandler(handler)
+            handler.close()
+    shutil.rmtree(_OWN_DATA_DIR, ignore_errors=True)

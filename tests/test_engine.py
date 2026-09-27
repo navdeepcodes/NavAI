@@ -1,6 +1,10 @@
 """Mike's own model engine: where it runs, what it sends, and what it finds."""
 import json
+import threading
+import time
 from pathlib import Path
+
+import pytest
 
 from brain import engine as eng
 from brain.providers.engine_provider import CONTEXT_OPEN, fold_system_messages
@@ -92,3 +96,131 @@ def test_the_same_model_named_explicitly_stays_on_the_engine(monkeypatch):
         assert type(providers.get_provider(model="qwen2.5vl:3b")).__name__ == "OllamaProvider"
     finally:
         providers._CACHE.clear()
+
+
+# ── quitting, and a server that can't load ────────────────────────────────
+
+class _Proc:
+    """A model server that loads nothing."""
+
+    def __init__(self, returncode=None):
+        self.returncode, self.killed = returncode, False
+
+    def poll(self):
+        return self.returncode
+
+    def kill(self):
+        self.killed, self.returncode = True, 1
+
+    def wait(self, timeout=None):
+        return self.returncode
+
+
+def _startable(tmp_path, monkeypatch):
+    exe = tmp_path / "llama-server.exe"
+    exe.write_bytes(b"exe")
+    procs = []
+    monkeypatch.setattr(eng.subprocess, "Popen", lambda *a, **k: procs.append(_Proc()) or procs[-1])
+    monkeypatch.setattr(eng, "model_blob", lambda model: (tmp_path / "blob", "sha256:abc"))
+    monkeypatch.setattr(eng, "_kill_with_parent", lambda proc: None)
+
+    def refused(*a, **k):
+        raise eng.requests.ConnectionError("nothing listening")
+
+    monkeypatch.setattr(eng.requests, "get", refused)
+    e = eng.LocalEngine("qwen3.5:9b", 16384, tmp_path / "state")
+    monkeypatch.setattr(e, "_server", lambda: (exe, {}))
+    monkeypatch.setattr(eng, "_ENGINE", e)
+    return e, procs
+
+
+def test_nothing_is_started_once_mike_is_closing(tmp_path, monkeypatch):
+    e, procs = _startable(tmp_path, monkeypatch)
+    eng.shutdown()
+    try:
+        with pytest.raises(eng.EngineClosing):
+            e.start()
+        assert procs == []
+    finally:
+        eng._closing.clear()
+
+
+def test_quitting_waits_for_a_launch_under_way_and_stops_it(tmp_path, monkeypatch):
+    """Measured: "Quitting" logged, then the warm-up launched a server, and
+    the process ended before tying it to Mike's -- 9GB left running with no
+    Mike, three times in a day."""
+    e, procs = _startable(tmp_path, monkeypatch)
+    launching = threading.Event()
+
+    def slow_tie(proc):
+        launching.set()
+        time.sleep(0.3)
+
+    monkeypatch.setattr(eng, "_kill_with_parent", slow_tie)
+    outcome = []
+
+    def warm_up():
+        try:
+            e.start(background=True)
+        except Exception as exc:
+            outcome.append(exc)
+
+    t = threading.Thread(target=warm_up)
+    t.start()
+    assert launching.wait(5)
+    try:
+        eng.shutdown()                       # quit, with the launch half done
+        t.join(10)
+        assert procs and procs[0].killed, "the server it launched is stopped"
+        assert outcome and isinstance(outcome[0], eng.EngineClosing)
+    finally:
+        eng._closing.clear()
+
+
+def test_a_server_that_ran_out_of_memory_says_so(tmp_path, monkeypatch):
+    """Only "exited (code 1)" reached the log and the chat, while the server's
+    own log said it couldn't allocate its buffers."""
+    e, _ = _startable(tmp_path, monkeypatch)
+
+    def popen(*args, stdout=None, **kwargs):
+        stdout.write("ggml_gallocr_reserve_n_impl: failed to allocate Vulkan0 buffer of size "
+                     "175505408\nllama_init_from_model: failed to initialize the context\n")
+        stdout.flush()
+        return _Proc(returncode=1)
+
+    monkeypatch.setattr(eng.subprocess, "Popen", popen)
+    with pytest.raises(eng.EngineUnavailable, match="not enough free memory"):
+        e.start()
+
+
+class _Engine:
+    model, num_ctx, device = "qwen3.5:9b", 16384, None
+
+    def __init__(self, error):
+        self.error = error
+
+    def start(self, background=False):
+        raise self.error
+
+
+def test_when_the_engine_cant_start_plain_ollama_answers(monkeypatch):
+    """Not Ollama inside a second Fast mode: that one called Cloudflare again
+    17s after the first had stepped back from it."""
+    from brain import providers
+    from brain.providers.engine_provider import EngineProvider
+    providers._CACHE.clear()
+    try:
+        p = EngineProvider(_Engine(eng.EngineUnavailable("the model server exited (code 1)")))
+        assert p._ready() is False
+        assert type(p._fallback).__name__ == "OllamaProvider"
+    finally:
+        providers._CACHE.clear()
+
+
+def test_while_quitting_the_engine_does_not_hand_over_to_ollama():
+    """Ollama would load its own 9GB copy -- and keep it after Mike is gone."""
+    from brain.providers.engine_provider import EngineProvider
+    p = EngineProvider(_Engine(eng.EngineClosing("Mike is closing")))
+    with pytest.raises(eng.EngineClosing):
+        p._ready()
+    assert p._fallback is None

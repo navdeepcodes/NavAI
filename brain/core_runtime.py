@@ -20,6 +20,7 @@ from brain.core_tools import (
     describe_action,
     friendly_tool_name,
     needs_confirmation,
+    preparing_label,
 )
 from brain import environment, memory_store, permissions
 from brain.mike_core import MikeCore
@@ -580,10 +581,18 @@ class CoreRuntime:
             stream_failed = None
             truncated = False
 
+            preparing = ""
             for event in self._brain.stream(plan.messages, plan.tools, cancel=cancel_event):
                 if event.kind == "text":
                     collected_text += event.text
                     yield ("token", event.text)
+                elif event.kind == "preparing":
+                    # A tool call still being written -- several files take a
+                    # while: say which, as soon as there's something true to say.
+                    label = preparing_label(event.tool_call.name, event.tool_call.arguments)
+                    if label and label != preparing:
+                        preparing = label
+                        yield ("preparing", label)
                 elif event.kind == "tool_call":
                     tool_calls_raw.append(event.tool_call)
                 elif event.kind == "error":
@@ -873,6 +882,7 @@ class CoreRuntime:
             grants = self._grants = SessionGrants()
         if grants.covers(name, args):
             logger.info("Already allowed for this session: %s", name)
+            grants.note_approved(name, args)
             return True
         if confirm_callback is None:
             return False
@@ -882,6 +892,8 @@ class CoreRuntime:
             decision = confirm_callback(describe_action(name, args))
         finally:
             self.pending_offer = ""
+        if decision:
+            grants.note_approved(name, args)
         if decision == "always" and offer:
             grants.grant(name, args)
             logger.info("The user allowed this for the session: %s", offer)

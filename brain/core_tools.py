@@ -1654,6 +1654,20 @@ def friendly_tool_name(function_name: str, args: dict) -> str:
     return function_name.replace("_", " ").capitalize()
 
 
+def preparing_label(function_name: str, args: dict) -> str:
+    """What Mike is getting ready to do, from the part of a tool call written
+    so far (only whole values -- brain/providers/partial_json.py). "" until
+    there's enough to say something true. For several files, the one being
+    written now: that's what changes while the student waits."""
+    if not args:
+        return ""
+    if function_name == "write_files":
+        paths = [f.get("path") for f in (args.get("files") or []) if isinstance(f, dict) and f.get("path")]
+        return f"Writing {_short_path(paths[-1])}" if paths else ""
+    label = friendly_tool_name(function_name, args)
+    return "" if label.endswith(":") else label
+
+
 def describe_action(function_name: str, args: dict) -> str:
     # The richer descriptions live in confirmation_detail because they need to
     # inspect real state -- files on disk, the observed element -- rather than

@@ -144,6 +144,8 @@ class _ThinkingRow(QWidget):
     def __init__(self, card: "StepsCard", parent=None) -> None:
         super().__init__(parent)
         self._card = card
+        #: What the next step is, once Mike has started writing it out.
+        self.hint = ""
         self.setFixedHeight(self.H)
 
     def paintEvent(self, _e) -> None:
@@ -153,8 +155,9 @@ class _ThinkingRow(QWidget):
         _Mark.paint(p, QRectF(2, (h - 16) / 2, 16, 16), "running", self._card._phase)
         p.setFont(style.font(style.BODY))
         p.setPen(QColor(style.INK_MUTE))
-        p.drawText(QRectF(30, 0, self.width() - 30, h), Qt.AlignVCenter | Qt.AlignLeft,
-                   "Working out the next step…")
+        text = f"{self.hint}…" if self.hint else "Working out the next step…"
+        text = p.fontMetrics().elidedText(text, Qt.ElideMiddle, int(self.width() - 30))
+        p.drawText(QRectF(30, 0, self.width() - 30, h), Qt.AlignVCenter | Qt.AlignLeft, text)
 
 
 class _Header(QWidget):
@@ -278,13 +281,16 @@ class StepsCard(QFrame):
             self._rows[index].setToolTip(text)
             self._rows[index].update()
 
-    def set_thinking(self, on: bool) -> None:
-        """Mike is between steps, deciding what to do next."""
+    def set_thinking(self, on: bool, hint: str = "") -> None:
+        """Mike is between steps, deciding what to do next -- or, with a
+        hint, already writing it out ("Writing style.css")."""
         on = bool(on) and not self._settled
         if on:
             self._col.removeWidget(self._thinking)
             self._col.addWidget(self._thinking)     # always the last row
+        self._thinking.hint = hint if on else ""
         self._thinking.setVisible(on)
+        self._thinking.update()
         self._sync()
 
     def set_waiting(self, on: bool) -> None:
