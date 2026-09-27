@@ -98,8 +98,12 @@ def get_provider(
     from config import ollama as ollama_config
 
     provider = (provider or getattr(ollama_config, "BRAIN_PROVIDER", "ollama")).lower()
-    if provider == "engine" and (model or vision_model):
-        provider = "ollama"          # a specific other model: Ollama serves those
+    same_model = {model or ollama_config.OLLAMA_CHAT_MODEL, vision_model or ollama_config.OLLAMA_CHAT_MODEL}
+    if provider == "engine" and same_model != {ollama_config.OLLAMA_CHAT_MODEL}:
+        # A different model: Ollama serves those. The same one stays on the
+        # engine -- measured, the conversation summariser named it explicitly,
+        # went to Ollama, and loaded a second 9GB copy beside the engine's.
+        provider = "ollama"
     if provider == "engine":
         from brain import engine as _engine
 

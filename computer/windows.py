@@ -344,6 +344,44 @@ def _process_name(pid: int) -> str:
         return ""
 
 
+def _cloaked(hwnd: int) -> bool:
+    """Hidden by the window manager though 'visible': a Store app's inner
+    window while it isn't shown, or a window on another desktop. Alt+Tab
+    leaves these out, and Windows won't bring them forward."""
+    value = ctypes.c_int(0)
+    try:
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd), 14, ctypes.byref(value), ctypes.sizeof(value))   # DWMWA_CLOAKED
+    except Exception:
+        return False
+    return value.value != 0
+
+
+def _window_app(hwnd: int, pid: int) -> str:
+    """The app a window belongs to, as its process name. A Microsoft Store app
+    (Calculator, Settings, Photos) is drawn inside a frame owned by
+    ApplicationFrameHost; the app is the process behind the frame's content.
+    Measured: asked for "CalculatorApp", Mike found only the app's hidden inner
+    window, Windows refused to bring it forward, and the turn spiralled."""
+    name = _process_name(pid)
+    if name.lower() != "applicationframehost":
+        return name
+    hosted: list[int] = []
+
+    def child(ch, _):
+        _, child_pid = win32process.GetWindowThreadProcessId(ch)
+        if child_pid != pid:
+            hosted.append(child_pid)
+            return False
+        return True
+
+    try:
+        win32gui.EnumChildWindows(hwnd, child, None)
+    except Exception:
+        pass           # EnumChildWindows reports the early stop as an error
+    return (_process_name(hosted[0]) if hosted else "") or name
+
+
 class WindowsController(ComputerController):
     name = "windows"
 
@@ -361,7 +399,7 @@ class WindowsController(ComputerController):
         if not hwnd:
             return None
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        return _process_name(pid) or win32gui.GetWindowText(hwnd) or None
+        return _window_app(hwnd, pid) or win32gui.GetWindowText(hwnd) or None
 
     def _enum_windows(self) -> list[tuple[int, str, int, tuple[int, int, int, int]]]:
         found: list[tuple[int, str, int, tuple[int, int, int, int]]] = []
@@ -384,6 +422,8 @@ class WindowsController(ComputerController):
             ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
             if ex_style & (_WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW):
                 return True
+            if _cloaked(hwnd):
+                return True
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             found.append((hwnd, title, pid, rect))
             return True
@@ -396,7 +436,7 @@ class WindowsController(ComputerController):
         windows = []
         for hwnd, title, pid, rect in self._enum_windows():
             windows.append(WindowInfo(
-                app=_process_name(pid) or title,
+                app=_window_app(hwnd, pid) or title,
                 title=title,
                 bounds=Bounds(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1]),
                 window_id=hwnd,
@@ -407,8 +447,8 @@ class WindowsController(ComputerController):
         return windows
 
     def running_apps(self) -> list[str]:
-        return sorted({_process_name(pid) or title
-                       for _, title, pid, _ in self._enum_windows()} - {""})
+        return sorted({_window_app(hwnd, pid) or title
+                       for hwnd, title, pid, _ in self._enum_windows()} - {""})
 
     def _hwnd_by_name(self, name: str) -> int | None:
         """Resolve a name to a window, precise matches first.
@@ -433,8 +473,9 @@ class WindowsController(ComputerController):
         )
 
         # 1. Exact process name — "chrome", "notepad".
+        apps = {hwnd: (_window_app(hwnd, pid) or "").lower() for hwnd, _t, pid, _r in candidates}
         for hwnd, title, pid, _ in candidates:
-            if (_process_name(pid) or "").lower() == wanted:
+            if apps[hwnd] == wanted:
                 return hwnd
         # 2. Exact window title — "Settings", "Calculator" (UWP apps whose
         #    process is ApplicationFrameHost, so only the title identifies them).
@@ -443,7 +484,7 @@ class WindowsController(ComputerController):
                 return hwnd
         # 3. Process-name substring, either direction.
         for hwnd, title, pid, _ in candidates:
-            app = (_process_name(pid) or "").lower()
+            app = apps[hwnd]
             if app and (wanted in app or app in wanted):
                 return hwnd
         # 4. The name as a whole word in the title — matches "Settings" in
@@ -466,7 +507,7 @@ class WindowsController(ComputerController):
             ))
         title = win32gui.GetWindowText(hwnd)
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        app_name = _process_name(pid) or title
+        app_name = _window_app(hwnd, pid) or title
 
         automation = _automation()
         uia = _uia()

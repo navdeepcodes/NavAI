@@ -493,6 +493,12 @@ class ComputerSession:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
+        # "ctrl+a" as one key is how shortcuts are written; measured, the model
+        # sent exactly that, got "Unknown key 'ctrl+a'", and spent a whole
+        # extra call (~12s) working around it.
+        if "+" in key.strip("+") and len(key) > 1:
+            *mods, key = [part.strip() for part in key.split("+") if part.strip()]
+            modifiers = [*(modifiers or []), *mods]
         note = self._ensure_front()
         try:
             result = self.controller().press_keys(key, modifiers).as_dict()

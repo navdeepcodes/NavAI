@@ -41,10 +41,8 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="open_url",
         description=(
-            "Open a specific URL in the browser. "
-            "Use this for site-specific searches by constructing the search URL directly. "
-            "For example, to search YouTube use 'https://www.youtube.com/results?search_query=QUERY', "
-            "to search Wikipedia use 'https://en.wikipedia.org/w/index.php?search=QUERY'."
+            "Open a URL in the browser. For a search on one site, build its search "
+            "URL, e.g. 'https://www.youtube.com/results?search_query=QUERY'."
         ),
         parameters_json_schema={
             "type": "object",
@@ -332,13 +330,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="calculate",
         description=(
-            "Work out an arithmetic expression exactly. Use this for any number "
-            "that matters — a total, a difference, a percentage, a sum of a column "
-            "you just read — rather than doing it in your head, where you will "
-            "occasionally be wrong in a way that looks right. "
-            "Give a plain expression, for example '2417 + 3168 + 912' or "
-            "'round(4820 / 6, 2)'. Available functions: sum, min, max, abs, round, "
-            "sqrt, floor, ceil."
+            "Work out arithmetic exactly -- any number that matters (a total, a "
+            "difference, a percentage), never in your head. A plain expression like "
+            "'2417 + 3168 + 912' or 'round(4820 / 6, 2)'; functions: sum, min, max, "
+            "abs, round, sqrt, floor, ceil."
         ),
         parameters_json_schema={
             "type": "object",
@@ -355,11 +350,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="read_spreadsheet",
         description=(
-            "Read a spreadsheet as a grid of addressed cells (.xlsx, .xlsm, .csv). "
-            "Use this instead of read_document whenever the work involves particular "
-            "cells: reading a column of figures, checking a total, or before changing "
-            "anything. It returns the grid, the formulas each cell contains, and says "
-            "explicitly when a formula's calculated value is not stored in the file."
+            "Read a spreadsheet (.xlsx, .xlsm, .csv) as addressed cells, with their "
+            "formulas and whether a formula's value is stored. Use it instead of "
+            "read_document when the work is about particular cells."
         ),
         parameters_json_schema={
             "type": "object",
@@ -377,14 +370,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="edit_spreadsheet",
         description=(
-            "Set the contents of specific cells in a spreadsheet and save it. "
-            "Give cells as an object keyed by cell reference, for example "
+            "Set cells in a spreadsheet and save it, e.g. "
             '{\"B6\": 4820, \"A6\": \"Total\", \"C6\": \"=SUM(C2:C5)\"}. '
-            "A value starting with '=' is stored as a formula. Mike does not "
-            "calculate formulas, so if the user needs the number itself, work it "
-            "out and write it as a value. The file is reopened after saving and the "
-            "cells are checked, so a failure to store is reported rather than assumed "
-            "to have worked."
+            "'=' stores a formula, which Mike can't calculate: when the user needs "
+            "the number, work it out and write the value. The saved cells are checked."
         ),
         parameters_json_schema={
             "type": "object",
@@ -439,10 +428,8 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="remember",
         description=(
-            "Save a useful fact the user explicitly asks you to remember. "
-            "Use this ONLY when the user says things like 'remember that...', "
-            "'don't forget that...', 'save this...', 'keep in mind that...'. "
-            "Do NOT use this for normal conversation or tool requests."
+            "Save a fact the user asks you to remember ('remember that...', "
+            "'don't forget...', 'keep in mind...'). Never for ordinary conversation."
         ),
         parameters_json_schema={
             "type": "object",
@@ -578,17 +565,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="see_screen",
         description=(
-            "Look at the screen with vision. This is SLOW — several seconds — "
-            "because it runs an image through a vision model, so it is the "
-            "fallback, not the default way to inspect an application.\n"
-            "Use see_ui instead whenever you are operating an application: it "
-            "reads the same interface as text in a fraction of a second and "
-            "gives you clickable references.\n"
-            "Use see_screen when: the user asks about the whole screen; "
-            "see_ui returned nothing useful for the app you need; the content "
-            "is drawn rather than built from controls (canvas, charts, images, "
-            "video, games); you need to judge how something actually looks; or "
-            "you need spatial layout the control list cannot express."
+            "Look at the screen with vision -- slow, so a fallback. To operate an "
+            "app use see_ui. Use this when the user asks about the whole screen, "
+            "see_ui found nothing useful, or the content is drawn (images, charts, "
+            "video, games) or it's about how something looks."
         ),
         parameters_json_schema={
             "type": "object",
@@ -879,13 +859,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="send_email",
         description=(
-            "Send an email, optionally with file attachments. This goes out "
-            "over the account's mail API, so it is reliable — prefer it over "
-            "driving a webmail interface by hand.\n"
-            "Sending is irreversible and leaves the machine, so the user is "
-            "asked to confirm first and is shown the exact recipient, subject "
-            "and attachments. Compose the whole message in one call; there is "
-            "no separate draft step."
+            "Send an email, with attachments if needed, through the user's mail "
+            "account -- prefer it over driving webmail. The user confirms the exact "
+            "message first. Write the whole message in one call."
         ),
         parameters_json_schema={
             "type": "object",
@@ -906,13 +882,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="see_ui",
         description=(
-            "Read an app window as text — use it to read what a window says: "
-            "buttons, fields, links, tabs, their labels and current text. Each "
-            "gets a reference like 'el7' that you pass to click_element or "
-            "scroll_ui. ALWAYS prefer this over see_screen for operating an "
-            "application: it is far faster, it names controls exactly, and it "
-            "tells you whether they are enabled. Observe again after any action "
-            "that changes the screen, because references go stale."
+            "Read an app window as text: its buttons, fields, links and tabs, "
+            "their labels and current text, each with a reference like 'el7' for "
+            "click_element or scroll_ui. Prefer it over see_screen. References go "
+            "stale after the screen changes: read again."
         ),
         parameters_json_schema={
             "type": "object",
@@ -935,15 +908,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="click_element",
         description=(
-            "Click a control. Give the 'ref' from see_ui whenever you can — it is "
-            "checked against a real element and fails clearly if the interface "
-            "moved. Coordinates are a fallback for things the accessibility tree "
-            "cannot see. Observe again afterwards to confirm what changed.\n"
-            "Do NOT click on-screen keys to enter data — a calculator's digits, "
-            "an on-screen keyboard, letter tiles. Typing them with type_text is "
-            "one step instead of many, and a click per character is slow and "
-            "easy to get wrong. Use click for controls the keyboard cannot reach: "
-            "buttons, menu items, tabs, checkboxes, links, list items."
+            "Click a control, by its 'ref' from see_ui whenever you can "
+            "(coordinates only as a fallback). For buttons, menus, tabs, checkboxes, "
+            "links and list items -- never on-screen keys: type digits and text "
+            "with type_text."
         ),
         parameters_json_schema={
             "type": "object",
@@ -960,18 +928,11 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="type_text",
         description=(
-            "Type text or numbers with the keyboard. This is how you enter data, "
-            "and it is far faster and more reliable than clicking on-screen keys "
-            "one at a time — prefer it over click_element for anything you can "
-            "type: digits and operators into a calculator, a query into a search "
-            "box, text into a field or a document. Many apps (a calculator, a "
-            "game, a canvas) take keystrokes with no field to click first; a form "
-            "field usually needs one click to focus it. It types characters "
-            "exactly as given, including accents and other scripts. After typing, "
-            "observe to confirm — some apps show what you typed in a display "
-            "rather than a text field, so a 'not a text field' note is not by "
-            "itself a failure; check the result. For keys with no character such "
-            "as Enter or Tab, use press_keys."
+            "Type text or numbers into an app, exactly as given -- a document, a "
+            "search box, a calculator's digits and operators. A form field may need "
+            "one click first. The result says what the field now holds; some apps "
+            "show typing in a display instead, so check that before retyping. For "
+            "Enter, Tab and shortcuts use press_keys."
         ),
         parameters_json_schema={
             "type": "object",
@@ -993,17 +954,16 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="press_keys",
         description=(
-            "Press a named key, optionally with modifiers — Enter to confirm (a "
-            "calculator's =, a search), Tab to move between fields, Escape, the "
-            "arrows, or a shortcut like ctrl+s. Use type_text for ordinary "
-            "characters and numbers."
+            "Press a key or shortcut: Enter to confirm (a calculator's =, a "
+            "search), Tab, Escape, the arrows, or a shortcut like ctrl+s. Ordinary "
+            "characters go through type_text."
         ),
         parameters_json_schema={
             "type": "object",
             "properties": {
                 "key": {
                     "type": "string",
-                    "description": "Key name: return, tab, escape, space, delete, up, down, left, right, a-z, 0-9, f1-f12",
+                    "description": "return, tab, escape, space, delete, arrows, a-z, 0-9, f1-f12, or a shortcut like ctrl+s",
                 },
                 "modifiers": {
                     "type": "array",
@@ -1044,15 +1004,12 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="mission",
         description=(
-            "Keep track of a piece of work the user is getting done over time (an "
-            "assignment, a report, an application), so the plan and progress "
-            "survive closing Mike and restarting. start: a short goal, the steps "
-            "in order (for coursework, the sections its brief asks for, plus "
-            "anything around them), the files they write in, the brief if there is "
-            "one, and the deadline they gave. A step about a section of their "
-            "document is checked from the file and ticks when it's written; mark "
-            "the others with step when the user says they're done. file adds a "
-            "file; finish when it's done or they want to drop it."
+            "Track work the user is getting done over time (an assignment, a "
+            "report), across restarts. start: a goal, the steps in order (for "
+            "coursework, the sections its brief asks for), their files, the brief "
+            "and the deadline. Section steps tick from the file itself; mark other "
+            "steps with step when the user says they're done. file adds a file; "
+            "finish when done or dropped."
         ),
         parameters_json_schema={
             "type": "object",

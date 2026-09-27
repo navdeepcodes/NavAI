@@ -1,27 +1,33 @@
 """Bring a window to the front on Windows, and say whether it really came.
 
 Windows only lets a thread change the foreground if its input queue is the
-foreground one, or its process has the right some other way (it received the
-last input, the user pressed Alt, ...). On this machine the foreground lock
-never times out, so a refusal is final. Mike's tools run on a worker thread,
-whose queue is never the foreground one even while Mike's own window is in
-front. Measured in the packaged app: with Mike frontmost, SetForegroundWindow
-(Notepad) from the worker was refused twice, 40s apart, and "type hello in
-notepad" failed. The old workaround joined the *target's* input queue, which
-does not make the caller foreground.
+foreground one, or its process has the right some other way. On this machine
+the foreground lock never times out, so a refusal is final. Mike's tools run on
+a worker thread, whose queue is never the foreground one even while Mike's own
+window is in front. Measured in the packaged app: with Mike frontmost,
+SetForegroundWindow(Notepad) from the worker was refused twice, 40s apart, and
+"type hello in notepad" failed. The old workaround joined the *target's* input
+queue, which does not make the caller foreground.
 
 So, each step checked before the next:
   1. join the input queue of the thread that owns the foreground window (and
      the target's), which puts this thread in the foreground queue -- the
      documented way;
-  2. tap Alt twice: an Alt press is one of the things Windows accepts as the
-     user's permission to switch windows, and the second tap closes the menu
-     the first may have opened in the window being left;
-  3. minimise and restore.
+  2. SwitchToThisWindow, the call Alt+Tab itself makes -- no keys pressed.
+
+Two fallbacks were tried and removed, both measured doing harm:
+  - tapping Alt (a key press Windows accepts as permission to switch) left
+    Windows 11 Notepad in its Alt-shortcut mode: "hello from mike" arrived as
+    "heellpo om mi", the letters taken as menu shortcuts -- 2 of 2 garbled in a
+    side-by-side test, while steps 1 and 2 typed cleanly 4 of 4;
+  - minimise-and-restore left Calculator minimised, and the next step reported
+    it wasn't running at all.
 """
 from __future__ import annotations
 
 import time
+
+from logs.logger import logger
 
 
 def _is_front(user32, hwnd: int, wait: float) -> bool:
@@ -63,14 +69,10 @@ def bring_to_front(hwnd: int) -> bool:
     if _is_front(user32, hwnd, 0.4):
         return True
 
-    for _ in range(2):
-        user32.keybd_event(win32con.VK_MENU, 0, 0, 0)
-        user32.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
-    user32.SetForegroundWindow(hwnd)
-    if _is_front(user32, hwnd, 0.4):
+    user32.SwitchToThisWindow(hwnd, True)
+    if _is_front(user32, hwnd, 0.6):
+        logger.info("Brought a window to the front with SwitchToThisWindow after "
+                    "SetForegroundWindow was refused.")
         return True
-
-    win32gui.ShowWindow(hwnd, win32con.SW_MINIMIZE)
-    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-    user32.SetForegroundWindow(hwnd)
-    return _is_front(user32, hwnd, 1.0)
+    logger.warning("Windows refused to bring the window to the front.")
+    return False
