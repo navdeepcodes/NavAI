@@ -294,7 +294,7 @@ class ConfirmCard(_Confirm):
         self._body.setTextFormat(Qt.PlainText)
         self._body.setTextInteractionFlags(Qt.TextSelectableByMouse)
         self._consequence.setFont(style.font(style.SMALL, QFont.Weight.Medium))
-        for b in (self._deny, self._allow):
+        for b in (self._deny, self._always, self._allow):
             b.setFont(style.font(style.BODY, QFont.Weight.DemiBold))
             b.setMinimumHeight(36)
         self._allow.setToolTip("Let Mike do this")
@@ -312,8 +312,8 @@ class ConfirmCard(_Confirm):
         self._body_wrap = wrap
         lay.insertWidget(index, wrap)
 
-    def ask(self, description: str) -> None:
-        super().ask(description)
+    def ask(self, description: str, offer: str = "") -> None:
+        super().ask(description, offer)
         danger = bool(self.property("danger"))
         self._head.setText("Mike wants to make a permanent change" if danger
                            else "Mike needs your OK to continue")

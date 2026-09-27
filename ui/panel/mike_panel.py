@@ -728,6 +728,9 @@ class _PlainText:
 class _Confirm(QFrame):
     approved = Signal()
     denied = Signal()
+    #: Yes, and for the rest of the session ("Allow edits in NavAI this
+    #: session") -- offered only where brain/grants.py can make it narrow.
+    always = Signal()
     visibility_changed = Signal()
 
     def __init__(self, parent=None) -> None:
@@ -772,6 +775,12 @@ class _Confirm(QFrame):
         self._deny.setCursor(Qt.PointingHandCursor)
         self._deny.clicked.connect(self.denied.emit)
         buttons.addWidget(self._deny)
+        self._always = QPushButton()
+        self._always.setObjectName("deny")        # the quiet style: not the default
+        self._always.setCursor(Qt.PointingHandCursor)
+        self._always.clicked.connect(self.always.emit)
+        self._always.hide()
+        buttons.addWidget(self._always)
         self._allow = QPushButton("Go ahead")
         self._allow.setObjectName("allow")
         self._allow.setCursor(Qt.PointingHandCursor)
@@ -788,9 +797,14 @@ class _Confirm(QFrame):
     _VERB = {"delete": "Delete", "remove": "Remove", "send": "Send",
              "email": "Send", "overwrite": "Overwrite", "move": "Move"}
 
-    def ask(self, description: str) -> None:
+    def ask(self, description: str, offer: str = "") -> None:
         lower = description.lower()
         destructive = any(k in lower for k in self._DESTRUCTIVE)
+        # A session-long yes is offered for edits in one project and for one
+        # exact command -- never for something that can't be undone.
+        self._always.setText(offer)
+        self._always.setToolTip("Yes to this, and to the same again until Mike restarts")
+        self._always.setVisible(bool(offer) and not destructive)
 
         verb = "Go ahead"
         for key, label in self._VERB.items():

@@ -677,6 +677,71 @@ TOOL_DECLARATIONS = [
         },
     ),
 
+    types.FunctionDeclaration(
+        name="read_files",
+        description=(
+            "Read several files at once, each with line numbers -- one step "
+            "instead of one per file. Use it for the files a task touches "
+            "together: the code and its tests, a page and its stylesheet, a "
+            "module and what imports it."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "File paths, up to 8.",
+                },
+            },
+            "required": ["paths"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="write_files",
+        description=(
+            "Create or replace several whole files at once: a new project's "
+            "files, or the new files a feature needs. To change part of an "
+            "existing file, use edit_file."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "description": "Each file's path and its full content.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                        },
+                        "required": ["path", "content"],
+                    },
+                },
+            },
+            "required": ["files"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="think",
+        description=(
+            "Think a task through before acting on it: the plan for building "
+            "something, the likely causes of a bug and how to tell them apart, "
+            "the order of the steps. For work with several steps, not for "
+            "simple questions. The user doesn't see it."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "thought": {"type": "string", "description": "Your reasoning."},
+            },
+            "required": ["thought"],
+        },
+    ),
+
     # --------------------------------------------------------
     # Understanding a project
     # --------------------------------------------------------
@@ -1085,6 +1150,7 @@ MEMORY_TOOLS = frozenset({"remember", "recall_memory", "forget_memory"})
 
 _CONFIRM_ACTIONS = frozenset({
     "write_file",
+    "write_files",
     "delete_path",
     "run_command",
     # Targeted edits change the user's files just as much as a whole-file
@@ -1242,6 +1308,24 @@ def confirmation_detail(function_name: str, args: dict) -> str:
             + (f" (sheet {args['sheet']})" if args.get("sheet") else "")
             + f":\n{listed}\nThe file is saved in place."
         )
+
+    if function_name == "write_files":
+        # Which files, and which of them already exist -- a new project's
+        # files and a replaced one are different things to allow.
+        lines = []
+        entries = [f for f in (args.get("files") or []) if isinstance(f, dict)]
+        for entry in entries[:15]:
+            target = str(entry.get("path") or "?")
+            try:
+                from tools.filesystem.path_utils import resolve_path
+                exists = resolve_path(target).exists()
+            except Exception:
+                exists = False
+            size = len(str(entry.get("content") or "").splitlines())
+            lines.append(f"  • {target} — {'replaces the existing file' if exists else 'new'}, {size} lines")
+        if len(entries) > 15:
+            lines.append(f"  … and {len(entries) - 15} more")
+        return f"Write {len(entries)} file(s):\n" + "\n".join(lines)
 
     if function_name == "forget_memory":
         # Built from the database by the same selector that will do the
@@ -1476,6 +1560,15 @@ def _keys(args: dict) -> str:
     return "+".join(mods + ([key.capitalize() if len(key) > 1 else key] if key else []))
 
 
+def _files_label(verb: str, paths) -> str:
+    names = [_short_path(p) for p in (paths or []) if p]
+    if len(names) == 1:
+        return f"{verb} {names[0]}"
+    if len(names) <= 3:
+        return f"{verb} " + ", ".join(names)
+    return f"{verb} {len(names)} files"
+
+
 def friendly_tool_name(function_name: str, args: dict) -> str:
     """What Mike is doing, in the words a person would use.
 
@@ -1535,6 +1628,10 @@ def friendly_tool_name(function_name: str, args: dict) -> str:
         "read_lines": f"Reading {path}",
         "edit_file": f"Editing {path}",
         "multi_edit": f"Editing {path}",
+        "read_files": _files_label("Reading", a.get("paths")),
+        "write_files": _files_label("Writing", [f.get("path") for f in (a.get("files") or [])
+                                                if isinstance(f, dict)]),
+        "think": "Thinking it through",
         "project_overview": "Looking over the project",
         "project_tree": "Mapping the project structure",
         "search_code": f"Searching the code for “{_clip(a.get('query', '…'))}”",

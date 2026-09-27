@@ -48,6 +48,8 @@ _DIRECT_TOOLS = frozenset({
     "process_output",
     "kill_process",
     "read_lines",
+    "read_files",
+    "write_files",
     "edit_file",
     "multi_edit",
     "project_overview",
@@ -78,6 +80,7 @@ _DIRECT_TOOLS = frozenset({
 # drifts the moment a tool is added.
 _SPECIAL_TOOLS = frozenset({
     "calculate",
+    "think",
     "see_screen",
     "read_document",
     "read_spreadsheet",
@@ -232,23 +235,29 @@ Paths like "Desktop/folder" or "Documents/file.txt" are relative to home.\
 # and an invitation to call a tool that isn't there.
 CODE_GUIDANCE = """\
 
-Code:
-- To change an existing file, use edit_file (or multi_edit for several related changes \
-at once). Read the file first with read_lines so you can match the text exactly. \
-Reserve write_file for creating a new file or deliberately replacing an entire one — \
-it overwrites everything, so anything you don't re-emit is lost.
-- If an edit reports that the text wasn't found or matched several places, nothing was \
-changed. Read that part of the file again and retry with more surrounding context.
-- To understand a project you haven't seen, start with project_overview, then \
-project_tree or search_code. Don't read the whole repository.
-- search_code searches inside files and gives you file:line:text. search_files only \
-finds filenames.
-- A tool call succeeding is not the same as the task succeeding. After editing \
-code, check_syntax tells you whether the file still parses. After starting a \
-server, check_port and check_url tell you whether it is actually serving. \
-Verify before you say something is done.
-- Use run_background for anything that stays running, like a dev server, then \
-list_processes or process_output to check on it.\
+Code -- you're their coding partner:
+- Take in what a task touches before changing it: project_overview for a project you \
+haven't seen, read_files for the files involved (several at once), search_code for where \
+something is defined or used. Don't read the whole repository.
+- Work with several steps -- building something, a bug that isn't obvious, a plan: \
+use think first, for the approach, the likely causes, the order.
+- New files: write_files, all of them in one step. Changing an existing file: edit_file \
+(multi_edit for related changes in one file), matching text you've just read exactly. \
+write_file replaces a whole file; anything you don't re-emit is lost.
+- If an edit says the text wasn't found or matched several places, nothing changed: \
+read that part again and retry with more context.
+- Prove it works before saying it does: run the script or the tests with run_command and \
+read the real output; start a server with run_background, then check_url its address; \
+after an edit, read the problems the editor reports, or check_syntax a file it doesn't \
+have open. A tool succeeding isn't the task succeeding.
+- Debugging: reproduce it first (run it, see the error), follow the traceback to the line, \
+find the cause, fix that, run again -- until it's gone, or you can say exactly what's left.
+- Once check_url says it's up, open_url shows them it running.
+- Plans (a hackathon, a project, learning a stack): ask what you don't know -- the time, \
+the team, what they already know -- then think, and write the plan to a Markdown file in \
+their project so it lasts.
+- search_code searches inside files (file:line:text); search_files only finds names. \
+Anything that keeps running goes in run_background; process_output shows what it printed.\
 """
 
 
@@ -721,7 +730,7 @@ class CoreRuntime:
                 # A caller of process_streaming that forgets to wire up
                 # confirmation must get "nothing happened", never "everything
                 # happened, unasked."
-                approved = confirm_callback(describe_action(name, args)) if confirm_callback else False
+                approved = self._approved(confirm_callback, name, args)
                 if not approved:
                     reason = (
                         "User denied this action." if confirm_callback else
@@ -851,6 +860,34 @@ class CoreRuntime:
         yield ("token", " ")
         yield from (("token", t) for t in held)
 
+    def _approved(self, confirm_callback, name: str, args: dict) -> bool:
+        """Ask the user -- unless they already allowed this for the session --
+        and offer, where it can be narrow, to allow its kind for the rest of
+        it: edits in one project, one exact command (brain/grants.py). The
+        offer travels on `pending_offer` so every existing confirm callback,
+        which takes just the description, keeps working; answering "always"
+        grants it, anything else is a plain yes or no."""
+        grants = getattr(self, "_grants", None)
+        if grants is None:
+            from brain.grants import SessionGrants
+            grants = self._grants = SessionGrants()
+        if grants.covers(name, args):
+            logger.info("Already allowed for this session: %s", name)
+            return True
+        if confirm_callback is None:
+            return False
+        offer = grants.offer(name, args)
+        self.pending_offer = offer
+        try:
+            decision = confirm_callback(describe_action(name, args))
+        finally:
+            self.pending_offer = ""
+        if decision == "always" and offer:
+            grants.grant(name, args)
+            logger.info("The user allowed this for the session: %s", offer)
+            return True
+        return bool(decision)
+
     def _done_this_turn(self) -> list[str]:
         """The tools run since the user's message, with how each went, e.g.
         ["remember (success)"] -- the facts the model needs to tell a promise
@@ -951,7 +988,7 @@ class CoreRuntime:
             if needs_confirmation(name, args):
                 # Same fail-closed rule as the streaming path: no callback
                 # means no execution, not silent approval.
-                approved = confirm_callback(describe_action(name, args)) if confirm_callback else False
+                approved = self._approved(confirm_callback, name, args)
                 if not approved:
                     reason = (
                         "User denied this action." if confirm_callback else
@@ -1020,6 +1057,10 @@ class CoreRuntime:
                 from tools.compute.calculator import calculate
 
                 return calculate(str(args.get("expression", "")))
+            if function_name == "think":
+                # The thinking is the point, and it stays in the conversation
+                # for the steps that follow; there's nothing to do with it.
+                return {"status": "success", "result": "Noted. Now act on it."}
             if function_name == "see_screen":
                 return self._execute_vision(args)
             if function_name == "read_document":
@@ -1284,6 +1325,12 @@ class CoreRuntime:
                     path=args.get("path", ""),
                     edits=args.get("edits") or [],
                 )
+
+            if function_name == "read_files":
+                return file_edits.read_files(args.get("paths") or [])
+
+            if function_name == "write_files":
+                return file_edits.write_files(args.get("files") or [])
 
             if function_name == "project_overview":
                 return project_inspect.project_overview(path=args.get("path") or ".")

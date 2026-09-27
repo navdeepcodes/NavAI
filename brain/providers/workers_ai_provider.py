@@ -32,8 +32,10 @@ from brain.providers.openai_compatible import OpenAICompatibleProvider
 from logs.logger import logger
 
 API = "https://api.cloudflare.com/client/v4"
-#: Workers AI serves this model with a 32k-token window.
-CONTEXT_TOKENS = 32768
+#: How much of a conversation the cloud model is shown. Gemma 4 takes far
+#: more; this is the student's allowance speaking -- every token sent is
+#: paid for, every call -- with room for a coding task's several files.
+CONTEXT_TOKENS = 49152
 #: How long to stay local after a failure that isn't the daily allowance.
 BRIEF_REST = 180
 #: With Fast mode answering, how long after startup to prepare the local
@@ -176,13 +178,19 @@ class WorkersAIProvider(BrainProvider):
         if was == who or not fast_mode_on():
             return
         if who == "local":
+            # Slower isn't the whole of it: the model here is a quarter the
+            # size, with a smaller window and fewer tools -- say so, so a
+            # coding task that suddenly struggles has a reason.
+            limited = ("Answers will be slower, and bigger jobs -- coding across several "
+                       "files, running and debugging projects, long plans -- are limited "
+                       "until Fast mode is back.")
             if not allowance_left():
                 until = time.strftime("%I:%M %p", time.localtime(_allowance_gone_until)).lstrip("0")
                 self._notice = ("Today's free Cloudflare allowance is used up, so Mike is using "
-                                f"the model on this computer until {until}. Answers will be slower.")
+                                f"the model on this computer until {until}. {limited}")
             else:
                 self._notice = ("Mike can't reach Cloudflare right now, so he's using the model "
-                                "on this computer. Answers will be slower for a few minutes.")
+                                f"on this computer for a few minutes. {limited}")
         elif was == "local":
             self._notice = "Fast mode is back."
 

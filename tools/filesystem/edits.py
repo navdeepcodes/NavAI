@@ -177,6 +177,103 @@ def read_lines(path: str, offset: int = 1, limit: int = 400) -> dict:
     }
 
 
+#: read_files: at most this many files, and this much text in all -- several
+#: whole files at once is the point, a context window's worth is not.
+READ_FILES_MAX = 8
+READ_FILES_BUDGET = 60_000
+WRITE_FILES_MAX = 20
+
+
+def read_files(paths: list[str]) -> dict:
+    """Several files at once, each numbered as read_lines numbers it (and read
+    from the editor when it's open there). One step instead of one per file:
+    every step re-sends the conversation, so reading a task's files one by one
+    cost a model call -- and the allowance -- each."""
+    if not paths:
+        return {"status": "error", "error": "No paths were given."}
+    wanted = [str(p) for p in paths if str(p).strip()]
+    files, left = [], READ_FILES_BUDGET
+    for path in wanted[:READ_FILES_MAX]:
+        if left <= 0:
+            files.append({"path": path, "skipped": "Not read: the others filled this read. Read it next."})
+            continue
+        got = read_lines(path, 1, 400)
+        if got.get("status") != "success":
+            files.append({"path": path, "error": got.get("error")})
+            continue
+        content = got["content"]
+        entry = {"path": got["path"], "total_lines": got["total_lines"], "shown": got["shown"]}
+        if len(content) > left:
+            content = content[:left].rsplit("\n", 1)[0]
+            entry["shown"] = f"1-{content.count(chr(10)) + 1}"
+            entry["truncated"] = True
+        elif got.get("truncated"):
+            entry["truncated"] = True
+        entry["content"] = content
+        left -= len(content)
+        files.append(entry)
+    result = {"status": "success", "files": files}
+    if len(wanted) > READ_FILES_MAX:
+        result["note"] = (f"Read the first {READ_FILES_MAX} of {len(wanted)}; ask for the rest "
+                          "in another read_files.")
+    if any(f.get("truncated") for f in files):
+        result["note"] = ((result.get("note", "") + " ").lstrip()
+                          + "Some files were cut short: read_lines reads the rest by line.")
+    return result
+
+
+def write_files(files: list[dict]) -> dict:
+    """Create or replace several whole files: a new project, or a feature's
+    new files, in one step. Each file goes through the editor when it's open
+    there (so unsaved work isn't clobbered from behind and Ctrl+Z undoes it),
+    otherwise to disk; each can be undone from Mike's activity."""
+    entries = [f for f in (files or []) if isinstance(f, dict) and str(f.get("path") or "").strip()]
+    if not entries:
+        return {"status": "error", "error": "No files were given."}
+    if len(entries) > WRITE_FILES_MAX:
+        return {"status": "error",
+                "error": f"That's {len(entries)} files; write at most {WRITE_FILES_MAX} at a time."}
+    from brain import revert_store
+
+    written, results = [], []
+    for entry in entries:
+        file = resolve_path(str(entry["path"]))
+        content = str(entry.get("content") or "")
+        if file.is_dir():
+            results.append({"path": str(file), "error": "That's a folder, not a file."})
+            continue
+        existed = file.exists()
+        try:
+            if existed:
+                from tools.filesystem.file_manager import refuse_non_text
+                refuse_non_text(file)
+                revert_store.capture(str(file))
+            live = _editor_text(file) if existed else None
+            if live is not None:
+                done = _finish_in_editor(file, live, content, {"status": "success"})
+                if done is not None:
+                    if done.get("status") != "success":
+                        results.append({"path": str(file), "error": done.get("error")})
+                        continue
+                    results.append({"path": str(file), "replaced": True, "editor": True,
+                                    "problems": done.get("problems")})
+                    written.append(file)
+                    continue
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(content, encoding="utf-8")
+            results.append({"path": str(file), "replaced": existed,
+                            "lines": len(content.splitlines())})
+            written.append(file)
+        except (OSError, ValueError) as exc:
+            results.append({"path": str(file), "error": str(exc)})
+    failed = [r for r in results if r.get("error")]
+    summary = f"Wrote {len(written)} of {len(entries)} file(s)."
+    if failed:
+        summary += f" {len(failed)} failed; the others were written."
+    return {"status": "success" if written else "error", "result": summary, "files": results,
+            **({"error": summary} if not written else {})}
+
+
 def edit_file(
     path: str,
     old_text: str,

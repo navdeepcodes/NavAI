@@ -16,7 +16,8 @@ class CoreRuntimeWorker(QObject):
     tool_end = Signal(str)
     finished = Signal()
     error = Signal(str)
-    confirmation_needed = Signal(str)
+    #: (what Mike wants to do, the session-long approval on offer or "")
+    confirmation_needed = Signal(str, str)
 
     def __init__(
         self,
@@ -121,12 +122,14 @@ class CoreRuntimeWorker(QObject):
         except Exception as exc:
             return f"(couldn't read this file: {exc})"
 
-    def _request_confirmation(self, description: str) -> bool:
+    def _request_confirmation(self, description: str):
+        """True, False, or "always" (allowed for the session)."""
 
         self._confirm_event.clear()
         self._awaiting_confirmation = True
 
-        self.confirmation_needed.emit(description)
+        self.confirmation_needed.emit(
+            description, str(getattr(self._runtime, "pending_offer", "") or ""))
 
         self._confirm_event.wait()
 
@@ -136,7 +139,8 @@ class CoreRuntimeWorker(QObject):
 
     # =====================================================
 
-    def set_confirmation(self, approved: bool) -> None:
+    def set_confirmation(self, approved) -> None:
+        """True, False, or "always": yes, and for the rest of the session."""
 
         self._confirm_result = approved
 

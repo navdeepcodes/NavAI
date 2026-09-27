@@ -135,6 +135,10 @@ class UIController(QObject):
             lambda: self._resolve_confirmation(True)
         )
 
+        always = getattr(self._page.confirm, "always", None)
+        if always is not None:
+            always.connect(lambda: self._resolve_confirmation("always"))
+
         self._page.confirm.denied.connect(
             lambda: self._resolve_confirmation(False)
         )
@@ -602,21 +606,25 @@ class UIController(QObject):
         self._page.input.set_enabled(True)
         self._page.input.focus()
 
-    def _show_confirmation(self, description: str) -> None:
+    def _show_confirmation(self, description: str, offer: str = "") -> None:
         """
         The worker thread is parked on an event until this resolves, so the
         prompt is shown inline rather than as a modal — same gate, no dialog.
+        `offer` is the session-long approval the card can also give ("Allow
+        edits in NavAI this session"), or "" when there's none.
         """
 
         self._state_before_confirm = self._page.state()
         logger.info("Asking the user to approve: %s", (description or "").splitlines()[0][:160] if description else "")
 
         self._page.set_state("needs_user")
-        self._page.confirm.ask(description)
+        self._page.confirm.ask(description, offer)
 
-    def _resolve_confirmation(self, approved: bool) -> None:
+    def _resolve_confirmation(self, approved) -> None:
+        """True, False, or "always" -- yes, and for the rest of the session."""
 
-        logger.info("The user %s it.", "approved" if approved else "declined")
+        logger.info("The user %s it.", "allowed it for the session" if approved == "always"
+                    else "approved" if approved else "declined")
         self._page.confirm.hide()
 
         restore = getattr(self, "_state_before_confirm", "working")

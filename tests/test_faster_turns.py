@@ -67,6 +67,6 @@ def test_every_tool_still_belongs_to_exactly_one_permission():
     groups = [tools for _t, _d, tools in permissions.ABILITIES.values()]
     for t in OLLAMA_TOOLS:
         name = t["function"]["name"]
-        if name == "calculate":
+        if name in ("calculate", "think"):    # touch nothing: no permission needed
             continue
         assert sum(name in g for g in groups) == 1, name

@@ -48,7 +48,8 @@ ABILITIES: dict[str, tuple[str, str, frozenset[str]]] = {
         "Work with code",
         "Read and edit code projects, run and watch dev servers, and use your code "
         "editor. On automatically while your editor is connected to Mike.",
-        frozenset({"read_lines", "edit_file", "multi_edit", "project_overview",
+        frozenset({"read_lines", "read_files", "write_files", "edit_file", "multi_edit",
+                   "project_overview",
                    "project_tree", "search_code", "check_syntax",
                    "ide_context", "ide_open_file", "ide_apply_edit",
                    "run_background", "list_processes", "process_output",
@@ -94,10 +95,27 @@ def _editor_connected() -> bool:
         return False
 
 
+def _cloud_answering() -> bool:
+    """Fast mode is on and has allowance left: the cloud model answers."""
+    try:
+        from brain.providers import workers_ai_provider as fast
+        return fast.fast_mode_on() and fast.allowance_left()
+    except Exception:
+        return False
+
+
 def disabled() -> set[str]:
-    """The abilities that are off right now."""
+    """The abilities that are off right now.
+
+    Coding starts off only to keep the local model's prompt short -- its 16
+    tool schemas were a quarter of every prompt, read at laptop speed. So it's
+    on whenever that cost isn't there: the editor is connected, or Fast mode's
+    cloud model is answering (a student asking it to build something, with no
+    editor open, had no way to run a server or check a page). Switched off in
+    Settings, it stays off either way."""
     off = _pref_set(_PREF) | (DEFAULT_OFF - _pref_set(_PREF_ON))
-    if "coding" in off and "coding" not in _pref_set(_PREF) and _editor_connected():
+    if ("coding" in off and "coding" not in _pref_set(_PREF)
+            and (_editor_connected() or _cloud_answering())):
         off.discard("coding")
     return off
 
