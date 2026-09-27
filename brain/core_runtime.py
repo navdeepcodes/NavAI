@@ -659,23 +659,32 @@ class CoreRuntime:
                 and not (cancel_event is not None and cancel_event.is_set())
             ):
                 logger.info("Reply promised an action but made no tool call; asking the model to act.")
-                nudge = {"role": "user", "content": _UNACTED_NUDGE}
+                done = self._done_this_turn()
+                nudge = {"role": "user", "content": _unacted_nudge(done)}
                 self._core.history.append(nudge)
                 try:
-                    yield ("token", " ")
-                    yield from self._streaming_loop(confirm_callback, cancel_event, depth + 1)
+                    yield from self._second_chance(
+                        confirm_callback, cancel_event, depth,
+                        stands=any(d.endswith("(success)") for d in done))
                 finally:
                     # The nudge is the runtime talking, not the user; it must
-                    # not be remembered as something they said.
+                    # not be remembered as something they said -- nor the
+                    # empty reply that means "my last reply stands".
                     try:
                         self._core.history.remove(nudge)
                     except ValueError:
                         pass
-            elif _promises_unperformed_action(collected_text) and self._already_nudged_this_turn():
+                    if self._core.history[-1:] == [{"role": "assistant", "content": ""}]:
+                        self._core.history.pop()
+            elif (_promises_unperformed_action(collected_text) and self._already_nudged_this_turn()
+                  and not any(d.endswith("(success)") for d in self._done_this_turn())):
                 # Given its chance, the model promised again and still did
                 # nothing. The user must not leave thinking it's under way.
                 # Measured: "I'll write the Discussion into your report now",
                 # twice, with no write -- the reply ended on a false claim.
+                # Only when nothing succeeded this turn: after a saved memory,
+                # "I'll keep that in mind" drew this note, and the note was
+                # the false claim.
                 logger.info("Reply still promised an action after its retry; saying it wasn't done.")
                 note = "\n\n(I haven't actually done that yet — say the word and I will.)"
                 self._core.history[-1]["content"] += note
@@ -809,9 +818,58 @@ class CoreRuntime:
         """A nudge stays in history only while its retry runs, so finding one
         means this turn has already had its second chance."""
         return any(
-            m.get("role") == "user" and m.get("content") == _UNACTED_NUDGE
+            m.get("role") == "user" and str(m.get("content") or "").startswith(_UNACTED_NUDGE_HEAD)
             for m in self._core.history
         )
+
+    def _second_chance(self, confirm_callback, cancel_event, depth: int, stands: bool):
+        """The nudged call. Its words are held until it acts: if it acts, they
+        are its preamble and go out with the action; if it only talks and an
+        action already succeeded this turn, the first reply stands and the
+        repeat is dropped -- measured: "Got it. I'll keep that in mind." twice
+        over, after the memory was saved."""
+        held: list[str] = []
+        acted = False
+        for kind, payload in self._streaming_loop(confirm_callback, cancel_event, depth + 1):
+            if not acted and kind == "token":
+                held.append(payload)
+                continue
+            if not acted and kind == "tool_start":
+                acted = True
+                yield ("token", " ")
+                yield from (("token", t) for t in held)
+                held = []
+            yield (kind, payload)
+        if not held:
+            return
+        if stands:
+            said = "".join(held)
+            if self._core.history and self._core.history[-1].get("content") == said:
+                self._core.history.pop()
+            logger.info("Second chance only repeated a reply that stands; not shown.")
+            return
+        yield ("token", " ")
+        yield from (("token", t) for t in held)
+
+    def _done_this_turn(self) -> list[str]:
+        """The tools run since the user's message, with how each went, e.g.
+        ["remember (success)"] -- the facts the model needs to tell a promise
+        still owed from a confirmation of what it just did."""
+        done: list[str] = []
+        names: list[str] = []
+        for m in reversed(self._core.history):
+            role = m.get("role")
+            if role == "user" and not str(m.get("content") or "").startswith(_UNACTED_NUDGE_HEAD):
+                break
+            if role == "tool":
+                try:
+                    status = json.loads(m.get("content") or "{}").get("status", "done")
+                except (ValueError, AttributeError):
+                    status = "done"
+                done.append(status)
+            elif role == "assistant" and m.get("tool_calls"):
+                names.extend(c.get("function", c).get("name", "?") for c in reversed(m["tool_calls"]))
+        return [f"{n} ({s})" for n, s in zip(reversed(names), reversed(done))]
 
     def _wrap_up(self, instruction: str):
 
@@ -1373,8 +1431,16 @@ class CoreRuntime:
             pattern = f"{pattern}.{file_type}" if not pattern.endswith(f".{file_type}") else pattern
 
         # Prune the directories that make a home-directory search hopeless.
+        # AppData on Windows: gigabytes of app caches and no documents --
+        # measured, "find the essay I wrote" spent its whole 20s in there
+        # and timed out.
         skip = ("Library", "node_modules", ".git", "venv", ".venv", "__pycache__",
-                ".Trash", "Applications", ".cache")
+                ".Trash", "Applications", ".cache", "AppData", "$Recycle.Bin",
+                ".npm", ".nuget", ".gradle", ".m2", ".cargo", ".rustup")
+        # Point at searching inside files only where that tool exists: with
+        # coding off, the model followed this advice to a tool it didn't have.
+        inside = (" To search the text inside files instead, use search_code."
+                  if permissions.is_enabled("coding") else "")
         cmd = ["find", str(root)]
         for name in skip:
             cmd += ["-name", name, "-prune", "-o"]
@@ -1394,14 +1460,13 @@ class CoreRuntime:
         except subprocess.TimeoutExpired:
             return {"status": "error", "error": (
                 f"Searching {root} for {pattern!r} took too long. Give a narrower "
-                "path, or use search_code if you are looking for text inside files."
+                "path, such as their Documents, Desktop or Downloads folder." + inside
             )}
 
         found = [line for line in (proc.stdout or "").splitlines() if line.strip()]
         if not found:
             return {"status": "success", "result": (
-                f"No file matching {pattern!r} under {root}. If you meant to "
-                "search inside files rather than for a filename, use search_code."
+                f"No file matching {pattern!r} under {root}." + inside
             )}
 
         shown = found[:50]
@@ -1716,13 +1781,23 @@ def _explain_error_text(message: str, args: dict, is_missing: bool | None = None
     )
 
 
-_UNACTED_NUDGE = (
-    "(Note from Mike's runtime, not the user: your last reply said you would do "
-    "something, but you made no tool call, so nothing happened. If the request "
-    "needs an action, call the tool now. If it doesn't, reply in one short "
-    "sentence without repeating yourself. Don't apologise and don't mention "
-    "this note — the user can't see it.)"
+_UNACTED_NUDGE_HEAD = (
+    "(Note from Mike's runtime, not the user: your last reply says you'll do "
+    "something, and it came with no tool call."
 )
+
+
+def _unacted_nudge(done: list[str]) -> str:
+    """The second chance, with the facts: what already ran this turn. Measured
+    without them: "Got it. I'll remember that." after the memory was saved
+    drew a second confirmation, "I've got it.", appended to the first."""
+    ran = f" Already done this turn: {', '.join(done)}." if done else ""
+    return (
+        _UNACTED_NUDGE_HEAD + ran + " If what you said still needs doing, call the "
+        "tool now. If it's already done, or needs no action, reply with nothing "
+        "at all: your last reply stands. Don't apologise and don't mention this "
+        "note — the user can't see it.)"
+    )
 
 # Mike committing himself to something, whatever the verb. It was a list of
 # verbs, and "I'll set up a mission for your lab report" slipped past it:

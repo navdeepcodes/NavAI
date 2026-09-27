@@ -219,16 +219,41 @@ class MikeWindow(QMainWindow):
             QTimer.singleShot(0, self._show_mission_in_corner)
             return
         self._show_full()
+        from config import preferences
+        offers = []
         if account_config.configured() and not account.signed_in():
-            from config import preferences
             if not preferences.get("account_offered", False):
                 preferences.set_value("account_offered", True)
-                QTimer.singleShot(450, lambda: self._ask_account(first_run=True))
+                offers.append(lambda: self._ask_account(first_run=True))
+        if self._fast_mode_to_offer():
+            preferences.set_value("fast_mode_offered", True)
+            offers.append(self._offer_fast_mode)
+        if offers:
+            # One after the other: each card is modal and waits for its answer.
+            QTimer.singleShot(450, lambda: [offer() for offer in offers])
 
     def _show_mission_in_corner(self) -> None:
         welcome = getattr(self.controller, "mission_welcome", "")
         if welcome:
             self.corner.set_response(welcome.replace("**", ""))
+
+    @staticmethod
+    def _fast_mode_to_offer() -> bool:
+        """Once, on the first launch after Fast mode exists, if it isn't
+        connected: most students would never find it in Settings."""
+        try:
+            from account import cloudflare
+            from config import preferences, settings
+            return bool(getattr(settings, "CLOUDFLARE_CLIENT_ID", "")
+                        and not preferences.get("fast_mode_offered", False)
+                        and not cloudflare.connected())
+        except Exception:
+            return False
+
+    def _offer_fast_mode(self) -> bool:
+        from ui.workspace import fast_mode_dialog
+        parent = self if self.isVisible() and not self.isMinimized() else None
+        return fast_mode_dialog.ask(parent)
 
     def _ask_account(self, *, required: bool = False, first_run: bool = False) -> bool:
         from ui.workspace import account_dialog

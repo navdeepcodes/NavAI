@@ -107,6 +107,38 @@ def test_the_second_chance_is_given_only_once(monkeypatch):
     assert "haven't actually done that" in text
 
 
+def test_a_confirmation_after_a_saved_memory_is_not_called_a_broken_promise(monkeypatch):
+    """Measured on Fast mode: the memory was saved, the model said "Got it.
+    I'll keep that in mind.", the retry repeated it, and the runtime then told
+    the user it hadn't been done -- the one false claim in the turn."""
+    brain = _Scripted(("remember", {"fact": "exams start 12 October"}),
+                      "Got it. I'll keep that in mind.", "Got it. I'll keep that in mind.")
+    rt, ran = _runtime(brain, monkeypatch)
+
+    events = list(rt.process_streaming("remember my exams start on 12 October",
+                                       confirm_callback=lambda d: True))
+    text = "".join(p for k, p in events if k == "token")
+
+    assert ran and ran[0][0] == "remember"
+    assert text.strip() == "Got it. I'll keep that in mind.", "said once, and nothing false added"
+    assert "remember (success)" in str(brain.calls[2][-1].get("content")), "the retry saw what ran"
+    assert [m.get("content") for m in rt._core.history if m.get("role") == "assistant"][-1] \
+        == "Got it. I'll keep that in mind."
+
+
+def test_a_second_chance_that_acts_shows_its_words_with_the_action(monkeypatch):
+    brain = _Scripted(("open_application", {"name": "notepad"}), "I'll type it now.",
+                      ("type_text", {"text": "hello", "app": "notepad"}), "Typed it.")
+    rt, ran = _runtime(brain, monkeypatch)
+
+    events = list(rt.process_streaming("open notepad and type hello",
+                                       confirm_callback=lambda d: True))
+    text = "".join(p for k, p in events if k == "token")
+
+    assert [n for n, _ in ran] == ["open_application", "type_text"], "the promised step ran"
+    assert text.strip().endswith("Typed it.")
+
+
 def test_after_an_action_the_model_says_what_happened(monkeypatch):
     """No canned reply: the model reads the verified result and answers in
     its own words -- including when the request had more in it."""

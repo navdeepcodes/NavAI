@@ -396,7 +396,65 @@ class GeneralTab(_Tab):
             _row("Notifications", "A quiet notification when Mike finishes or needs you "
                  "while his window is closed.", notify),
         ]))
+
+        from config import settings
+        if getattr(settings, "CLOUDFLARE_CLIENT_ID", ""):
+            self.add(_group("Speed"))
+            self.add(self._fast_mode_card())
         self.body.addStretch(1)
+
+    # ── Fast mode ────────────────────────────────────────────
+
+    def _fast_mode_card(self) -> QWidget:
+        from account import cloudflare
+        from config import preferences
+        info = cloudflare.connection()
+        here = _this_machine()
+        what = ("Answers in seconds, on your own free Cloudflare account. Your messages "
+                f"go to Cloudflare; screenshots stay on {here}. Offline, or once the day's "
+                f"free allowance is used, Mike uses the model on {here}.")
+        self._fast_note = _label("", style.SMALL, style.INK_MUTE)
+        self._fast_note.hide()
+        if info is None:
+            self._connect_btn = _button("Connect Cloudflare", "pill")
+            self._connect_btn.clicked.connect(self._connect_cloudflare)
+            card = _rows_card([_row("Fast mode", what, self._connect_btn)])
+        else:
+            switch = Switch(bool(preferences.get("fast_mode", True)))
+            switch.toggled.connect(lambda on: preferences.set_value("fast_mode", on))
+            disconnect = _button("Disconnect")
+            _arm(disconnect, "Disconnect?", self._disconnect_cloudflare)
+            name = info.get("account_name") or "your Cloudflare account"
+            card = _rows_card([
+                _row("Fast mode", what, switch),
+                _row("Cloudflare", self._fast_mode_line(name), disconnect),
+            ])
+        card.layout().addWidget(self._fast_note)
+        return card
+
+    @staticmethod
+    def _fast_mode_line(name: str) -> str:
+        try:
+            from brain.providers import get_provider
+            state = getattr(get_provider(), "status", lambda: "on")()
+        except Exception:
+            state = "on"
+        if state == "resting":
+            return (f"Connected to {name}. Using the model on {_this_machine()} for now: "
+                    "today's free allowance is used up, or Cloudflare can't be reached.")
+        return f"Connected to {name}."
+
+    def _connect_cloudflare(self) -> None:
+        from ui.workspace import fast_mode_dialog
+        if fast_mode_dialog.ask(self, start=True):
+            self.reload()
+
+    def _disconnect_cloudflare(self) -> None:
+        import threading
+        from account import cloudflare
+        threading.Thread(target=cloudflare.disconnect, name="cloudflare-disconnect",
+                         daemon=True).start()
+        QTimer.singleShot(300, self.reload)
 
     def _set_login(self, on: bool) -> None:
         from config import preferences

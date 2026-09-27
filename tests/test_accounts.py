@@ -306,7 +306,23 @@ def _window(monkeypatch, windows):
     asked, quit_ = [], []
     monkeypatch.setattr(w, "_ask_account", lambda **kw: asked.append(kw) or False)
     monkeypatch.setattr(w, "_request_quit", lambda: quit_.append(1))
+    w.fast_offers = []
+    monkeypatch.setattr(w, "_offer_fast_mode", lambda: w.fast_offers.append(1) or False)
     return w, asked, quit_
+
+
+def test_fast_mode_is_offered_once_after_mike_appears(app, fresh, monkeypatch, windows):
+    from config import preferences
+    preferences.set_value("fast_mode_offered", False)
+    w, asked, quit_ = _window(monkeypatch, windows)
+    w._present()
+    _wait_for(lambda: w.fast_offers)
+    assert w.fast_offers == [1] and preferences.get("fast_mode_offered") is True
+    w._present()
+    time.sleep(0.6)
+    app.processEvents()
+    assert w.fast_offers == [1], "offered once, not every launch"
+    w.close()
 
 
 def test_a_required_account_gates_mike(app, fresh, monkeypatch, windows):

@@ -397,9 +397,7 @@ TOOL_DECLARATIONS = [
         description=(
             "Find files by NAME. Use this when you know roughly what a file is "
             "called but not where it is: 'find the quarterly report', 'find a "
-            "PDF called invoice'. "
-            "To search for text INSIDE files, use search_code instead — it is "
-            "much faster and returns the matching lines, not just filenames."
+            "PDF called invoice'."
         ),
         parameters_json_schema={
             "type": "object",

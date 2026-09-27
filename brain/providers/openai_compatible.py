@@ -45,6 +45,15 @@ DEFAULT_TIMEOUT = 120
 DEFAULT_MAX_TOKENS = 8192
 
 
+def _text(content: Any) -> str:
+    """Message content as text. Cloudflare Workers AI sends a piece that is a
+    number as a JSON number -- measured: "12 times 7" streamed `"content": 84`
+    and the turn crashed joining it to the reply; a `0` would have vanished."""
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else str(content)
+
+
 class OpenAICompatibleProvider(BrainProvider):
 
     def __init__(
@@ -356,8 +365,9 @@ class OpenAICompatibleProvider(BrainProvider):
 
                 delta = choices[0].get("delta") or {}
 
-                if delta.get("content"):
-                    yield StreamEvent(kind="text", text=delta["content"])
+                text = _text(delta.get("content"))
+                if text:
+                    yield StreamEvent(kind="text", text=text)
 
                 for fragment in (delta.get("tool_calls") or []):
                     index = fragment.get("index", 0)
@@ -451,10 +461,10 @@ class OpenAICompatibleProvider(BrainProvider):
             if event.kind == "tool_call" and event.tool_call:
                 calls.append(event.tool_call)
             elif event.kind == "error":
-                return ChatResult(text=message.get("content") or "", error=event.error)
+                return ChatResult(text=_text(message.get("content")), error=event.error)
 
         return ChatResult(
-            text=message.get("content") or "",
+            text=_text(message.get("content")),
             tool_calls=calls,
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),

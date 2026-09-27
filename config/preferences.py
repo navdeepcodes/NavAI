@@ -79,6 +79,14 @@ DEFAULTS: dict[str, Any] = {
     # from brain/permissions.py); whether Mike opens at sign-in and how; tray
     # notifications; which version of the Terms/Privacy Policy was accepted.
     "abilities_off": "",
+    # Abilities that start off (coding) and the user switched on. Undeclared,
+    # the Settings switch for "Work with code" was dropped on every save.
+    "abilities_on": "",
+    # Fast mode: the connected Cloudflare account answers first, the local
+    # model behind it. Only matters once connected; False pauses it.
+    "fast_mode": True,
+    # The one-time offer to connect Fast mode (after the first-run tour).
+    "fast_mode_offered": False,
     "launch_at_login": False,
     "notifications_enabled": True,
     "terms_accepted_version": "",

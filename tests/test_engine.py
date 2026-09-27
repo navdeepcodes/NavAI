@@ -87,7 +87,8 @@ def test_the_same_model_named_explicitly_stays_on_the_engine(monkeypatch):
     monkeypatch.setattr(eng, "available", lambda: True)
     providers._CACHE.clear()
     try:
-        assert type(providers.get_provider(model="qwen3.5:9b")).__name__ == "EngineProvider"
+        chat = providers.get_provider(model="qwen3.5:9b")
+        assert type(getattr(chat, "local", chat)).__name__ == "EngineProvider"
         assert type(providers.get_provider(model="qwen2.5vl:3b")).__name__ == "OllamaProvider"
     finally:
         providers._CACHE.clear()

@@ -152,5 +152,17 @@ def get_provider(
             f"{', '.join(available_providers())}."
         )
 
+    if provider in ("engine", "ollama") and (model or ollama_config.OLLAMA_CHAT_MODEL) \
+            == ollama_config.OLLAMA_CHAT_MODEL:
+        # Mike's chat brain, with Fast mode in front: the student's own
+        # Cloudflare account answers when it's connected and switched on, and
+        # this is the local brain, untouched, whenever it isn't.
+        from config import settings
+
+        if getattr(settings, "CLOUDFLARE_CLIENT_ID", ""):
+            from brain.providers.workers_ai_provider import WorkersAIProvider
+
+            instance = WorkersAIProvider(instance, settings.CLOUDFLARE_MODEL)
+
     _CACHE[key] = instance
     return instance

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import platform
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -42,11 +43,19 @@ h1{{font-size:22px;margin:0 0 10px}}p{{font-size:15px;line-height:1.6;color:#4A4
 
 
 class Receiver:
-    """Waits for one redirect on 127.0.0.1; `.result` holds its query."""
+    """Waits for one redirect on 127.0.0.1; `.result` holds its query.
 
-    def __init__(self) -> None:
+    `path` and `ports` are the redirect a provider has registered: Cloudflare
+    lists exact URLs, so it passes its own path and no random-port fallback.
+    """
+
+    def __init__(self, path: str = PATH, ports: tuple[int, ...] = PORTS,
+                 success: str = "You're signed in.") -> None:
         self.result: dict[str, str] | None = None
         self._done = threading.Event()
+        self._path = path
+        self._ports = ports
+        self._success = success
         self._server = self._bind()
         # handle_request() returns every half second, so close() is prompt.
         self._server.timeout = 0.5
@@ -55,7 +64,7 @@ class Receiver:
 
     @property
     def redirect_uri(self) -> str:
-        return f"http://127.0.0.1:{self.port}{PATH}"
+        return f"http://127.0.0.1:{self.port}{self._path}"
 
     def _bind(self) -> HTTPServer:
         receiver = self
@@ -66,14 +75,14 @@ class Receiver:
 
             def do_GET(self):
                 url = urlparse(self.path)
-                if url.path != PATH:
+                if url.path != receiver._path:
                     self.send_response(404)
                     self.end_headers()
                     return
                 query = {k: v[0] for k, v in parse_qs(url.query).items()}
                 ok = "code" in query
                 page = _PAGE.format(
-                    title="You're signed in." if ok else "That didn't work.",
+                    title=receiver._success if ok else "That didn't work.",
                     body=("You can close this tab and go back to Mike." if ok else
                           "Go back to Mike and try again. "
                           + (query.get("error_description", "") or "")[:200]))
@@ -86,10 +95,17 @@ class Receiver:
                 receiver.result = query
                 receiver._done.set()
 
+        class Server(HTTPServer):
+            # On Windows SO_REUSEADDR lets a second listener take a port that's
+            # in use, and requests then land on either one: measured, a Google
+            # sign-in listener started while a Cloudflare one held 53682 got
+            # the other's 404s. Elsewhere it only skips TIME_WAIT, as intended.
+            allow_reuse_address = platform.system() != "Windows"
+
         last: OSError | None = None
-        for port in PORTS:
+        for port in self._ports:
             try:
-                return HTTPServer(("127.0.0.1", port), Handler)
+                return Server(("127.0.0.1", port), Handler)
             except OSError as exc:
                 last = exc
         raise last or OSError("no free port")
