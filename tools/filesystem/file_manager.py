@@ -74,7 +74,10 @@ class FileManager:
         if content is None:
             file.touch(exist_ok=True)
         else:
-            file.write_text(content)
+            # UTF-8, as write_file: in the Windows default code page a plan
+            # with a "→" in it failed ('charmap' can't encode), and the local
+            # model spent 2.5 minutes writing the whole file again.
+            file.write_text(content, encoding="utf-8")
 
         return str(file)
 

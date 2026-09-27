@@ -225,3 +225,13 @@ def test_the_local_model_keeps_the_coding_tools_when_the_allowance_runs_out(monk
     monkeypatch.setattr(fast, "_allowance_gone_until", time.time() + 3600)
     assert not fast.allowance_left()
     assert permissions.is_enabled("coding")
+
+
+def test_a_new_file_keeps_what_the_windows_code_page_cannot(tmp_path):
+    """create_file wrote in the system code page: a plan with a "→" failed,
+    and the local model spent 2.5 minutes writing it all again."""
+    from tools.filesystem.file_manager import FileManager
+    text = "profile → match → chat ✓ — नमस्ते\n"
+    target = tmp_path / "PLAN.md"
+    FileManager().create_file(str(target), text)
+    assert target.read_text(encoding="utf-8") == text

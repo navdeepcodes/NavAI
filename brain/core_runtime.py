@@ -256,7 +256,8 @@ find the cause, fix that, run again -- until it's gone, or you can say exactly w
 - Once check_url says it's up, open_url shows them it running.
 - Plans (a hackathon, a project, learning a stack): ask what you don't know -- the time, \
 the team, what they already know -- then think, and write the plan to a Markdown file in \
-their project so it lasts.
+their project so it lasts: something they can follow -- what to build first, who does what, \
+by when.
 - search_code searches inside files (file:line:text); search_files only finds names. \
 Anything that keeps running goes in run_background; process_output shows what it printed.\
 """
