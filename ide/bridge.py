@@ -50,6 +50,9 @@ class IDEBridge:
 
         self._pending: list[dict] = []
         self._results: dict[str, dict] = {}
+        #: Called with a question asked from the editor, on the server's
+        #: thread -- whoever sets it hands it to their own.
+        self.on_ask = None
         self._command_ready = threading.Condition(self._lock)
         self._result_ready = threading.Condition(self._lock)
 
@@ -115,6 +118,24 @@ class IDEBridge:
 
                 if self.path.startswith("/result"):
                     bridge._store_result(self._read_json())
+                    self._send(200, {"ok": True})
+                    return
+
+                if self.path.startswith("/ask"):
+                    # "Mike: Ask about this" in the editor: a question for
+                    # Mike, asked where the code is.
+                    payload = self._read_json()
+                    question = str(payload.get("question") or "").strip()
+                    handler = bridge.on_ask
+                    if not question or handler is None:
+                        self._send(503, {"ok": False, "error": "Mike isn't ready."})
+                        return
+                    try:
+                        handler(question)
+                    except Exception:
+                        logger.exception("Handing an editor question to Mike failed.")
+                        self._send(500, {"ok": False})
+                        return
                     self._send(200, {"ok": True})
                     return
 

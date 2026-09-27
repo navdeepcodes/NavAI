@@ -90,6 +90,9 @@ DEFAULTS: dict[str, Any] = {
     "fast_mode": True,
     # The one-time offer to connect Fast mode (after the first-run tour).
     "fast_mode_offered": False,
+    # Mike's VS Code extension was installed once; if the student removes it,
+    # it isn't put back. Undeclared, this never saved.
+    "vscode_extension_offered": False,
     "launch_at_login": False,
     "notifications_enabled": True,
     "terms_accepted_version": "",

@@ -21,6 +21,7 @@ request goes to the local model and the turn carries on.
 from __future__ import annotations
 
 import datetime as _dt
+import threading
 import time
 from dataclasses import replace
 from typing import Any, Iterator
@@ -35,6 +36,10 @@ API = "https://api.cloudflare.com/client/v4"
 CONTEXT_TOKENS = 32768
 #: How long to stay local after a failure that isn't the daily allowance.
 BRIEF_REST = 180
+#: With Fast mode answering, how long after startup to prepare the local
+#: model's saved prompt (when it's missing), so the first minutes stay quick.
+PREPARE_AFTER = 120
+_PREPARE_STOP = threading.Event()
 
 
 def fast_mode_on() -> bool:
@@ -128,6 +133,9 @@ class WorkersAIProvider(BrainProvider):
         self._local = local
         self._cloud = _Cloud(model)
         self._resting_until = 0.0
+        self._answered_last: str | None = None     # "cloud" or "local"
+        self._notice: str | None = None
+        self._local_primed = False
 
     def __getattr__(self, attr: str) -> Any:
         if attr in ("_local", "_cloud"):
@@ -159,6 +167,66 @@ class WorkersAIProvider(BrainProvider):
             return "off"
         return "resting" if time.time() < self._resting_until or not allowance_left() else "on"
 
+    # -- saying so --------------------------------------------------------
+    def _answered_by(self, who: str) -> None:
+        """Note which model answered; a switch while Fast mode is on is worth
+        one sentence to the student -- otherwise answers just get slow, or
+        fast again, for no reason they can see."""
+        was, self._answered_last = self._answered_last, who
+        if was == who or not fast_mode_on():
+            return
+        if who == "local":
+            if not allowance_left():
+                until = time.strftime("%I:%M %p", time.localtime(_allowance_gone_until)).lstrip("0")
+                self._notice = ("Today's free Cloudflare allowance is used up, so Mike is using "
+                                f"the model on this computer until {until}. Answers will be slower.")
+            else:
+                self._notice = ("Mike can't reach Cloudflare right now, so he's using the model "
+                                "on this computer. Answers will be slower for a few minutes.")
+        elif was == "local":
+            self._notice = "Fast mode is back."
+
+    def take_notice(self) -> str | None:
+        """The sentence about a switch, once."""
+        notice, self._notice = self._notice, None
+        return notice
+
+    def _prime_local(self, messages: list[dict], tools: list[dict] | None) -> None:
+        """Before the local model's first answer: restore its saved reading of
+        Mike's prompt. Started cold it read all ~5,400 tokens again -- measured,
+        the first answer after a switch took 100s; restored, it's seconds."""
+        if self._local_primed:
+            return
+        self._local_primed = True
+        warm = getattr(self._local, "warm_prefix", None)
+        if warm and messages and messages[0].get("role") == "system":
+            try:
+                warm(str(messages[0].get("content") or ""), tools or [])
+            except Exception:
+                logger.debug("Couldn't restore the local model's prompt.", exc_info=True)
+
+    def _prepare_local(self, system: str, tools: list[dict]) -> None:
+        """Fast mode is answering, and the local model's reading of this prompt
+        isn't saved (a new install, an update, coding switched on): read it
+        now, in the background at low priority, and put the model away again
+        -- so the day the allowance runs out costs seconds, not minutes."""
+        engine = getattr(self._local, "_engine", None)
+        if engine is None or engine.has_prefix(system, tools):
+            return
+        if _PREPARE_STOP.wait(PREPARE_AFTER):         # let the first minutes be quick
+            return
+        if not self._use_cloud() or engine.running():
+            return                                    # the local model is already in use
+        try:
+            logger.info("Preparing the local model's reading of Mike's prompt in the background.")
+            engine.start(background=True)
+            engine.ensure_prefix(system, tools)
+        except Exception:
+            logger.warning("Couldn't prepare the local model in the background.", exc_info=True)
+        finally:
+            if self._use_cloud() and not self._local_primed:
+                engine.stop()                         # its memory back to the student
+
     # -- the BrainProvider surface -----------------------------------------
     def capabilities(self) -> Capabilities:
         if not self._use_cloud():
@@ -180,6 +248,7 @@ class WorkersAIProvider(BrainProvider):
             events = self._cloud.stream(messages, tools, cancel=cancel)
             first = next(events, None)
             if first is not None and first.kind != "error":
+                self._answered_by("cloud")
                 yield first
                 yield from events
                 logger.info("Model call (Cloudflare %s): %.2fs | %d messages, %d tools",
@@ -188,6 +257,8 @@ class WorkersAIProvider(BrainProvider):
                 return
             self._rest(first.error if first is not None else
                        BrainError(kind="unavailable", message="No answer from Cloudflare."))
+        self._answered_by("local")
+        self._prime_local(messages, tools)
         yield from self._local.stream(messages, tools, cancel=cancel)
 
     def complete(self, messages, tools=None, *, max_tokens=None) -> ChatResult:
@@ -196,6 +267,7 @@ class WorkersAIProvider(BrainProvider):
             if result.error is None:
                 return result
             self._rest(result.error)
+        self._prime_local(messages, tools)
         return self._local.complete(messages, tools, max_tokens=max_tokens)
 
     def describe_image(self, *args, **kwargs):
@@ -206,6 +278,9 @@ class WorkersAIProvider(BrainProvider):
         memory and a busy GPU the student gets to keep); it starts the first
         time it's needed, from its saved prompt, in seconds."""
         if self._use_cloud():
+            threading.Thread(target=self._prepare_local, args=(system, tools),
+                             name="prepare-local-model", daemon=True).start()
             return "cloud"
+        self._local_primed = True
         warm = getattr(self._local, "warm_prefix", None)
         return warm(system, tools) if warm else "none"

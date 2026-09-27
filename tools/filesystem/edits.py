@@ -59,6 +59,77 @@ def _diff(before: str, after: str, path: str) -> str:
     return "".join(lines)
 
 
+# ── a file open in the student's editor ──────────────────────────────────
+#
+# Its text there is the truth: it may hold changes not saved yet. Edited on
+# disk, Mike changed the older text and the editor then held two versions --
+# the student's unsaved work, or Mike's change, was lost. So an open file is
+# read from the editor and edited through it (ide/manager.py): the change
+# lands in the student's buffer, is saved, Ctrl+Z undoes it, and the editor's
+# own checker says what it thinks of the result.
+
+def _editor_text(file: Path) -> str | None:
+    """The file's text in the connected editor, unsaved changes included --
+    None when no editor has it open, and the disk is the truth."""
+    try:
+        from ide import manager
+        return manager.editor_text(str(file))
+    except Exception:
+        return None
+
+
+def _position(text: str, offset: int) -> tuple[int, int]:
+    """(line, column) at `offset`, 0-based, the column in UTF-16 units as
+    editors count it."""
+    line = text.count("\n", 0, offset)
+    start = text.rfind("\n", 0, offset) + 1
+    return line, len(text[start:offset].encode("utf-16-le")) // 2
+
+
+def _write_through_editor(file: Path, before: str, after: str) -> dict | None:
+    """before -> after as one replacement of the part that changed, applied by
+    the editor. Its answer (ok, problems, changed), or None when no editor
+    holds the file any more."""
+    from ide import manager
+    head = 0
+    limit = min(len(before), len(after))
+    while head < limit and before[head] == after[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and before[-1 - tail] == after[-1 - tail]:
+        tail += 1
+    return manager.replace_in_editor(
+        str(file), _position(before, head), _position(before, len(before) - tail),
+        before[head:len(before) - tail], after[head:len(after) - tail])
+
+
+def _problems(file: Path, problems: list[dict]) -> str:
+    if not problems:
+        return f"VS Code shows no errors or warnings in {file.name} after this edit."
+    shown = [f"- line {p.get('line')}: {p.get('severity')}: {p.get('message')}"
+             + (f" [{p['source']}]" if p.get("source") else "") for p in problems[:10]]
+    return f"VS Code shows these in {file.name} after this edit:\n" + "\n".join(shown)
+
+
+def _finish_in_editor(file: Path, before: str, after: str, result: dict) -> dict | None:
+    """Write through the editor holding the file. The finished tool result, or
+    None when no editor holds it and the disk should be written instead."""
+    outcome = _write_through_editor(file, before, after)
+    if outcome is None or outcome.get("open") is False:
+        return None
+    if not outcome.get("ok"):
+        if outcome.get("changed"):
+            error = ("The file changed in the editor while I was editing it, so nothing "
+                     "was changed. Read it again and redo the edit.")
+        else:
+            error = (f"The editor couldn't apply the edit ({outcome.get('error') or 'no reason given'}). "
+                     "Nothing was changed.")
+        return {"status": "error", "error": error}
+    result["editor"] = "Applied in the editor and saved; Ctrl+Z there undoes it."
+    result["problems"] = _problems(file, outcome.get("problems") or [])
+    return result
+
+
 def read_lines(path: str, offset: int = 1, limit: int = 400) -> dict:
     """
     Read a file with line numbers, optionally a slice of it.
@@ -74,10 +145,12 @@ def read_lines(path: str, offset: int = 1, limit: int = 400) -> dict:
     if file.is_dir():
         return {"status": "error", "error": f"{file} is a directory, not a file."}
 
-    try:
-        text = file.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        return {"status": "error", "error": f"Could not read {file}: {exc}"}
+    text = _editor_text(file)          # what the student sees, unsaved changes too
+    if text is None:
+        try:
+            text = file.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return {"status": "error", "error": f"Could not read {file}: {exc}"}
 
     lines = text.splitlines()
     total = len(lines)
@@ -140,8 +213,9 @@ def edit_file(
             "error": "old_text must not be empty. To create or overwrite a whole file, use write_file.",
         }
 
+    live = _editor_text(file)
     try:
-        before = file.read_text(encoding="utf-8")
+        before = live if live is not None else file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return {"status": "error", "error": f"Could not read {file}: {exc}"}
 
@@ -188,6 +262,18 @@ def edit_file(
     revert_store.capture(str(file))
 
     after = before.replace(old_text, new_text)
+    result = {
+        "status": "success",
+        "path": str(file),
+        "replacements": occurrences,
+        "result": f"Replaced {occurrences} occurrence(s) in {file.name}.",
+        "diff": _diff(before, after, file.name) or "(no textual change)",
+    }
+    if live is not None:
+        done = _finish_in_editor(file, before, after, result)
+        if done is not None:
+            return done
+
     try:
         previous_mtime = file.stat().st_mtime
     except OSError:
@@ -199,14 +285,7 @@ def edit_file(
         return {"status": "error", "error": f"Could not write {file}: {exc}"}
 
     _ensure_visible_change(file, previous_mtime)
-
-    return {
-        "status": "success",
-        "path": str(file),
-        "replacements": occurrences,
-        "result": f"Replaced {occurrences} occurrence(s) in {file.name}.",
-        "diff": _diff(before, after, file.name) or "(no textual change)",
-    }
+    return result
 
 
 def multi_edit(path: str, edits: list[dict]) -> dict:
@@ -225,8 +304,9 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
     if not edits:
         return {"status": "error", "error": "No edits were provided."}
 
+    live = _editor_text(file)
     try:
-        before = file.read_text(encoding="utf-8")
+        before = live if live is not None else file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return {"status": "error", "error": f"Could not read {file}: {exc}"}
 
@@ -282,6 +362,18 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
     from brain import revert_store
     revert_store.capture(str(file))
 
+    result = {
+        "status": "success",
+        "path": str(file),
+        "replacements": applied,
+        "result": f"Applied {applied} edit(s) to {file.name}.",
+        "diff": _diff(before, working, file.name),
+    }
+    if live is not None:
+        done = _finish_in_editor(file, before, working, result)
+        if done is not None:
+            return done
+
     try:
         previous_mtime = file.stat().st_mtime
     except OSError:
@@ -293,11 +385,4 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
         return {"status": "error", "error": f"Could not write {file}: {exc}"}
 
     _ensure_visible_change(file, previous_mtime)
-
-    return {
-        "status": "success",
-        "path": str(file),
-        "replacements": applied,
-        "result": f"Applied {applied} edit(s) to {file.name}.",
-        "diff": _diff(before, working, file.name),
-    }
+    return result

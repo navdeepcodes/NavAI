@@ -150,3 +150,72 @@ def apply_edit(path: str, new_text: str, replace_selection: bool = False) -> dic
     if failure:
         return failure
     return adapter.apply_edit(path, new_text, replace_selection)
+
+
+# ── The editor's text is the truth ───────────────────────────
+#
+# A file open in the editor may hold unsaved changes. Read from disk and
+# written back, Mike's edit was made to the older text, and the editor then had
+# two versions of the file -- the student's unsaved work, or Mike's change, was
+# lost. So a file open in the connected editor is read from the editor and
+# edited through it: the edit lands in the student's buffer, is saved, and
+# Ctrl+Z undoes it.
+
+def _same_file(a: str, b: str) -> bool:
+    """One file, however it's spelled. Windows gives the same folder two
+    names -- measured: the editor had C:\\Users\\THRISH~1\\... open while Mike
+    resolved it to C:\\Users\\Thrisha M C\\... -- so different spellings are
+    compared by the file itself."""
+    import os
+    if os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b)):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def _editor_holding(path: str):
+    """(adapter, the path as the editor knows it) when a connected editor has
+    the file open; (None, "") otherwise. Commands use the editor's spelling."""
+    adapter = active_adapter()
+    if adapter is None or not hasattr(adapter, "read_text"):
+        return None, ""
+    for open_path in adapter.get_context().open_files:
+        if _same_file(path, open_path):
+            return adapter, open_path
+    return None, ""
+
+
+def editor_text(path: str) -> str | None:
+    """The file's text as the editor has it right now (with \\n line endings),
+    or None when it isn't open in a connected editor."""
+    adapter, where = _editor_holding(path)
+    if adapter is None:
+        return None
+    try:
+        result = adapter.read_text(where)
+    except Exception:
+        return None
+    if not result.get("ok"):
+        return None
+    return str(result.get("text") or "").replace("\r\n", "\n")
+
+
+def replace_in_editor(path: str, start: tuple[int, int], end: tuple[int, int],
+                      old: str, new: str) -> dict | None:
+    """Apply one replacement through the editor. None when no connected editor
+    holds the file (the caller writes the disk instead)."""
+    adapter, where = _editor_holding(path)
+    if adapter is None:
+        return None
+    try:
+        return adapter.replace_range(where, start, end, old, new)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def set_ask_handler(handler) -> None:
+    """Who answers "Mike: Ask about this" from the editor. Called on the
+    bridge's thread; the handler hands the question to its own."""
+    _bridge.on_ask = handler

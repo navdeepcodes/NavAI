@@ -116,6 +116,14 @@ def test_nobody_speaking_closes_the_mic_after_a_few_seconds(recorder):
 
 # ── the wake listener's hand-over ────────────────────────────────────────
 
+def _drain(app) -> None:
+    """Let earlier tests' leftover events run out before this one starts."""
+    for _ in range(5):
+        try:
+            app.processEvents()
+        except Exception:
+            pass
+
 def test_the_wake_word_hands_over_what_was_said_after_the_name():
     from voice.wake.windows import WindowsWakeWord
     w = WindowsWakeWord(on_wake=lambda: None)
@@ -138,7 +146,6 @@ def test_a_stale_hand_over_is_not_used():
 
 
 def test_hey_mike_heard_on_the_listeners_thread_starts_recording_on_the_ui_thread(monkeypatch):
-    from PySide6.QtCore import QThread
     from PySide6.QtWidgets import QApplication
 
     from brain.core_runtime import CoreRuntime
@@ -146,10 +153,13 @@ def test_hey_mike_heard_on_the_listeners_thread_starts_recording_on_the_ui_threa
     from ui.panel.mike_panel import MikePanel
 
     app = QApplication.instance() or QApplication(sys.argv)
+    _drain(app)
     ctrl = UIController(CoreRuntime(), MikePanel({}))
     started = []
+    # Plain Python for "which thread": a Qt call here surfaced errors from
+    # earlier tests' deleted windows, still firing their timers.
     monkeypatch.setattr(ctrl, "_start_voice", lambda from_wake=False: started.append(
-        (from_wake, QThread.currentThread() is app.thread())))
+        (from_wake, threading.current_thread() is threading.main_thread())))
 
     listener = threading.Thread(target=ctrl._wake._on_wake)     # as the wake listener calls it
     listener.start()

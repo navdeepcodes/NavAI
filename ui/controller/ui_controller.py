@@ -27,6 +27,8 @@ class UIController(QObject):
     #: fired there (measured -- a plain Python thread has no event loop), so
     #: on Windows the corner said "listening" and the mic never opened.
     _wake_heard = Signal()
+    #: "Mike: Ask about this" in VS Code -- asked on the bridge's thread.
+    _ide_asked = Signal(str)
 
     def __init__(
         self,
@@ -63,6 +65,13 @@ class UIController(QObject):
 
         self._wake_heard.connect(self._on_wake_word)
         self._wake = WakeWordDetector(on_wake=self._wake_heard.emit)
+
+        self._ide_asked.connect(self._on_ide_ask)
+        try:
+            from ide import manager as ide_manager
+            ide_manager.set_ask_handler(self._ide_asked.emit)
+        except Exception:
+            logger.debug("Couldn't take questions from the editor.", exc_info=True)
 
         # Lets the speech-to-text prewarm's initial wait be cut short on
         # shutdown, so a window torn down within a few seconds of opening
@@ -465,6 +474,18 @@ class UIController(QObject):
 
         self._page.hide_thinking()
 
+        # Fast mode switched models this turn (the day's allowance ran out,
+        # Cloudflare unreachable, or back again): one line, so a reply that is
+        # suddenly slow -- or fast again -- has a reason the student can see.
+        take_notice = getattr(getattr(self._runtime, "_brain", None), "take_notice", None)
+        if callable(take_notice):
+            try:
+                notice = take_notice()
+            except Exception:
+                notice = None
+            if isinstance(notice, str) and notice:
+                self._add_notice(notice, "info")
+
         # The reply is complete, so the shape-level tells can be seen and
         # removed: the "or should I distract you?" support-menu and stray
         # emoji the model adds against instructions. Rewrite the bubble only
@@ -669,6 +690,15 @@ class UIController(QObject):
             self._floating.set_state("thinking")
 
         self.process_message(text, by_voice=True)
+
+    def _on_ide_ask(self, question: str) -> None:
+        """A question asked in the editor. The student is in VS Code and stays
+        there: Mike answers in the corner, which doesn't take the keyboard,
+        and sees the file, selection and problems as every turn does."""
+        if self._floating is not None:
+            self._floating.show_presence()
+            self._floating.set_state("thinking")
+        self.process_message(question)
 
     def _on_nothing_heard(self) -> None:
         """The mic opened and nobody spoke: settle back quietly. A false "Hey

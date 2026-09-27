@@ -87,6 +87,21 @@ class VSCodeAdapter:
             "revealLocation", {"path": path, "line": line}
         )
 
+    def read_text(self, path: str) -> dict[str, Any]:
+        """The open document's text, unsaved changes included."""
+        return self._bridge.send_command("readText", {"path": path}, timeout=5.0)
+
+    def replace_range(self, path: str, start: tuple[int, int], end: tuple[int, int],
+                      old: str, new: str) -> dict[str, Any]:
+        """Replace [start, end) -- (line, UTF-16 column), 0-based -- if it still
+        holds `old`; saved, undoable, and with the file's problems after."""
+        return self._bridge.send_command(
+            "replaceRange",
+            {"path": path, "startLine": start[0], "startChar": start[1],
+             "endLine": end[0], "endChar": end[1], "old": old, "text": new},
+            timeout=20.0,
+        )
+
     def apply_edit(
         self,
         path: str,

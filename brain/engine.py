@@ -40,6 +40,8 @@ from logs.logger import logger
 
 START_TIMEOUT = 120
 PREFIX_FILE = "prefix-{key}.bin"
+#: Which saved state belongs to which prompt, readable without the server.
+PREFIX_INDEX = "prefixes.json"
 
 
 class EngineUnavailable(RuntimeError):
@@ -231,7 +233,9 @@ class LocalEngine:
     def running(self) -> bool:
         return self._proc is not None and self._proc.poll() is None
 
-    def start(self) -> None:
+    def start(self, background: bool = False) -> None:
+        """Start the server if it isn't running. `background`: at below-normal
+        priority -- preparing for later, while the student uses the laptop."""
         with self._lock:
             if self.running():
                 return
@@ -242,6 +246,8 @@ class LocalEngine:
             self._identity = f"{digest}|{exe.stat().st_size}|{exe.stat().st_mtime_ns}|{self.num_ctx}"
             log = open(self.state_dir / "server.log", "w", encoding="utf-8", errors="replace")
             flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            if background and sys.platform == "win32":
+                flags |= subprocess.BELOW_NORMAL_PRIORITY_CLASS
             self._proc = subprocess.Popen(self._args(exe, blob), env=env, stdout=log,
                                           stderr=subprocess.STDOUT, creationflags=flags)
             _kill_with_parent(self._proc)
@@ -310,6 +316,7 @@ class LocalEngine:
             if r.ok:
                 self._prefix_key = key
                 self._prefix_ready.set()
+                self._remember_prefix(system, tools, name)
                 logger.info("Restored the model's reading of Mike's prompt in %.1fs (%s tokens).",
                             time.monotonic() - t0, r.json().get("n_restored"))
                 return "restored"
@@ -327,9 +334,45 @@ class LocalEngine:
                     pass
         self._prefix_key = key
         self._prefix_ready.set()
+        self._remember_prefix(system, tools, name)
         logger.info("Read Mike's prompt once (%.0fs) and saved it; later starts restore it.",
                     time.monotonic() - t0)
         return "built"
+
+    # ── is it saved? -- answered without starting the server ─
+    def _offline_key(self, system: str, tools: list[dict]) -> str | None:
+        """Which saved prompt state belongs to this prompt, from what's on
+        disk: the model file, the server build and the prompt itself. The
+        state's own file name needs the running server's template; this
+        doesn't, so Fast mode can ask without loading 6GB."""
+        try:
+            exe = _ollama_lib() / "llama-server.exe"
+            _blob, digest = model_blob(self.model)
+            ident = f"{digest}|{exe.stat().st_size}|{exe.stat().st_mtime_ns}|{self.num_ctx}"
+        except Exception:
+            return None
+        text = ident + "\0" + system + "\0" + json.dumps(tools or [], sort_keys=True)
+        return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+    def _remember_prefix(self, system: str, tools: list[dict], name: str) -> None:
+        key = self._offline_key(system, tools)
+        if key is None:
+            return
+        try:
+            (self.state_dir / PREFIX_INDEX).write_text(json.dumps({key: name}), encoding="utf-8")
+        except OSError:
+            pass
+
+    def has_prefix(self, system: str, tools: list[dict]) -> bool:
+        """Whether this prompt's state is saved, so starting the engine costs
+        seconds rather than the minutes of reading it again."""
+        key = self._offline_key(system, tools)
+        try:
+            index = json.loads((self.state_dir / PREFIX_INDEX).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return False
+        name = index.get(key) if key else None
+        return bool(name) and (self.state_dir / name).exists()
 
 
 _ENGINE: LocalEngine | None = None

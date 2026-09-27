@@ -131,6 +131,100 @@ def test_a_number_streamed_as_a_number_is_still_text():
     assert _text(84) == "84" and _text(0) == "0" and _text(None) == "" and _text("hi") == "hi"
 
 
+# ── when the local model takes over ──────────────────────────────────────
+
+def _failing_cloud(monkeypatch, detail="connection refused"):
+    err = BrainError(kind="unavailable", message="down", detail=detail)
+    p, local, _ = _provider(monkeypatch, cloud_events=[StreamEvent(kind="error", error=err)])
+    primed = []
+    local.warm_prefix = lambda system, tools: primed.append((system, tools)) or "restored"
+    return p, local, primed
+
+
+def test_the_local_model_restores_its_saved_prompt_before_answering(monkeypatch):
+    """Measured: the first local answer after a switch took 100s -- the engine
+    started cold and read all of Mike's prompt again."""
+    p, local, primed = _failing_cloud(monkeypatch)
+    msgs = [{"role": "system", "content": "Mike's fixed prompt"}, {"role": "user", "content": "hi"}]
+    list(p.stream(msgs, [{"t": 1}]))
+    list(p.stream(msgs, [{"t": 1}]))
+    assert primed == [("Mike's fixed prompt", [{"t": 1}])], "once, before the first local answer"
+
+
+def test_a_switch_to_the_local_model_is_said_once(monkeypatch):
+    p, local, _ = _failing_cloud(
+        monkeypatch, '{"message":"you have used up your daily free allocation of 10,000 neurons"}')
+    list(p.stream([{"role": "user", "content": "hi"}]))
+    notice = p.take_notice()
+    assert "allowance is used up" in notice and ("AM" in notice or "PM" in notice)
+    assert p.take_notice() is None
+    list(p.stream([{"role": "user", "content": "again"}]))
+    assert p.take_notice() is None, "not every turn"
+
+
+def test_fast_mode_coming_back_is_said(monkeypatch):
+    p, local, _ = _failing_cloud(monkeypatch)
+    list(p.stream([{"role": "user", "content": "hi"}]))
+    p.take_notice()
+    p._resting_until = 0.0
+    monkeypatch.setattr(p._cloud, "stream", lambda *a, **k: iter(
+        [StreamEvent(kind="text", text="cloud"), StreamEvent(kind="done")]))
+    list(p.stream([{"role": "user", "content": "hi"}]))
+    assert p.take_notice() == "Fast mode is back."
+
+
+class _Engine:
+    def __init__(self, saved):
+        self.saved, self.calls = saved, []
+
+    def has_prefix(self, system, tools):
+        return self.saved
+
+    def running(self):
+        return False
+
+    def start(self, background=False):
+        self.calls.append(("start", background))
+
+    def ensure_prefix(self, system, tools):
+        self.calls.append("read")
+
+    def stop(self):
+        self.calls.append("stop")
+
+
+def test_a_missing_local_prompt_is_prepared_in_the_background_and_put_away(monkeypatch):
+    p, local, _ = _provider(monkeypatch)
+    local._engine = _Engine(saved=False)
+    monkeypatch.setattr(fast, "PREPARE_AFTER", 0)
+    p._prepare_local("sys", [])
+    assert local._engine.calls == [("start", True), "read", "stop"]
+
+
+def test_a_saved_local_prompt_is_left_alone(monkeypatch):
+    p, local, _ = _provider(monkeypatch)
+    local._engine = _Engine(saved=True)
+    monkeypatch.setattr(fast, "PREPARE_AFTER", 0)
+    p._prepare_local("sys", [])
+    assert local._engine.calls == []
+
+
+def test_the_engine_knows_what_it_saved_without_starting(tmp_path, monkeypatch):
+    from brain import engine as eng
+    lib = tmp_path / "lib"
+    lib.mkdir()
+    (lib / "llama-server.exe").write_bytes(b"exe")
+    monkeypatch.setattr(eng, "_ollama_lib", lambda: lib)
+    monkeypatch.setattr(eng, "model_blob", lambda model: (tmp_path / "blob", "sha256:abc"))
+    e = eng.LocalEngine("qwen3.5:9b", 16384, tmp_path / "state")
+    e.state_dir.mkdir()
+    assert not e.has_prefix("sys", [{"t": 1}])
+    (e.state_dir / "prefix-x.bin").write_bytes(b"state")
+    e._remember_prefix("sys", [{"t": 1}], "prefix-x.bin")
+    assert e.has_prefix("sys", [{"t": 1}])
+    assert not e.has_prefix("sys", [{"t": 2}]), "another prompt (coding switched on) isn't saved"
+
+
 # ── connecting ───────────────────────────────────────────────────────────
 
 class _Resp:

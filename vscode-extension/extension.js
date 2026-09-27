@@ -217,10 +217,92 @@ function schedulePush() {
 
 // ── Commands in ─────────────────────────────────────────────
 
+function samePath(a, b) {
+  if (process.platform !== 'win32') return a === b;
+  const norm = (p) => String(p || '').replace(/\//g, '\\').toLowerCase();
+  return norm(a) === norm(b);
+}
+
+// The open document for a path, if this window has one: its text is the
+// truth, unsaved changes included -- the file on disk may be older.
+function openDocument(path) {
+  return vscode.workspace.textDocuments.find(
+    (d) => d.uri.scheme === 'file' && samePath(d.uri.fsPath, path)
+  );
+}
+
+function describeDiagnostic(d) {
+  return {
+    line: d.range.start.line + 1,
+    column: d.range.start.character + 1,
+    severity: severityName(d.severity),
+    message: d.message,
+    source: d.source || '',
+  };
+}
+
+// The file's errors and warnings once the language server has looked at an
+// edit: resolves on its next report for this file, or after `timeoutMs`
+// (a file type with no checker never reports).
+function diagnosticsAfter(uri, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    let timer = null;
+    let sub = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (sub) sub.dispose();
+      if (timer) clearTimeout(timer);
+      resolve(
+        vscode.languages
+          .getDiagnostics(uri)
+          .filter((d) => d.severity <= vscode.DiagnosticSeverity.Warning)
+          .slice(0, 20)
+          .map(describeDiagnostic)
+      );
+    };
+    sub = vscode.languages.onDidChangeDiagnostics((e) => {
+      if (e.uris.some((u) => u.toString() === uri.toString())) setTimeout(finish, 150);
+    });
+    timer = setTimeout(finish, timeoutMs);
+  });
+}
+
 async function runCommand(command) {
   const { action, params } = command;
 
   try {
+    if (action === 'readText') {
+      const doc = openDocument(params.path);
+      if (!doc) return { ok: false, open: false };
+      return { ok: true, open: true, text: doc.getText(), dirty: doc.isDirty };
+    }
+
+    if (action === 'replaceRange') {
+      // An edit Mike made against the text he read -- applied only if that
+      // text is still there, so a student typing meanwhile never has their
+      // work overwritten. It lands in the editor, so Ctrl+Z undoes it.
+      const doc = openDocument(params.path);
+      if (!doc) return { ok: false, open: false };
+      const range = new vscode.Range(
+        params.startLine, params.startChar, params.endLine, params.endChar
+      );
+      const current = doc.getText(range).replace(/\r\n/g, '\n');
+      if (current !== params.old) {
+        return { ok: false, changed: true, error: 'The file changed in the editor since Mike read it.' };
+      }
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(doc.uri, range, params.text);
+      const problems = diagnosticsAfter(doc.uri, 1500);
+      if (!(await vscode.workspace.applyEdit(edit))) {
+        return { ok: false, error: 'VS Code rejected the edit.' };
+      }
+      await doc.save();
+      schedulePush();
+      return { ok: true, problems: await problems };
+    }
+
     if (action === 'openFile' || action === 'revealLocation') {
       const doc = await vscode.workspace.openTextDocument(params.path);
       const shown = await vscode.window.showTextDocument(doc, { preview: false });
@@ -322,6 +404,28 @@ function activate(context) {
           ? `Mike is connected on port ${port()}.`
           : `Mike is not reachable on port ${port()}. Is the app running?`
       );
+    }),
+    // Ask Mike without leaving the editor: he sees the file, the selection
+    // and the problems VS Code reports, and answers in his own window.
+    vscode.commands.registerCommand('mike.ask', async () => {
+      await pushContext();
+      const editor = vscode.window.activeTextEditor;
+      const selected = editor && !editor.selection.isEmpty;
+      const name = editor ? editor.document.fileName.split(/[\\/]/).pop() : '';
+      const question = await vscode.window.showInputBox({
+        prompt: 'Ask Mike',
+        placeHolder: selected
+          ? 'About the selected code…'
+          : name ? `About ${name}…` : 'Anything about your code…',
+        ignoreFocusOut: true,
+      });
+      if (!question || !question.trim()) return;
+      const sent = await request('POST', '/ask', { windowId: WINDOW_ID, question: question.trim() }, 4000);
+      if (!sent.ok || sent.status !== 200) {
+        vscode.window.showWarningMessage("Mike isn't running. Open Mike and ask again.");
+        return;
+      }
+      vscode.window.setStatusBarMessage('$(pulse) Asked Mike', 3000);
     })
   );
 
