@@ -61,7 +61,8 @@ class TestVisionAnalyzerLocal(unittest.TestCase):
     def test_uses_a_local_provider(self):
         analyzer = VisionAnalyzer()
         caps = analyzer._brain.capabilities()
-        self.assertEqual(caps.provider, "ollama", "vision must stay local")
+        # Ollama, or Mike's own engine running the same local model
+        self.assertIn(caps.provider, ("ollama", "engine"), "vision must stay local")
         self.assertTrue(caps.can("vision"), "the configured vision model must see")
 
     def test_analyze_sends_image_path_to_the_model(self):
