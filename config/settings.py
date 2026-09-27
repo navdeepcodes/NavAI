@@ -77,11 +77,13 @@ ACCOUNT_REQUIRED = os.getenv("MIKE_ACCOUNT_REQUIRED", "").lower() in ("1", "true
 # client belongs to huddlecode.com's Cloudflare account. Its ID is public by
 # design: sign-in uses PKCE, so there is no secret to ship.
 CLOUDFLARE_CLIENT_ID = os.getenv("MIKE_CLOUDFLARE_CLIENT_ID", "b4b5f1fe7d789f7ce244eaee8b647348")
-#: Exactly the scopes the client was registered with (Cloudflare asks for all
-#: the required ones). offline_access is what brings a refresh token.
+#: Exactly the scopes the client is registered with: asking for one it isn't
+#: is refused outright ("invalid_scope"), before the student even signs in.
+#: Workers AI, and reading the account's name; offline_access is what brings
+#: a refresh token. (Custom models were removed from the client: unused.)
 CLOUDFLARE_SCOPES = os.getenv(
     "MIKE_CLOUDFLARE_SCOPES",
-    "ai.read ai.write ai-model.read ai-model.write account-settings.read offline_access",
+    "ai.read ai.write account-settings.read offline_access",
 ).split()
 #: The cloud model. Chosen by sending Mike's real first request (prompt, tools,
 #: the student's words) for ten everyday asks to every model a free account
