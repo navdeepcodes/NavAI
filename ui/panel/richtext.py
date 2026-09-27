@@ -50,6 +50,35 @@ def _pygments_style() -> str:
     return _DARK_PYGMENTS if style.is_dark() else _LIGHT_PYGMENTS
 
 
+#: Loaded ahead by warm(): the languages students' questions bring most.
+_COMMON = ("python", "javascript", "typescript", "java", "c", "cpp", "csharp",
+           "html", "css", "json", "bash", "sql", "text")
+
+
+def warm() -> None:
+    """Load the highlighters (and the math renderer) off the UI thread, soon
+    after launch. Measured: the first reply with code froze the window 188ms
+    at its end, 93ms of it Pygments importing its Python lexer.
+
+    Only imports and Pygments itself: render() swaps a shared renderer rule,
+    so running it here could race the UI thread's render."""
+    for name in _COMMON:
+        try:
+            get_lexer_by_name(name)
+        except Exception:
+            pass
+    for scheme in (_LIGHT_PYGMENTS, _DARK_PYGMENTS):
+        try:
+            highlight("x = 1\n", get_lexer_by_name("python"),
+                      HtmlFormatter(noclasses=True, nowrap=True, style=scheme))
+        except Exception:
+            pass
+    try:
+        from ui.panel import mathtext  # noqa: F401
+    except Exception:
+        pass
+
+
 def _lexer(lang: str, code: str):
     lang = (lang or "").strip().lower()
     if lang:

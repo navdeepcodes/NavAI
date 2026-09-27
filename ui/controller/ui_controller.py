@@ -193,6 +193,19 @@ class UIController(QObject):
                 target=_prewarm_stt, name="stt-prewarm", daemon=True)
             self._prewarm_thread.start()
 
+        # Syntax highlighting loads its modules the first time a reply has
+        # code -- measured, a 188ms freeze at the end of that reply. Loaded in
+        # the background a moment after launch instead.
+        def _warm_render() -> None:
+            if self._prewarm_stop.wait(2):
+                return
+            try:
+                from ui.panel import richtext
+                richtext.warm()
+            except Exception:
+                logger.debug("Couldn't load the syntax highlighters ahead.", exc_info=True)
+        threading.Thread(target=_warm_render, name="render-warm", daemon=True).start()
+
     def _on_floating_submit(self, text: str) -> None:
         self._floating.clear_response()
         self._floating.set_state("thinking")
