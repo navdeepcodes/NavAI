@@ -41,5 +41,14 @@ def get_recognizer() -> SpeechRecognizer:
         from voice.recognizer.windows import WhisperRecognizer
 
         _instance = WhisperRecognizer()
+        try:
+            from config import settings
+            if getattr(settings, "CLOUDFLARE_CLIENT_ID", ""):
+                # Fast mode's Cloudflare Whisper in front; the local one
+                # answers whenever that isn't on or isn't working.
+                from voice.recognizer.cloud import CloudRecognizer
+                _instance = CloudRecognizer(_instance)
+        except Exception:
+            pass
         return _instance
     raise RecognizerUnavailable(f"No speech-to-text backend for {system}.")

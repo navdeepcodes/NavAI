@@ -49,6 +49,9 @@ DEFAULTS: dict[str, Any] = {
     # characters destabilised generation and truncated sentences mid-word.
     "voice_qwen_instruct": "Picking up a conversation. Calm, grounded, matter-of-fact.",
     "wake_word_enabled": True,
+    # After answering something said aloud, keep listening a few seconds for
+    # a reply, without "Hey Mike" again.
+    "voice_follow_up": True,
     "edge_enabled": True,
     "reduced_motion": False,
     "onboarding_complete": False,

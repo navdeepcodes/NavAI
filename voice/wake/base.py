@@ -30,6 +30,11 @@ class WakeWordBackend(ABC):
     def resume(self) -> None:
         """Undo suppress()."""
 
+    def take_preroll(self):
+        """(audio, noise_floor) heard after the wake phrase, for the recorder
+        taking over the mic -- or (None, None) when the backend keeps none."""
+        return None, None
+
     @property
     @abstractmethod
     def is_active(self) -> bool:

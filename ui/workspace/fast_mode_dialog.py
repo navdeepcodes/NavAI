@@ -82,7 +82,8 @@ class FastModeDialog(QDialog):
                      "Mike can use a free Cloudflare account to answer in about two seconds "
                      "instead of fifteen or twenty. It takes a minute: sign in with Google, "
                      "then click Authorize.<br><br>"
-                     f"Your messages go to Cloudflare to be answered; screenshots stay on {here}. "
+                     f"What you type or say goes to Cloudflare to be answered; screenshots "
+                     f"stay on {here}. "
                      f"Offline, or once the day's free allowance is used, Mike uses the model "
                      f"on {here}.")
         go = page.add(_btn("Connect — it's free", "primary"))

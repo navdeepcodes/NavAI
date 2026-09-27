@@ -3,7 +3,7 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import QObject, QThread, QTimer
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
 
 from brain import activity_store, conversation_store, projects
 from brain.core_runtime import CoreRuntime
@@ -20,6 +20,13 @@ if TYPE_CHECKING:
 
 
 class UIController(QObject):
+
+    #: "Hey Mike" was heard. The wake listener hears it on its own thread;
+    #: a signal carries it to this one. Called directly, as it was, the
+    #: handler ran on the listener's thread: its QTimer.singleShot never
+    #: fired there (measured -- a plain Python thread has no event loop), so
+    #: on Windows the corner said "listening" and the mic never opened.
+    _wake_heard = Signal()
 
     def __init__(
         self,
@@ -54,7 +61,8 @@ class UIController(QObject):
         self._speech_pump_timer.setInterval(100)
         self._speech_pump_timer.timeout.connect(self._pump_speech)
 
-        self._wake = WakeWordDetector(on_wake=self._on_wake_word)
+        self._wake_heard.connect(self._on_wake_word)
+        self._wake = WakeWordDetector(on_wake=self._wake_heard.emit)
 
         # Lets the speech-to-text prewarm's initial wait be cut short on
         # shutdown, so a window torn down within a few seconds of opening
@@ -104,6 +112,10 @@ class UIController(QObject):
 
         self._voice.error.connect(
             self._on_voice_error
+        )
+
+        self._voice.nothing_heard.connect(
+            self._on_nothing_heard
         )
 
         self._page.activity.stop_requested.connect(
@@ -177,7 +189,7 @@ class UIController(QObject):
         self._floating.set_state("thinking")
         self.process_message(text)
 
-    def process_message(self, message: str) -> None:
+    def process_message(self, message: str, by_voice: bool = False) -> None:
 
         message = message.strip()
 
@@ -186,6 +198,8 @@ class UIController(QObject):
         attachments = self._page.take_attachments()
         if not message and not attachments:
             return
+        # Spoken turns get a spoken conversation: see _maybe_follow_up.
+        self._by_voice = by_voice
 
         self._retire_active_worker()
 
@@ -310,6 +324,29 @@ class UIController(QObject):
 
             if self._floating and self._floating.isVisible():
                 self._floating.finish()
+
+            self._maybe_follow_up()
+
+    #: After answering something said aloud, Mike listens this long for a
+    #: reply -- "yes, save it" -- before going back to waiting for "Hey Mike".
+    FOLLOW_UP_SECONDS = 5
+
+    def _maybe_follow_up(self) -> None:
+        """A spoken question, a spoken answer, and then the mic stays open a
+        moment: a conversation, not a series of commands each needing the
+        name first. Only after a spoken turn that has fully finished -- never
+        while an approval is waiting, where a spoken "yes" would start a new
+        turn instead of answering the card."""
+        by_voice, self._by_voice = getattr(self, "_by_voice", False), False
+        if not by_voice or not preferences.get("voice_follow_up", True):
+            return
+        if self._worker is not None or self._page.state() in ("working", "needs_user"):
+            return
+
+        def listen() -> None:
+            if self._voice.state == "idle" and not self._speaker.is_speaking():
+                self._start_voice(follow_up=True)
+        QTimer.singleShot(250, listen)
 
     def _on_tool_start(self, description: str) -> None:
 
@@ -572,9 +609,14 @@ class UIController(QObject):
         elif self._voice.state == "recording":
             self._voice.stop_recording()
 
-    def _start_voice(self) -> None:
+    def _start_voice(self, from_wake: bool = False, follow_up: bool = False) -> None:
         self._wake.suppress()
-        self._voice.start_recording()
+        # After "Hey Mike", what was said in the same breath is already heard;
+        # it starts the recording, and the room's level comes with it.
+        preroll, floor = self._wake.take_preroll() if from_wake else (None, None)
+        self._voice.start_recording(
+            preroll=preroll, noise_floor=floor,
+            no_speech_seconds=self.FOLLOW_UP_SECONDS if follow_up else None)
 
     def _on_voice_button(self) -> None:
 
@@ -626,7 +668,14 @@ class UIController(QObject):
         if self._floating and self._floating.isVisible():
             self._floating.set_state("thinking")
 
-        self.process_message(text)
+        self.process_message(text, by_voice=True)
+
+    def _on_nothing_heard(self) -> None:
+        """The mic opened and nobody spoke: settle back quietly. A false "Hey
+        Mike" shouldn't leave the corner saying "listening", or a notice
+        telling someone who said nothing that Mike couldn't understand them."""
+        if self._floating and self._floating.isVisible():
+            self._floating.finish()
 
     def _on_voice_error(self, message: str) -> None:
 
@@ -654,7 +703,7 @@ class UIController(QObject):
             self._floating.activate(start_listening=True)
 
         if self._voice.state == "idle":
-            QTimer.singleShot(0, self._start_voice)
+            self._start_voice(from_wake=True)
 
     # =====================================================
     # Preferences applied to the live engines

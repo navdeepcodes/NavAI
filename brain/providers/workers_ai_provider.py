@@ -55,6 +55,27 @@ def _next_utc_midnight() -> float:
     return tomorrow.timestamp()
 
 
+#: When the day's free allowance ran out, until when -- shared by everything
+#: that uses the student's Cloudflare account (the chat model, and speech-to-
+#: text), so the first to find it gone spares the others a failing call.
+_allowance_gone_until = 0.0
+
+
+def allowance_gone(detail: str) -> bool:
+    """Is this Cloudflare error the daily free allowance being used up? If so,
+    it's remembered until the allowance resets (00:00 UTC)."""
+    global _allowance_gone_until
+    text = (detail or "").lower()
+    if "allocation" in text or "neuron" in text or "4006" in text:
+        _allowance_gone_until = _next_utc_midnight()
+        return True
+    return False
+
+
+def allowance_left() -> bool:
+    return time.time() >= _allowance_gone_until
+
+
 class _Cloud(OpenAICompatibleProvider):
     """Workers AI's OpenAI-compatible endpoint, on the connected account."""
 
@@ -119,11 +140,10 @@ class WorkersAIProvider(BrainProvider):
 
     # -- which one --------------------------------------------------------
     def _use_cloud(self) -> bool:
-        return time.time() >= self._resting_until and fast_mode_on()
+        return time.time() >= self._resting_until and allowance_left() and fast_mode_on()
 
     def _rest(self, error: BrainError) -> None:
-        detail = (error.detail or "").lower()
-        if "allocation" in detail or "neuron" in detail or "4006" in detail:
+        if allowance_gone(error.detail):
             self._resting_until = _next_utc_midnight()
             logger.info("Fast mode: today's free Cloudflare allowance is used up; "
                         "the local model answers until it resets.")
@@ -137,7 +157,7 @@ class WorkersAIProvider(BrainProvider):
         """For Settings: "off", "on", or "resting" (on, but local for now)."""
         if not fast_mode_on():
             return "off"
-        return "resting" if time.time() < self._resting_until else "on"
+        return "resting" if time.time() < self._resting_until or not allowance_left() else "on"
 
     # -- the BrainProvider surface -----------------------------------------
     def capabilities(self) -> Capabilities:

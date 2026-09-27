@@ -51,6 +51,7 @@ def _provider(monkeypatch, *, on=True, cloud_events=None):
     local = _Local()
     p = fast.WorkersAIProvider(local, "@cf/qwen/qwen3-30b-a3b-fp8")
     monkeypatch.setattr(fast, "fast_mode_on", lambda: on)
+    monkeypatch.setattr(fast, "_allowance_gone_until", 0.0)
     monkeypatch.setattr(p._cloud, "_key", lambda: "token")
     sent = []
 

@@ -410,9 +410,9 @@ class GeneralTab(_Tab):
         from config import preferences
         info = cloudflare.connection()
         here = _this_machine()
-        what = ("Answers in seconds, on your own free Cloudflare account. Your messages "
-                f"go to Cloudflare; screenshots stay on {here}. Offline, or once the day's "
-                f"free allowance is used, Mike uses the model on {here}.")
+        what = ("Answers in seconds, on your own free Cloudflare account. What you type "
+                f"or say goes to Cloudflare; screenshots stay on {here}. Offline, or once "
+                f"the day's free allowance is used, Mike uses the model on {here}.")
         self._fast_note = _label("", style.SMALL, style.INK_MUTE)
         self._fast_note.hide()
         if info is None:
@@ -611,8 +611,12 @@ class VoiceTab(_Tab):
         self.add(_group("Listening"))
         wake = Switch(bool(preferences.get("wake_word_enabled", True)))
         wake.toggled.connect(lambda on: self._flip("wake_word_enabled", on, "on_wake_toggle"))
+        follow = Switch(bool(preferences.get("voice_follow_up", True)))
+        follow.toggled.connect(lambda on: preferences.set_value("voice_follow_up", on))
         self.add(_rows_card([
             _row("“Hey Mike”", "Say it from anywhere to start talking, hands-free.", wake),
+            _row("Keep the conversation going", "After answering something you said, Mike "
+                 "listens for a few seconds, so you can reply without “Hey Mike”.", follow),
             _row("Talk with a click", "Click the mic in the message box, or press F6. "
                  "Mike stops listening when you pause.", _key_hint("F6")),
             _row("Interrupt", "Start talking, click the mic, or press Esc — "

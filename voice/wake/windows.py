@@ -94,6 +94,13 @@ class WindowsWakeWord(WakeWordBackend):
         self._stop = threading.Event()
         self._worker: threading.Thread | None = None
         self._last_fire = 0.0
+        # Everything heard so far, to know which buffer samples are new.
+        self._heard = 0
+        # What was said after the wake word, kept for the recorder: "Hey Mike,
+        # open Notepad" in one breath is heard here before the recorder opens.
+        self._preroll: np.ndarray | None = None
+        self._preroll_floor = 0.0
+        self._preroll_at = 0.0
         # An estimate of the room's steady noise level, so the gate adapts to
         # the actual room instead of one fixed number. Speech has to sit a
         # clear margin above this to be worth transcribing — otherwise a fan,
@@ -133,12 +140,28 @@ class WindowsWakeWord(WakeWordBackend):
         logger.info("Wake word detector stopped")
 
     def suppress(self) -> None:
-        """Release the mic while Mike speaks, so he doesn't hear his own name."""
+        """Release the mic while Mike speaks, so he doesn't hear his own name.
+
+        After a wake word, what arrived since it was heard joins the preroll:
+        it is the command, still being spoken while the recorder was opening.
+        """
         if self._active and not self._suppressed:
             self._suppressed = True
             self._close_stream()
             with self._buf_lock:
+                if self._preroll is not None and self._buf:
+                    self._preroll = np.concatenate(
+                        [self._preroll, np.array(self._buf, dtype=np.float32)])
                 self._buf.clear()
+
+    def take_preroll(self) -> tuple[np.ndarray | None, float | None]:
+        """The audio after the wake word, and the room's noise level, for the
+        recorder that takes over the mic -- once, and only just after a wake."""
+        with self._buf_lock:
+            audio, self._preroll = self._preroll, None
+        if audio is None or time.monotonic() - self._preroll_at > 5.0:
+            return None, None
+        return audio, self._preroll_floor
 
     def resume(self) -> None:
         if self._active and self._suppressed:
@@ -174,6 +197,7 @@ class WindowsWakeWord(WakeWordBackend):
             return
         with self._buf_lock:
             self._buf.extend(indata[:, 0].copy())
+            self._heard += len(indata)
 
     # -- detection ----------------------------------------------------
     def _load_model(self):
@@ -206,6 +230,7 @@ class WindowsWakeWord(WakeWordBackend):
                 if len(self._buf) < int(MIN_AUDIO_SECONDS * SAMPLE_RATE):
                     continue
                 audio = np.array(self._buf, dtype=np.float32)
+                heard_at = self._heard
 
             rms = float(np.sqrt(np.mean(audio ** 2)))
 
@@ -262,7 +287,14 @@ class WindowsWakeWord(WakeWordBackend):
                 if now - self._last_fire < COOLDOWN_SECONDS:
                     continue
                 self._last_fire = now
+                after = self._after_name(model, audio)
                 with self._buf_lock:
+                    fresh = self._heard - heard_at
+                    since = (np.array(self._buf, dtype=np.float32)[-fresh:] if fresh > 0
+                             else np.zeros(0, dtype=np.float32))
+                    self._preroll = np.concatenate([after, since])
+                    self._preroll_floor = self._noise_floor
+                    self._preroll_at = time.monotonic()
                     self._buf.clear()
                 if not self._suppressed:
                     logger.info("Wake word detected in: %r", text.strip()[:60])
@@ -274,3 +306,25 @@ class WindowsWakeWord(WakeWordBackend):
     @staticmethod
     def _is_wake(text: str) -> bool:
         return any(word in _WAKE_WORDS for word in _WORD_RE.findall(text))
+
+    @classmethod
+    def _after_name(cls, model, audio: np.ndarray) -> np.ndarray:
+        """The audio after the name: where Whisper says "Mike" ended. What
+        came before it (Mike's own voice, when he's interrupted, or anything
+        said earlier) isn't part of the request. One extra pass, only when
+        the name was heard; if it can't place the word, all of it is kept."""
+        try:
+            segments, _info = model.transcribe(
+                audio, beam_size=1, language="en", temperature=0.0,
+                condition_on_previous_text=False, word_timestamps=True,
+                max_new_tokens=24)
+            end = None
+            for segment in segments:
+                for word in segment.words or []:
+                    if cls._is_wake(word.word.lower()):
+                        end = word.end
+            if end is not None:
+                return audio[min(len(audio), int(end * SAMPLE_RATE)):]
+        except Exception:
+            logger.debug("Wake word: couldn't place the name in the audio.", exc_info=True)
+        return audio
