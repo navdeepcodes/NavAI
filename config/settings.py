@@ -47,7 +47,7 @@ WEBSITE = "https://huddlecode.com"
 SUPPORT_EMAIL = ""
 #: Bump when the Privacy Policy or Terms change materially; people are asked
 #: to accept the new version on their next launch.
-LEGAL_VERSION = "2026-09-25.2"  # .2: Mike accounts
+LEGAL_VERSION = "2026-09-28.1"  # Fast mode: your own Cloudflare account
 
 # ── Accounts (Supabase) ───────────────────────────────────────
 # Optional Mike accounts: email, name and photo, synced across computers.

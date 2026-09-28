@@ -116,24 +116,28 @@ class MicButton(IconButton):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         w, h = self.width(), self.height()
-        acc = QColor(style.accent())
+        # Live states in the ink colour, like the rest of the voice meter.
+        acc = QColor(style.INK)
         s = self._icon_size
         icon_r = QRectF((w - s) / 2, (h - s) / 2, s, s)
         c = QRectF(0, 0, w, h).center()
         if self._vstate == "recording":
-            # Filled: the mic is live. The ring around it swells with your
-            # actual voice — still when you're quiet — so you can see you're
-            # being heard.
-            r = w / 2 - 4.5
-            ring = QColor(acc)
-            ring.setAlphaF(0.30 + 0.45 * self._env)
-            p.setPen(QPen(ring, 1.6))
-            p.setBrush(Qt.NoBrush)
-            p.drawEllipse(c, r + 1.5 + 2.5 * self._env, r + 1.5 + 2.5 * self._env)
+            # Filled: the mic is live. Soft ripples keep leaving it while it
+            # listens, stronger as you speak, and the disc breathes with your
+            # actual voice -- so you can see you're being heard.
+            r = w / 2 - 5.5 + 1.2 * self._env
+            room = w / 2 - 0.5 - r
+            for k in range(2):
+                phase = (self._t / 1.6 + k * 0.5) % 1.0
+                ring = QColor(acc)
+                ring.setAlphaF((1.0 - phase) * (0.18 + 0.35 * self._env))
+                p.setPen(QPen(ring, 1.4))
+                p.setBrush(Qt.NoBrush)
+                p.drawEllipse(c, r + room * phase, r + room * phase)
             p.setPen(Qt.NoPen)
             p.setBrush(acc)
             p.drawEllipse(c, r, r)
-            draw(p, "mic", icon_r.adjusted(1, 1, -1, -1), QColor("#17140F"), 1.8)
+            draw(p, "mic", icon_r.adjusted(1.5, 1.5, -1.5, -1.5), QColor(style.GROUND), 1.8)
         elif self._vstate == "transcribing":
             track = QColor(acc)
             track.setAlpha(46)

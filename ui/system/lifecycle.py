@@ -107,14 +107,18 @@ class SingleInstance(QObject):
         return True
 
     def _on_connection(self) -> None:
+        # Nothing but another launch of Mike connects here, so a connection
+        # is itself the request to come forward. Waiting for its "show" lost
+        # it: the second launch writes and hangs up at once, and on Windows
+        # the words were gone by the time they were read (measured: the
+        # connection arrived, no data ever did, Mike never came forward).
+        came = False
         while self._server is not None and self._server.hasPendingConnections():
             sock = self._server.nextPendingConnection()
-            sock.readyRead.connect(lambda s=sock: self._on_message(s))
             sock.disconnected.connect(sock.deleteLater)
-
-    def _on_message(self, sock: QLocalSocket) -> None:
-        data = bytes(sock.readAll())
-        if b"show" in data:
+            sock.disconnectFromServer()
+            came = True
+        if came:
             self.activated.emit()
 
     def release(self) -> None:

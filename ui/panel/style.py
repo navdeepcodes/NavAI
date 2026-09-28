@@ -36,11 +36,13 @@ _LIGHT = {
     "SURFACE": "#FFFFFF",
 }
 _DARK = {
-    "GROUND": "#1A1917", "GROUND_RAISED": "#232220", "GROUND_SUNK": "#131210",
-    "HAIRLINE": "#322F2A",
-    "INK": "#F3F1EC", "INK_SOFT": "#BEB9B0", "INK_MUTE": "#8C877E",
-    "INK_FAINT": "#46433D",
-    "SURFACE": "#262421",
+    # Deep graphite with only a trace of the warm key: darker and quieter
+    # than the old brown-black, so the words carry the page.
+    "GROUND": "#111111", "GROUND_RAISED": "#1A1A19", "GROUND_SUNK": "#0B0B0B",
+    "HAIRLINE": "#2A2A28",
+    "INK": "#F2F1EE", "INK_SOFT": "#B8B6B1", "INK_MUTE": "#85837E",
+    "INK_FAINT": "#3A3936",
+    "SURFACE": "#1C1C1B",
 }
 
 # Set at import to light, replaced by apply_theme() at startup. Declared here so

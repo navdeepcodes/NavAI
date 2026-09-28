@@ -377,7 +377,7 @@ class CornerPresence(QWidget):
         listening = state == "listening"
         self._mic.set_icon("stop" if listening else "mic")
         self._mic.setToolTip("Done talking — send it (F6)" if listening else "Talk to Mike (F6)")
-        self._mic.set_tint(style.accent() if listening else None)
+        self._mic.set_tint(style.INK if listening else None)
         mode = {"listening": "listen", "transcribing": "read", "speaking": "speak"}.get(state)
         if state == "speaking":
             try:

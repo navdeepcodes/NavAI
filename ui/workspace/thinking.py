@@ -186,8 +186,10 @@ class ThinkingLine(QWidget):
         if self._script is not None and self._script.width > _WIDEST:
             sc *= _WIDEST / self._script.width       # a long hint, written smaller
         baseline = QPointF(4.0, self.height() * 0.62)
+        # Neutral ink: the writing lands a touch brighter and settles to the
+        # soft tone -- no accent colour in the words.
         ink = QColor(style.INK_SOFT)
-        wet = QColor(style.accent())
+        wet = QColor(style.INK)
         since = self._t - self._phase_start
 
         # how long it's been, at a fixed place so the number stays readable
@@ -216,12 +218,5 @@ class ThinkingLine(QWidget):
         else:
             return
 
-        tip = script.paint(p, baseline, sc, t, ink, wet, opacity)
-        if pen:
-            _x, _y, down = script.pen_at(t)
-            resting = self._phase == "hold"
-            if resting:
-                # pen lifted off the page at the end of the thought, poised
-                down = False
-            hw.paint_pen(p, tip, self._size * 2.3, QColor(style.accent()),
-                         QColor(style.accent()).darker(210), down)
+        # The words write themselves; no pen is drawn.
+        script.paint(p, baseline, sc, t, ink, wet, opacity)

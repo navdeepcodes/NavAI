@@ -1042,8 +1042,8 @@ class _SettingsView(QScrollArea):
         self._col.addSpacing(14)
         self._section("MEMORY", self._memory_line(), action=("Forget all", self._forget_all))
         self._col.addSpacing(14)
-        self._section("PRIVACY", f"Everything Mike does stays on {_this_machine()}. "
-                      "No account, no analytics — your conversations stay here.")
+        self._section("PRIVACY", f"Mike thinks on {_this_machine()} — or, with Fast mode on, on "
+                      "your own Cloudflare account. No analytics; screenshots never leave here.")
         self._col.addStretch(1)
 
     def _section(self, label: str, detail: str, action=None) -> None:

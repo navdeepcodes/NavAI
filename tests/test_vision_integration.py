@@ -117,7 +117,10 @@ class TestExecuteVision(unittest.TestCase):
         result = runtime._execute_vision({})
 
         self.assertEqual(result["status"], "error")
-        self.assertIn("ollama pull", result["error"])
+        # Mike runs its own engine now: the error names what's missing rather
+        # than telling a student to type an Ollama command.
+        self.assertIn("qwen2.5vl:3b", result["error"])
+        self.assertIn("not found", result["error"])
 
     @patch("brain.core_runtime.Vision")
     def test_connection_refused_error(self, mock_vision_cls):

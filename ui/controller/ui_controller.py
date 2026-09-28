@@ -361,13 +361,13 @@ class UIController(QObject):
         if not self._speech_allowed():
             return
         pending = self._response_text[self._spoken_up_to:]
-        import re
-        parts = re.split(r'(?<=[.!?])\s+', pending)
-        if len(parts) > 1:
-            for sentence in parts[:-1]:
-                if sentence.strip():
-                    self._speaker.speak_sentence(sentence)
-            self._spoken_up_to = len(self._response_text) - len(parts[-1])
+        cuts = _sentence_cuts(pending, first=self._spoken_up_to == 0)
+        start = 0
+        for end in cuts:
+            if pending[start:end].strip():
+                self._speaker.speak_sentence(pending[start:end])
+            start = end
+        self._spoken_up_to += start
 
     def _pump_speech(self) -> None:
         self._speaker.pump()
@@ -546,6 +546,10 @@ class UIController(QObject):
         # is almost all of them — never flickers. Voice is cleaned separately,
         # in clean_for_speech, since it speaks sentence by sentence.
         from brain.reply_style import humanize_reply
+        # What hasn't been spoken yet, counted in the text as it streamed: the
+        # tidied text below can be shorter, and counting in it made the last
+        # words skip or repeat -- the voice not matching the reply.
+        remainder = self._response_text[self._spoken_up_to:].strip()
         humanized = humanize_reply(self._response_text)
         self._response_text = humanized
         # Always finalise the bubble: set_text does the full, syntax-highlighted
@@ -566,7 +570,6 @@ class UIController(QObject):
                 and humanized.strip()):
             self._floating.set_response(humanized)
 
-        remainder = self._response_text[self._spoken_up_to:].strip()
         if remainder and self._speech_allowed():
             self._speaker.speak_sentence(remainder)
         self._speaker.finish_streaming()
@@ -1259,3 +1262,28 @@ def _humanize_error(error: str) -> str:
         return f"Something went wrong.\n\n{parts[1]}"
 
     return f"Something went wrong.\n\n{error}"
+
+
+#: The first thing Mike says can start at a pause in a long opening sentence
+#: -- a comma or a dash -- once it has this many words, instead of waiting
+#: for the whole sentence to arrive: on the local model a sentence takes a
+#: few seconds to write, and the voice sat silent for all of it.
+_FIRST_CLAUSE_WORDS = 8
+
+
+def _sentence_cuts(pending: str, first: bool = False) -> list[int]:
+    """Where the not-yet-spoken text can be cut into finished sentences, as
+    end offsets. Never inside a code block: cut there, the speech cleaner
+    saw half a block it couldn't recognise and Mike read the code aloud.
+    Text after the last cut waits for more to arrive."""
+    import re
+
+    def outside_code(end: int) -> bool:
+        return pending.count("```", 0, end) % 2 == 0
+
+    cuts = [m.end() for m in re.finditer(r"[.!?](?=\s)", pending) if outside_code(m.end())]
+    if first and not cuts:
+        for m in re.finditer(r"(?:,|\s[-–—])(?=\s)", pending):
+            if len(pending[:m.end()].split()) >= _FIRST_CLAUSE_WORDS and outside_code(m.end()):
+                return [m.end()]
+    return cuts

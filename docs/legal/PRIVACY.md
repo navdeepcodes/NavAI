@@ -8,9 +8,12 @@ internet. It is written to match what the app actually does.
 
 ## The short version
 
-- **Mike thinks on your computer.** In its standard setup, your conversations,
-  files, screen and voice are processed by software running on your own
-  machine — not on our servers.
+- **Mike thinks on your computer — unless you turn on Fast mode.** In its
+  standard setup, your conversations, files, screen and voice are processed by
+  software running on your own machine — not on our servers. If you connect
+  Fast mode, your messages and voice commands are processed on **your own**
+  Cloudflare account instead (see "Fast mode" below). Screenshots always stay
+  on your computer.
 - **We don't collect your data.** There are no analytics, no telemetry, no
   advertising, and no automatic crash reporting. {publisher} does not receive
   your conversations, files, voice or usage.
@@ -36,6 +39,7 @@ Mike stores the following in its data folder on your computer
 | **Preferences** — your name, theme, voice and other settings | To remember your choices | **Settings → Privacy → Reset Mike** |
 | **Logs** — technical records of what Mike did, which can include parts of your requests, file names and commands | To diagnose problems | Kept to a few MB and replaced automatically; erased by **Reset Mike** |
 | **Your last voice recording** — a temporary file of the last thing you said by voice | To turn your speech into text | Overwritten by the next recording; erased by **Reset Mike** |
+| **Your Fast mode connection, if you connect it** — a Cloudflare sign-in token, and your Cloudflare account's ID and name | To use your Cloudflare account for Fast mode | **Settings → Speed → Disconnect**, or **Reset Mike**. On Windows it's encrypted so only your Windows user can read it |
 | **Your sign-in, if you have an account** — a session token, and a copy of your name, email and photo so Mike can show them offline | To keep you signed in | **Settings → Account → Sign out**, or **Reset Mike**. On Windows the session is encrypted so only your Windows user can read it |
 
 Files you attach to a message stay where they are; Mike reads them but keeps
@@ -46,7 +50,9 @@ only their name in the chat.
 - **Microphone.** Mike listens when you press the mic button or F6, and stops
   when you pause. If you turn on **"Hey Mike"**, Mike listens continuously for
   that phrase — the listening and recognition happen entirely on your
-  computer, and nothing is recorded or sent anywhere while it waits.
+  computer, and nothing is recorded or sent anywhere while it waits. With
+  Fast mode on, what you say to Mike (not the listening for "Hey Mike") is
+  sent to your Cloudflare account to be turned into text.
 - **Screen.** Mike looks at your screen only when you ask it to (for example,
   "what's on my screen?") or when a task you asked for needs it. The image is
   analysed on your computer.
@@ -82,11 +88,22 @@ Mike connects to the internet only in these situations:
    below.
 5. **Checks you ask for.** Developer tools such as "check this URL" contact the
    address you give.
+6. **Fast mode, only if you connect it.** Mike sends your conversation — your
+   messages, Mike's replies, and what Mike's steps find (for example the
+   contents of files it reads for a task you gave it) — and your voice
+   commands to Cloudflare Workers AI, on the Cloudflare account you connected.
+   Cloudflare runs the AI model and sends the answer back. Screenshots and
+   images are never sent. {publisher} doesn't receive any of it; Cloudflare's
+   privacy policy applies to data sent to Cloudflare. Mike asks Cloudflare
+   only for permission to use Workers AI and read your account's name. Turn
+   Fast mode off or disconnect it in **Settings → Speed**; you can also remove
+   Mike's access from your Cloudflare dashboard.
 
-**Cloud AI is not used in the standard setup.** Mike ships configured to use a
-model running on your own computer. The software can be reconfigured by a
-developer to use an online AI service instead; if it is, your conversations are
-sent to that service under its terms.
+**Cloud AI is used only if you turn on Fast mode.** Mike ships configured to
+use a model running on your own computer. With Fast mode connected, your own
+Cloudflare account runs it instead, as described above. The software can also
+be reconfigured by a developer to use another online AI service; if it is,
+your conversations are sent to that service under its terms.
 
 ## Your Mike account (optional)
 

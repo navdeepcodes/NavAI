@@ -129,6 +129,9 @@ def spawn_detached(command: str, *, cwd: str | None = None,
     unit, and only the single process can be reached.
     """
     kwargs = dict(popen_kwargs)
+    # Nobody can type into what Mike runs: a command that asks a question
+    # gets end-of-input at once, instead of waiting out its whole timeout.
+    kwargs.setdefault("stdin", subprocess.DEVNULL)
     if platform.system() == "Windows":
         kwargs["creationflags"] = (
             kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP | NO_WINDOW
@@ -257,6 +260,37 @@ def _terminate_tree_posix(process: subprocess.Popen, timeout: float) -> None:
 def _terminate_tree_windows(process: subprocess.Popen, timeout: float) -> None:
     if process.poll() is not None:
         return
+    # Everything it started, taken now while the parent links still hold:
+    # once the root shell has gone, taskkill /T can no longer find them.
+    # Measured: Git Bash's launcher ended on the polite signal, this returned
+    # at once, and the npx -> cmd -> node server below it kept its port.
+    try:
+        tree = _process_tree(process.pid) - {process.pid}
+    except Exception:
+        tree = set()
+    try:
+        _stop_root_windows(process, timeout)
+    finally:
+        for pid in tree:
+            if _alive(pid):
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                               capture_output=True, creationflags=NO_WINDOW)
+
+
+def _alive(pid: int) -> bool:
+    import ctypes
+    kernel32 = ctypes.windll.kernel32
+    handle = kernel32.OpenProcess(0x1000, False, pid)      # QUERY_LIMITED_INFORMATION
+    if not handle:
+        return False
+    try:
+        code = ctypes.c_ulong(0)
+        return bool(kernel32.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def _stop_root_windows(process: subprocess.Popen, timeout: float) -> None:
     # The polite attempt first. CTRL_BREAK_EVENT reaches every process in the
     # group CREATE_NEW_PROCESS_GROUP created, the nearest Windows equivalent
     # to SIGTERM reaching a POSIX process group — but, like SIGTERM, nothing
