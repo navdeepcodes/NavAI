@@ -39,6 +39,11 @@ import requests
 from logs.logger import logger
 
 START_TIMEOUT = 120
+#: Reading the prompt without moving on for this long means the server hung.
+#: The slowest honest case -- the CPU alone, ~15 tokens/s -- moves on every
+#: 2,048-token batch, about every 140s.
+STALL_TIMEOUT = 300
+WATCH_EVERY = 5
 PREFIX_FILE = "prefix-{key}.bin"
 #: Which saved state belongs to which prompt, readable without the server.
 PREFIX_INDEX = "prefixes.json"
@@ -339,6 +344,53 @@ class LocalEngine:
             raise EngineUnavailable("could not find where the fixed prompt ends")
         return prompt[:cut]
 
+    def _read_prompt(self, prefix: str) -> None:
+        """Read the fixed prompt into the model, watching that it moves on.
+        Measured: 2,048 of ~5,700 tokens in 25s, then nothing for twenty
+        minutes -- the server hung on the integrated GPU, the chip that also
+        draws the screen, while the warm-up waited on it for up to an hour.
+        No progress for STALL_TIMEOUT and the server is stopped; the next use
+        starts it afresh."""
+        outcome: dict = {}
+
+        def post() -> None:
+            try:
+                r = requests.post(self.base_url + "/completion",
+                                  json={"prompt": prefix, "n_predict": 0, "cache_prompt": True},
+                                  timeout=3600)
+                r.raise_for_status()
+            except Exception as exc:
+                outcome["error"] = exc
+
+        reader = threading.Thread(target=post, name="read-prompt", daemon=True)
+        reader.start()
+        last, moved = None, time.monotonic()
+        while reader.is_alive():
+            reader.join(WATCH_EVERY)
+            done = self._tokens_read()
+            if done is not None and done != last:
+                last, moved = done, time.monotonic()
+            elif reader.is_alive() and time.monotonic() - moved > STALL_TIMEOUT:
+                logger.warning("The model stopped reading Mike's prompt (%s tokens in, nothing for "
+                               "%ds); restarting it when it's next needed.", last, STALL_TIMEOUT)
+                self.stop()
+                reader.join(15)
+                raise EngineUnavailable("the model stopped making progress reading Mike's prompt")
+        if "error" in outcome:
+            raise outcome["error"]
+
+    def _tokens_read(self) -> int | None:
+        """How far the server has got through the prompt it's reading."""
+        try:
+            slots = requests.get(self.base_url + "/slots", timeout=5).json()
+            return int(slots[0].get("n_prompt_tokens_processed") or 0)
+        except Exception:
+            return None
+
+    def starting(self) -> bool:
+        """The server is being launched right now (not yet answering)."""
+        return self._lock.locked()
+
     def ensure_prefix(self, system: str, tools: list[dict]) -> str:
         """Have the model's state for the fixed prompt in place: restored from
         disk when it was saved before, otherwise read now and saved. Returns
@@ -359,9 +411,7 @@ class LocalEngine:
                             time.monotonic() - t0, r.json().get("n_restored"))
                 return "restored"
             logger.warning("Could not restore the saved prompt state (%s); reading it again.", r.status_code)
-        r = requests.post(self.base_url + "/completion",
-                          json={"prompt": prefix, "n_predict": 0, "cache_prompt": True}, timeout=3600)
-        r.raise_for_status()
+        self._read_prompt(prefix)
         requests.post(self.base_url + "/slots/0?action=save", json={"filename": name},
                       timeout=300).raise_for_status()
         for old in self.state_dir.glob(PREFIX_FILE.format(key="*")):

@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -58,6 +59,7 @@ def _git(root: Path, *args: str, timeout: int = 10) -> tuple[int, str, str]:
             text=True,
             encoding="utf-8", errors="replace",
             timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         return p.returncode, p.stdout.strip(), p.stderr.strip()
     except Exception as exc:
@@ -240,6 +242,49 @@ def _recent_files(root: Path, limit: int = 15) -> list[dict]:
 _REGEX_ESCAPE = re.compile(r"\\([.^$*+?()\[\]{}|\\])")
 
 
+_SKIP_DIRS = ("node_modules", ".git", "__pycache__", "venv", "dist", "build")
+#: Enough for a search to answer, without reading a whole disk.
+_HERE_MAX_LINES = 2000
+_HERE_MAX_BYTES = 2_000_000
+
+
+def _search_here(query: str, root: Path, file_glob: str, regex: bool) -> str:
+    """ripgrep's file:line:text, in Python, for a machine with neither
+    ripgrep nor grep -- a student's Windows laptop, where search_code failed
+    outright. Case-insensitive unless the query has capitals (ripgrep's
+    --smart-case), binary files skipped (grep -I), ten matches a file."""
+    import fnmatch
+
+    flags = 0 if any(c.isupper() for c in query) else re.IGNORECASE
+    pattern = re.compile(query if regex else re.escape(query), flags)
+    out: list[str] = []
+    walk = [(str(root.parent), [], [root.name])] if root.is_file() else os.walk(root)
+    for folder, dirs, names in walk:
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
+        for name in names:
+            if file_glob and not fnmatch.fnmatch(name, file_glob):
+                continue
+            path = Path(folder) / name
+            try:
+                with open(path, "rb") as fh:
+                    data = fh.read(_HERE_MAX_BYTES)
+            except OSError:
+                continue
+            if b"\x00" in data[:4096]:
+                continue
+            shown = str(path) if root.is_file() else f"{root}/{path.relative_to(root).as_posix()}"
+            hits = 0
+            for number, line in enumerate(data.decode("utf-8", errors="replace").splitlines(), 1):
+                if pattern.search(line):
+                    out.append(f"{shown}:{number}:{line}")
+                    hits += 1
+                    if hits >= 10:
+                        break
+            if len(out) >= _HERE_MAX_LINES:
+                return "\n".join(out)
+    return "\n".join(out)
+
+
 def search_code(
     query: str,
     path: str = ".",
@@ -265,45 +310,48 @@ def search_code(
     if not root.exists():
         return {"status": "error", "error": f"No such path: {root}"}
 
-    has_rg = subprocess.run(
-        ["which", "rg"], capture_output=True, text=True
-    ).returncode == 0
+    rg, grep = shutil.which("rg"), shutil.which("grep")
+    engine = "ripgrep" if rg else "grep" if grep else "python"
 
-    if has_rg:
-        cmd = ["rg", "--line-number", "--no-heading", "--color", "never",
-               "--max-count", "10", "-S"]
-        if not regex:
-            cmd.append("--fixed-strings")
-        if file_glob:
-            cmd += ["--glob", file_glob]
-        cmd += [query, str(root)]
-    else:
-        cmd = ["grep", "-rn", "-I"]
-        # -E (extended regex) so escaping matches rg's convention — `\(` is a
-        # literal paren, unescaped `(` groups. Plain BRE grep inverts that
-        # (unescaped `(` is literal, `\(` opens a group), so a pattern like
-        # `def add\(.*rule`, valid for rg, would fail BRE with "Unmatched (".
-        if regex:
-            cmd.append("-E")
+    def run(q: str) -> str:
+        """The matches for `q`, as file:line:text lines."""
+        if engine == "python":
+            return _search_here(q, root, file_glob, regex)
+        if rg:
+            cmd = [rg, "--line-number", "--no-heading", "--color", "never",
+                   "--max-count", "10", "-S"]
+            if not regex:
+                cmd.append("--fixed-strings")
+            if file_glob:
+                cmd += ["--glob", file_glob]
         else:
-            cmd.append("-F")
-        for skip in ("node_modules", ".git", "__pycache__", "venv", "dist", "build"):
-            cmd += ["--exclude-dir", skip]
-        if file_glob:
-            cmd += [f"--include={file_glob}"]
-        cmd += [query, str(root)]
-
-    try:
+            cmd = [grep, "-rn", "-I"]
+            # -E (extended regex) so escaping matches rg's convention — `\(` is a
+            # literal paren, unescaped `(` groups. Plain BRE grep inverts that
+            # (unescaped `(` is literal, `\(` opens a group), so a pattern like
+            # `def add\(.*rule`, valid for rg, would fail BRE with "Unmatched (".
+            cmd.append("-E" if regex else "-F")
+            for skip in _SKIP_DIRS:
+                cmd += ["--exclude-dir", skip]
+            if file_glob:
+                cmd += [f"--include={file_glob}"]
+        cmd += [q, str(root)]
         # encoding/errors explicit: matched code is real source text, which
         # is routinely UTF-8 with non-ASCII content (comments, strings,
         # names) — text=True alone decodes with the platform locale
         # encoding, cp1252 on Windows, which raises on the first such byte.
         proc = subprocess.run(cmd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", timeout=30)
+                              encoding="utf-8", errors="replace", timeout=30,
+                              creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return (proc.stdout or "").strip()
+
+    try:
+        output = run(query)
     except subprocess.TimeoutExpired:
         return {"status": "error", "error": "Search timed out. Narrow the path or query."}
-
-    output = (proc.stdout or "").strip()
+    except re.error as exc:
+        return {"status": "error", "error": f"That isn't a valid pattern ({exc}). "
+                                            "Search for the text itself, or fix the pattern."}
 
     # A literal search for text the caller escaped as if it were a regex can
     # never match: the backslashes are searched for too. Callers reasonably
@@ -314,13 +362,9 @@ def search_code(
     # rather than returning a bare "no matches" that gives nothing to correct.
     if not output and not regex and _REGEX_ESCAPE.search(query):
         unescaped = _REGEX_ESCAPE.sub(r"\1", query)
-        retry = list(cmd)
-        retry[-2] = unescaped
         try:
-            proc = subprocess.run(retry, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=30)
-            output = (proc.stdout or "").strip()
-        except subprocess.TimeoutExpired:
+            output = run(unescaped)
+        except (subprocess.TimeoutExpired, re.error):
             output = ""
         if output:
             query = unescaped
@@ -344,7 +388,7 @@ def search_code(
             "query": query,
             "match_count": 0,
             "result": f"No matches for '{query}' in {root}.{hint}",
-            "engine": "ripgrep" if has_rg else "grep",
+            "engine": engine,
         }
 
     lines = output.splitlines()
@@ -361,7 +405,7 @@ def search_code(
         "query": query,
         "match_count": total,
         "truncated": total > max_results,
-        "engine": "ripgrep" if has_rg else "grep",
+        "engine": engine,
         "result": "\n".join(cleaned),
     }
     if note:

@@ -154,6 +154,7 @@ class WorkersAIProvider(BrainProvider):
         self._answered_last: str | None = None     # "cloud" or "local"
         self._notice: str | None = None
         self._local_primed = False
+        self._local_aside = False        # put away since the cloud took over
 
     def __getattr__(self, attr: str) -> Any:
         if attr in ("_local", "_cloud"):
@@ -214,6 +215,30 @@ class WorkersAIProvider(BrainProvider):
                                 f"on this computer for a few minutes. {limited}")
         elif was == "local":
             self._notice = "Fast mode is back."
+
+    def _set_local_aside(self, messages: list[dict], tools: list[dict] | None) -> None:
+        """The cloud is answering: a local model started before Fast mode was
+        on goes away. Measured: twenty minutes after the student connected it
+        was still loaded (8.7GB) and busy on the graphics chip that also draws
+        the screen -- the UI felt off and Mike's voice was slower. Its reading
+        of the prompt, if not saved yet, is prepared later at low priority
+        (_prepare_local), and it's put away again after."""
+        if self._local_aside:
+            return
+        engine = getattr(self._local, "_engine", None)
+        if engine is None or not engine.running():
+            self._local_aside = True
+            return
+        if engine.starting():
+            return        # stopped mid-launch, the engine would be written off for Ollama: next turn
+        self._local_aside = True
+        logger.info("Fast mode is answering: putting the local model away.")
+        engine.stop()
+        self._local_primed = False
+        system = messages[0].get("content") if messages and messages[0].get("role") == "system" else ""
+        if system:
+            threading.Thread(target=self._prepare_local, args=(str(system), list(tools or [])),
+                             name="prepare-local-model", daemon=True).start()
 
     def take_notice(self) -> str | None:
         """The sentence about a switch, once."""
@@ -293,6 +318,7 @@ class WorkersAIProvider(BrainProvider):
             first, events = self._cloud_start(messages, tools, cancel)
             if first is not None and first.kind != "error":
                 self._answered_by("cloud")
+                self._set_local_aside(messages, tools)
                 yield first
                 yield from events
                 logger.info("Model call (Cloudflare %s): %.2fs | %d messages, %d tools",
@@ -302,6 +328,7 @@ class WorkersAIProvider(BrainProvider):
             self._rest(first.error if first is not None else
                        BrainError(kind="unavailable", message="No answer from Cloudflare."))
         self._answered_by("local")
+        self._local_aside = False        # it's needed again; put away once the cloud is back
         self._prime_local(messages, tools)
         yield from self._local.stream(messages, tools, cancel=cancel)
 

@@ -1516,7 +1516,8 @@ class CoreRuntime:
         argv, use_shell = processes.shell_invocation(shlex.join(cmd))
         try:
             proc = subprocess.run(argv, shell=use_shell, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=20)
+                                  encoding="utf-8", errors="replace", timeout=20,
+                                  creationflags=processes.NO_WINDOW)
         except subprocess.TimeoutExpired:
             return {"status": "error", "error": (
                 f"Searching {root} for {pattern!r} took too long. Give a narrower "

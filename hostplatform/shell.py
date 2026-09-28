@@ -179,6 +179,7 @@ def _resolve_start_app(name: str) -> str | None:
             ["powershell", "-NoProfile", "-NonInteractive", "-Command",
              "Get-StartApps | Select-Object Name,AppID | ConvertTo-Json -Compress"],
             capture_output=True, text=True, timeout=12,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
     except Exception:
         return None

@@ -28,6 +28,13 @@ import shutil
 import signal
 import subprocess
 
+#: For programs Mike runs that nobody needs to see: a console program started
+#: from a windowed app gets a console window of its own on Windows -- a black
+#: box flashing up at every search, git call and command. (Seen: a PowerShell
+#: window popped up and was even taken for the app Mike had just opened.)
+#: Output is captured exactly as before. 0 elsewhere.
+NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
 # The model writes shell commands in POSIX form — `pwd`, `1>&2`, `for x in
 # ...; do ... done` — regardless of which OS it is actually running on,
 # because that is the shell syntax it was trained and prompted on. `shell=True`
@@ -79,7 +86,7 @@ def spawn_detached(command: str, *, cwd: str | None = None,
     kwargs = dict(popen_kwargs)
     if platform.system() == "Windows":
         kwargs["creationflags"] = (
-            kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP
+            kwargs.get("creationflags", 0) | subprocess.CREATE_NEW_PROCESS_GROUP | NO_WINDOW
         )
     else:
         kwargs["start_new_session"] = True
@@ -133,9 +140,12 @@ def _terminate_tree_windows(process: subprocess.Popen, timeout: float) -> None:
     # group CREATE_NEW_PROCESS_GROUP created, the nearest Windows equivalent
     # to SIGTERM reaching a POSIX process group — but, like SIGTERM, nothing
     # obliges a process to act on it.
+    # It only reaches a process sharing Mike's console, though, and Mike's
+    # commands run without one (NO_WINDOW: no black boxes) -- so it gets a
+    # second, not the full timeout, before the kill that always works.
     try:
         process.send_signal(signal.CTRL_BREAK_EVENT)
-        process.wait(timeout=timeout)
+        process.wait(timeout=min(timeout, 1.0))
         return
     except (subprocess.TimeoutExpired, ValueError, OSError):
         pass
@@ -145,7 +155,7 @@ def _terminate_tree_windows(process: subprocess.Popen, timeout: float) -> None:
     # Object plumbing) — a real OS mechanism, not a partial stand-in for one.
     subprocess.run(
         ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-        capture_output=True,
+        capture_output=True, creationflags=NO_WINDOW,
     )
     try:
         process.wait(timeout=timeout)

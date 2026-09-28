@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
 import socket
 import subprocess
 import time
@@ -176,11 +177,14 @@ def check_syntax(path: str) -> dict:
     if suffix in (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"):
         # Only if a checker is already present — Mike does not install things
         # to answer a question.
-        probe = subprocess.run(["which", "node"], capture_output=True, text=True)
-        if probe.returncode == 0 and suffix in (".js", ".mjs", ".cjs"):
+        # shutil.which, not `which`: Windows has no `which`, so the check
+        # never ran on a student's laptop.
+        node = shutil.which("node")
+        if node and suffix in (".js", ".mjs", ".cjs"):
             check = subprocess.run(
-                ["node", "--check", str(file)], capture_output=True, text=True,
+                [node, "--check", str(file)], capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=20,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             valid = check.returncode == 0
             return {

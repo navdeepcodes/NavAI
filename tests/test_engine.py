@@ -224,3 +224,45 @@ def test_while_quitting_the_engine_does_not_hand_over_to_ollama():
     with pytest.raises(eng.EngineClosing):
         p._ready()
     assert p._fallback is None
+
+
+# ── a prompt read that stops moving ──────────────────────────────────────
+
+def _reading(tmp_path, monkeypatch, progress, finish_after=None):
+    """A server reading the prompt: `progress` yields tokens-read per check;
+    the read itself finishes after `finish_after` seconds (never, if None)."""
+    e = eng.LocalEngine("qwen3.5:9b", 16384, tmp_path)
+    e.port = 1
+    released = threading.Event()
+
+    def post(*a, **k):
+        released.wait(finish_after if finish_after is not None else 30)
+        class R:
+            def raise_for_status(self):
+                if not released.is_set() and finish_after is None:
+                    raise eng.requests.ConnectionError("server gone")
+        return R()
+
+    monkeypatch.setattr(eng.requests, "post", post)
+    monkeypatch.setattr(e, "_tokens_read", lambda: next(progress, None))
+    stopped = []
+    monkeypatch.setattr(e, "stop", lambda: (stopped.append(1), released.set()))
+    monkeypatch.setattr(eng, "WATCH_EVERY", 0.02)
+    return e, stopped
+
+
+def test_a_read_that_stops_moving_is_stopped(tmp_path, monkeypatch):
+    """Measured: 2,048 tokens in 25s, then nothing for twenty minutes -- hung
+    on the graphics chip that also draws the screen."""
+    monkeypatch.setattr(eng, "STALL_TIMEOUT", 0.3)
+    e, stopped = _reading(tmp_path, monkeypatch, iter([0, 2048] + [2048] * 1000))
+    with pytest.raises(eng.EngineUnavailable, match="progress"):
+        e._read_prompt("prompt")
+    assert stopped == [1]
+
+
+def test_a_slow_read_that_keeps_moving_is_left_to_finish(tmp_path, monkeypatch):
+    monkeypatch.setattr(eng, "STALL_TIMEOUT", 0.3)
+    e, stopped = _reading(tmp_path, monkeypatch, iter(range(0, 100000, 10)), finish_after=1.0)
+    e._read_prompt("prompt")
+    assert stopped == []

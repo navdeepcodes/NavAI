@@ -572,3 +572,45 @@ def test_open_cloudflare_again_after_a_failure_is_a_new_try(monkeypatch):
     dialog._connected("Cloudflare didn't connect: ...")
     dialog._reopen()
     assert started == [1], "not the old link, which nothing listens for any more"
+
+
+# ── the local model steps aside while the cloud answers ─────────────────
+
+class _Running:
+    def __init__(self, starting=False):
+        self._starting, self.stopped = starting, 0
+
+    def running(self):
+        return self.stopped == 0
+
+    def starting(self):
+        return self._starting
+
+    def stop(self):
+        self.stopped += 1
+
+
+def test_a_local_model_started_before_fast_mode_is_put_away(monkeypatch):
+    """Measured: 8.7GB and busy on the graphics chip twenty minutes after the
+    student connected Fast mode -- the UI felt off, the voice was slower."""
+    p, local, _ = _provider(monkeypatch)
+    local._engine = _Running()
+    prepared = []
+    monkeypatch.setattr(p, "_prepare_local", lambda system, tools: prepared.append(system))
+    msgs = [{"role": "system", "content": "Mike"}, {"role": "user", "content": "hi"}]
+    assert _texts(p.stream(msgs, [])) == "cloud"
+    assert local._engine.stopped == 1
+    for t in threading.enumerate():
+        if t.name == "prepare-local-model":
+            t.join(2)
+    assert prepared == ["Mike"], "its saved prompt is still prepared, later"
+    list(p.stream(msgs, []))
+    assert local._engine.stopped == 1, "once"
+
+
+def test_a_local_model_still_starting_is_left_until_it_is_up(monkeypatch):
+    """Stopped mid-launch, the engine would be written off for Ollama."""
+    p, local, _ = _provider(monkeypatch)
+    local._engine = _Running(starting=True)
+    list(p.stream([{"role": "user", "content": "hi"}], []))
+    assert local._engine.stopped == 0 and p._local_aside is False
