@@ -285,6 +285,9 @@ class ConfirmCard(_Confirm):
     (an edit's before/after) kept scrollable so the buttons never leave the
     screen."""
 
+    #: The preview's tallest, in px, before it scrolls.
+    MAX_PREVIEW = 220
+
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         from PySide6.QtWidgets import QScrollArea as _SA
@@ -324,7 +327,7 @@ class ConfirmCard(_Confirm):
         # size the preview to its text, up to a cap, then scroll
         width = max(300, self._body_wrap.viewport().width() or 600)
         need = self._body.heightForWidth(width) + 4
-        self._body_wrap.setFixedHeight(max(24, min(need, 220)))
+        self._body_wrap.setFixedHeight(max(24, min(need, self.MAX_PREVIEW)))
 
 
 class _Suggestion(QWidget):

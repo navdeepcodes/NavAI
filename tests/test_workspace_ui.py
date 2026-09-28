@@ -501,3 +501,89 @@ def test_the_corner_draws_voice_for_hey_mike():
     corner.finish()
     assert corner._trace.mode() == "off" and corner._trace.isHidden()
     corner.dismiss()
+
+
+# ── the corner: on top, a mic, moved by hand, approvals answered there ──
+
+def test_the_corner_has_a_mic_that_shows_when_it_is_listening():
+    _app()
+    from ui.workspace.corner import CornerPresence
+    corner = CornerPresence()
+    heard = []
+    corner.voice_requested.connect(lambda: heard.append(1))
+    corner.show_presence()
+    corner._mic.click()
+    assert heard == [1]
+    corner.set_state("listening")
+    assert "Done talking" in corner._mic.toolTip()
+    corner.voice_stopped()
+    assert corner._mic.toolTip().startswith("Talk to Mike")
+    corner.dismiss()
+
+
+def test_the_corner_stays_where_it_is_dragged(monkeypatch):
+    """It snapped back to the bottom-right at every resize, so it couldn't be
+    moved at all; now it's dragged by its card and grows from there."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QMouseEvent
+    from config import preferences
+    _app()
+    from ui.workspace.corner import ANCHOR_PREF, CornerPresence
+    preferences.set_value(ANCHOR_PREF, "")
+    corner = CornerPresence()
+    corner.show_presence()
+    start = corner.pos()
+    grab = QPointF(corner.x() + 40, corner.y() + 30)
+
+    def mouse(kind, at, buttons):
+        return QMouseEvent(kind, QPointF(40, 30), at, Qt.LeftButton, buttons, Qt.NoModifier)
+
+    corner.mousePressEvent(mouse(QMouseEvent.MouseButtonPress, grab, Qt.LeftButton))
+    corner.mouseMoveEvent(mouse(QMouseEvent.MouseMove, grab - QPointF(200, 150), Qt.LeftButton))
+    corner.mouseReleaseEvent(mouse(QMouseEvent.MouseButtonRelease, grab - QPointF(200, 150), Qt.NoButton))
+    moved = corner.pos()
+    assert moved == start - QPoint(200, 150)
+    corner.set_response("A longer answer now, which makes the corner grow a line or two taller " * 2)
+    corner._place()
+    assert corner.x() == moved.x(), "grows from where it was put, not back in the corner"
+    assert preferences.get(ANCHOR_PREF), "remembered"
+    again = CornerPresence()
+    again.show_presence()
+    assert (again.x() + again.width(), again.y() + again.height()) == \
+        tuple(int(v) for v in preferences.get(ANCHOR_PREF).split(","))
+    for c in (corner, again):
+        c.dismiss()
+    preferences.set_value(ANCHOR_PREF, "")
+
+
+def test_an_approval_is_answered_in_the_corner():
+    """Asked while the workspace was minimised, it waited unseen."""
+    _app()
+    from ui.workspace.corner import CornerPresence
+    corner = CornerPresence()
+    answers = []
+    corner.answered.connect(answers.append)
+    corner.show_presence()
+    corner.ask("Write to file: Desktop/boolean_search.py", "Allow edits in Desktop this session")
+    assert corner._confirm.isVisibleTo(corner) and corner._confirm._always.isVisibleTo(corner)
+    corner._confirm._always.click()
+    assert answers == ["always"] and not corner._confirm.isVisibleTo(corner)
+    corner.ask("Delete the folder build. This can't be undone.")
+    corner._confirm._deny.click()
+    assert answers == ["always", False]
+    corner.dismiss()
+
+
+def test_the_corner_is_put_back_on_top_while_shown():
+    _app()
+    from ui.workspace.corner import CornerPresence
+    corner = CornerPresence()
+    corner.show_presence()
+    assert corner._top.isActive(), "re-asserted while shown"
+    if sys.platform == "win32":
+        import win32con
+        import win32gui
+        ex = win32gui.GetWindowLong(int(corner.winId()), win32con.GWL_EXSTYLE)
+        assert ex & win32con.WS_EX_TOPMOST
+    corner.dismiss()
+    assert not corner._top.isActive()

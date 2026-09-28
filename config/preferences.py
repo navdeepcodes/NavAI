@@ -52,6 +52,9 @@ DEFAULTS: dict[str, Any] = {
     # After answering something said aloud, keep listening a few seconds for
     # a reply, without "Hey Mike" again.
     "voice_follow_up": True,
+    # Where the corner companion was dragged to: "x,y" of its bottom-right
+    # corner, "" for the screen's bottom-right.
+    "corner_anchor": "",
     "edge_enabled": True,
     "reduced_motion": False,
     "onboarding_complete": False,

@@ -163,6 +163,9 @@ class UIController(QObject):
             self._floating.cancel_requested.connect(
                 self.cancel_active
             )
+            # the corner's own mic and approvals: the same as the full window's
+            self._floating.voice_requested.connect(self._on_voice_button)
+            self._floating.answered.connect(self._resolve_confirmation)
 
     def startup(self) -> None:
 
@@ -653,6 +656,10 @@ class UIController(QObject):
 
         self._page.set_state("needs_user")
         self._page.confirm.ask(description, offer)
+        # With the workspace minimised, the corner is all there is on screen:
+        # the question is asked there too, not left waiting unseen.
+        if self._floating is not None and self._floating.isVisible():
+            self._floating.ask(description, offer)
 
     def _resolve_confirmation(self, approved) -> None:
         """True, False, or "always" -- yes, and for the rest of the session."""
@@ -660,6 +667,8 @@ class UIController(QObject):
         logger.info("The user %s it.", "allowed it for the session" if approved == "always"
                     else "approved" if approved else "declined")
         self._page.confirm.hide()
+        if self._floating is not None:
+            self._floating.hide_confirmation()        # answered in either place
 
         restore = getattr(self, "_state_before_confirm", "working")
         self._page.set_state(restore if restore != "needs_user" else "working")
@@ -728,7 +737,7 @@ class UIController(QObject):
             elif state == "transcribing":
                 self._floating.set_state("transcribing")
             elif state == "idle":
-                pass
+                self._floating.voice_stopped()        # the mic button back to "talk"
 
         if state == "idle":
             self._wake.resume()
