@@ -249,12 +249,15 @@ def test_ide_tools_report_honestly_when_no_editor_is_connected():
     """An integration that is simply not connected must say so, rather than
     failing in a way that looks like the request was wrong."""
     runtime = _runtime()
-    for name, args in (("ide_context", {}),
-                       ("ide_open_file", {"path": "/tmp/nope.txt"})):
-        result = runtime._execute_tool(name, args)
-        if result["status"] == "success":
-            pytest.skip("an editor is connected on this machine")
-        assert "editor" in result["error"].lower(), result["error"]
+    result = runtime._execute_tool("ide_context", {})
+    if result["status"] == "success":
+        pytest.skip("an editor is connected on this machine")
+    assert "editor" in result["error"].lower(), result["error"]
+    # Opening needs no connection -- VS Code's own program opens things --
+    # so what it has to be honest about is the path.
+    result = runtime._execute_tool("ide_open_file", {"path": "/tmp/nope.txt"})
+    assert result["status"] == "error"
+    assert "nope.txt" in result["error"], result["error"]
     print("PASS: IDE tools report a missing editor plainly")
 
 

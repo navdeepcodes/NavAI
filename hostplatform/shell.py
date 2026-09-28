@@ -109,9 +109,10 @@ def normalize_url(url: str) -> str:
 
 # ── opening things ─────────────────────────────────────────
 
-def open_application(name: str, path: str | None = None) -> None:
+def open_application(name: str, path: str | None = None) -> bool:
     """Launch or focus an application by name, optionally with a file/folder
-    to open in it."""
+    to open in it. False when the app opened but `path` couldn't be handed to
+    it, so the caller can say so instead of claiming the file is open."""
     system = _system()
     if system == "Darwin":
         command = ["open", "-a", name]
@@ -121,7 +122,7 @@ def open_application(name: str, path: str | None = None) -> None:
         if result.returncode != 0:
             message = (result.stderr or "").strip()
             raise ShellError(message or f"Could not open {name!r}. Is it installed?")
-        return
+        return True
     if system == "Windows":
         import os
         # Two mechanisms, tried in order, because neither alone is general.
@@ -145,13 +146,24 @@ def open_application(name: str, path: str | None = None) -> None:
                 os.startfile(name, arguments=f'"{path}"')  # type: ignore[call-arg]
             else:
                 os.startfile(name)  # type: ignore[attr-defined]
-            return
+            return True
         except FileNotFoundError:
+            # shell:AppsFolder can't be handed a file, so with one to open,
+            # the program behind the app's Start-menu shortcut is started
+            # with it instead -- "open my project in Visual Studio Code" used
+            # to open VS Code and silently drop the project.
+            program = _start_menu_program(name) if path else None
+            if program:
+                try:
+                    subprocess.Popen([program, path])
+                    return True
+                except OSError:
+                    pass
             app_id = _resolve_start_app(name)
             if app_id:
                 try:
                     subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
-                    return
+                    return not path
                 except Exception as exc:
                     raise ShellError(f"Found {name!r} but could not launch it: {exc}")
             raise ShellError(
@@ -159,6 +171,42 @@ def open_application(name: str, path: str | None = None) -> None:
                 "spelling, or that it's installed."
             )
     raise NotImplementedError(f"Opening applications is not implemented for {system}.")
+
+
+def _start_menu_program(name: str) -> str | None:
+    """The program a Start-menu shortcut named like `name` starts (a Win32
+    app's .exe), matched the way _resolve_start_app matches: exact, then
+    starts-with, then contains. None for Store apps, which have no program to
+    hand a file to."""
+    import os
+    from pathlib import Path
+
+    wanted = (name or "").strip().casefold()
+    if not wanted:
+        return None
+    roots = [Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+             Path(os.environ.get("ProgramData", "C:/ProgramData")) / "Microsoft/Windows/Start Menu/Programs"]
+    links = [link for root in roots if root.is_dir() for link in root.rglob("*.lnk")]
+
+    def pick(matches):
+        return next((link for link in links if matches(link.stem.casefold())), None)
+
+    link = pick(lambda s: s == wanted) or pick(lambda s: s.startswith(wanted)) or pick(lambda s: wanted in s)
+    if link is None:
+        return None
+    try:
+        import pythoncom
+        import win32com.client
+        pythoncom.CoInitialize()        # tools run on worker threads
+        try:
+            target = win32com.client.Dispatch("WScript.Shell").CreateShortcut(str(link)).TargetPath
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        return None
+    if target and target.lower().endswith(".exe") and os.path.isfile(target):
+        return target
+    return None
 
 
 def _resolve_start_app(name: str) -> str | None:

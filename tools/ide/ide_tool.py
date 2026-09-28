@@ -101,18 +101,30 @@ class IDETool(BaseTool):
             # like nothing is wrong, so it has to be said out loud.
             return (manager.connection_hint() or "No editor is connected.", False)
 
-        described = manager.describe()
+        # Everything, the terminal's recent commands and their output too:
+        # asked for, unlike the brief snapshot that comes with every turn.
+        described = manager.get_context().describe(terminal="full")
         return (described or "An editor is connected but nothing is open in it.", True)
 
     def _open_file(self, path: str, line: int | None = None, **kwargs) -> tuple[str, bool]:
 
-        result = manager.open_file(path, line)
+        try:
+            line = int(line) if line not in (None, "") else None
+        except (TypeError, ValueError):
+            line = None
+        result = manager.open_in_editor(path, line)
 
         if not result.get("ok"):
-            return (result.get("error") or "Could not open that in the editor.", False)
+            return (result.get("error") or "Could not open that in VS Code.", False)
 
-        where = f"{path}:{line}" if line else path
-        return (f"Opened {where} in the editor.", True)
+        if result.get("kind") == "folder":
+            if result.get("connected"):
+                return (f"Opened the folder {result['path']} in VS Code, and its window is "
+                        "connected: files you write and servers you start there show in it.", True)
+            return (f"Opening the folder {result['path']} in VS Code, in its own window (or the "
+                    "one that already has it). It can take a few seconds to appear.", True)
+        where = f"{result['path']}:{line}" if line else result["path"]
+        return (f"Opened {where} in VS Code and brought it to the front.", True)
 
     def _reveal_location(self, path: str, line: int = 1, **kwargs) -> tuple[str, bool]:
 

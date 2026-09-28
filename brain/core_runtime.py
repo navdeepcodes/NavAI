@@ -254,6 +254,7 @@ have open. A tool succeeding isn't the task succeeding.
 - Debugging: reproduce it first (run it, see the error), follow the traceback to the line, \
 find the cause, fix that, run again -- until it's gone, or you can say exactly what's left.
 - Once check_url says it's up, open_url shows them it running.
+- Their VS Code is where they work. A project you create, open there (ide_open_file with its folder) so they can follow along; a server you start shows in its terminal. Files you write in a project it has open come back with VS Code's own problems -- fix those before moving on. When something failed when they ran it, ide_context has their terminal's recent commands and what they printed.
 - Plans (a hackathon, a project, learning a stack): ask what you don't know -- the time, \
 the team, what they already know -- then think, and write the plan to a Markdown file in \
 their project so it lasts: something they can follow -- what to build first, who does what, \
@@ -1272,10 +1273,15 @@ class CoreRuntime:
             return self._execute_send_email(args)
 
         try:
+            if function_name in ("run_command", "run_background"):
+                cwd = _command_folder(args.get("cwd"))
+                if isinstance(cwd, dict):
+                    return cwd
+
             if function_name == "run_command":
                 result = terminal_actions.run(
                     command=args.get("command", ""),
-                    cwd=args.get("cwd"),
+                    cwd=cwd,
                     timeout=int(args.get("timeout") or terminal_actions.DEFAULT_TIMEOUT),
                 )
                 return self._shape_command_result(result)
@@ -1283,13 +1289,14 @@ class CoreRuntime:
             if function_name == "run_background":
                 result = terminal_actions.run_background(
                     command=args.get("command", ""),
-                    cwd=args.get("cwd"),
+                    cwd=cwd,
                 )
                 if result.get("running"):
+                    where = f"{result['where']} " if result.get("where") else ""
                     return {
                         "status": "success",
                         "result": (
-                            f"Started (pid {result['pid']}) and still running. "
+                            f"Started (pid {result['pid']}) and still running. {where}"
                             "Use list_processes or process_output to check on it."
                         ),
                         **result,
@@ -1394,6 +1401,21 @@ class CoreRuntime:
         a grep finding nothing — these are informative results the model needs
         the detail of, and previously all of it was discarded.
         """
+        if result.get("still_running"):
+            ports = ", ".join(str(p) for p in result.get("listening_on") or [])
+            return {
+                "status": "success",
+                "result": (
+                    f"This turned out to be a server: it's listening on port {ports} "
+                    f"and still running, so it was kept running in the background "
+                    f"(pid {result.get('pid')}) rather than waited for. check_url it; "
+                    "process_output shows what it prints, kill_process stops it. "
+                    "Start servers with run_background -- with their VS Code "
+                    "connected, that runs them in its terminal."
+                ),
+                **result,
+            }
+
         if result.get("timed_out"):
             return {
                 "status": "error",
@@ -1918,6 +1940,22 @@ def _files_mentioned(message: str) -> str:
         block += ("\nIf this is work they're getting done, a mission (mission tool) keeps "
                   "their plan and checks these files as they write, across restarts.")
     return block
+
+
+def _command_folder(raw) -> str | None | dict:
+    """Where a command runs, read the way every file tool reads a path (a
+    relative one is under home). A folder that isn't there is said plainly --
+    handed to the OS as it was, a relative one crashed with "The directory
+    name is invalid" and the model had to guess why."""
+    if not raw or not str(raw).strip():
+        return None
+    from tools.filesystem.path_utils import resolve_path
+    folder = resolve_path(str(raw))
+    if not folder.is_dir():
+        return {"status": "error", "retry_safe": True,
+                "error": f"There's no folder at {folder} to run it in. Nothing was run."}
+    given = Path(str(raw).strip()).expanduser()
+    return str(given) if given.is_absolute() else str(folder)
 
 
 def _execute_mission(args: dict) -> dict:

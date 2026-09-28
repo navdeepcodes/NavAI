@@ -47,11 +47,56 @@ NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 _windows_bash: str | None | bool = False  # False = not yet resolved
 
 
+def _is_wsl_launcher(path: str) -> bool:
+    """System32\\bash.exe and the WindowsApps one start WSL: the command would
+    run in Linux, where the student's C:\\ paths and Windows tools aren't."""
+    lowered = os.path.normcase(os.path.abspath(path))
+    system = os.path.normcase(os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), ""))
+    return lowered.startswith(system) or "\\windowsapps\\" in lowered
+
+
+def _find_git_bash() -> str | None:
+    """Git Bash, wherever Git for Windows put it.
+
+    Git's installer puts only its cmd\\ folder on PATH by default, so `bash`
+    alone was never found on a student's laptop (measured here: Git 2.50
+    installed, shutil.which("bash") -> None) and every command ran in cmd.exe,
+    where the POSIX the model writes doesn't parse. Git's own bin\\bash.exe is
+    the one to use: it sets up /usr/bin (ls, cat, grep) before running.
+    """
+    candidates: list[str] = []
+    on_path = shutil.which("bash")
+    if on_path and not _is_wsl_launcher(on_path):
+        candidates.append(on_path)
+    git = shutil.which("git")
+    if git:
+        # <Git>\cmd\git.exe, <Git>\bin\git.exe or <Git>\mingw64\bin\git.exe
+        here = os.path.dirname(os.path.realpath(git))
+        for root in (os.path.dirname(here), os.path.dirname(os.path.dirname(here))):
+            candidates.append(os.path.join(root, "bin", "bash.exe"))
+    for base, rest in (("ProgramW6432", r"Git\bin\bash.exe"), ("ProgramFiles", r"Git\bin\bash.exe"),
+                       ("LOCALAPPDATA", r"Programs\Git\bin\bash.exe")):
+        if os.environ.get(base):
+            candidates.append(os.path.join(os.environ[base], rest))
+    return next((c for c in candidates if os.path.isfile(c)), None)
+
+
 def _resolve_windows_bash() -> str | None:
     global _windows_bash
     if _windows_bash is False:
-        _windows_bash = shutil.which("bash")
+        _windows_bash = _find_git_bash()
     return _windows_bash
+
+
+def editor_shell() -> tuple[str, list[str]] | None:
+    """The shell for a terminal Mike opens in the student's editor: the same
+    Git Bash his own commands use, so a command reads the same in either
+    place. None where that isn't needed or isn't there -- the editor's own
+    default shell then."""
+    if platform.system() != "Windows":
+        return None
+    bash = _resolve_windows_bash()
+    return (bash, ["--login", "-i"]) if bash else None
 
 
 def shell_invocation(command: str) -> tuple[list[str] | str, bool]:
@@ -92,6 +137,82 @@ def spawn_detached(command: str, *, cwd: str | None = None,
         kwargs["start_new_session"] = True
     argv, use_shell = shell_invocation(command)
     return subprocess.Popen(argv, shell=use_shell, cwd=cwd, **kwargs)
+
+
+def listening_ports(root_pid: int) -> list[int]:
+    """The TCP ports a process, or anything it started, is listening on.
+
+    What makes a command a server is a fact about it, not its name: it has
+    opened a port and is waiting there. Windows only (the table and process
+    list come from the OS directly); [] elsewhere or if the OS won't say.
+    """
+    if platform.system() != "Windows":
+        return []
+    try:
+        tree = _process_tree(root_pid)
+        return sorted({port for pid, port in _tcp_listeners() if pid in tree})
+    except Exception:
+        return []
+
+
+def _process_tree(root_pid: int) -> set[int]:
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32(ctypes.Structure):
+        _fields_ = [("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+                    ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+                    ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+                    ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+                    ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_char * 260)]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    snapshot = kernel32.CreateToolhelp32Snapshot(0x2, 0)       # TH32CS_SNAPPROCESS
+    if snapshot in (None, wintypes.HANDLE(-1).value):
+        return {root_pid}
+    children: dict[int, list[int]] = {}
+    try:
+        entry = PROCESSENTRY32()
+        entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
+        more = kernel32.Process32First(snapshot, ctypes.byref(entry))
+        while more:
+            children.setdefault(entry.th32ParentProcessID, []).append(entry.th32ProcessID)
+            more = kernel32.Process32Next(snapshot, ctypes.byref(entry))
+    finally:
+        kernel32.CloseHandle(snapshot)
+    tree, todo = set(), [root_pid]
+    while todo:
+        pid = todo.pop()
+        if pid not in tree:
+            tree.add(pid)
+            todo.extend(children.get(pid, []))
+    return tree
+
+
+def _tcp_listeners() -> list[tuple[int, int]]:
+    """(pid, port) for every listening TCP socket, IPv4 and IPv6."""
+    import ctypes
+    from ctypes import wintypes
+
+    iphlpapi = ctypes.WinDLL("iphlpapi")
+    found: list[tuple[int, int]] = []
+    # (address family, bytes per row, offset of the local port, offset of the pid)
+    for family, row, port_at, pid_at in ((2, 24, 8, 20), (23, 56, 20, 52)):
+        size = wintypes.DWORD(0)
+        # TCP_TABLE_OWNER_PID_LISTENER = 3
+        iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), False, family, 3, 0)
+        buffer = ctypes.create_string_buffer(size.value)
+        if iphlpapi.GetExtendedTcpTable(buffer, ctypes.byref(size), False, family, 3, 0) != 0:
+            continue
+        raw = buffer.raw
+        count = int.from_bytes(raw[0:4], "little")
+        for i in range(count):
+            base = 4 + i * row
+            port = int.from_bytes(raw[base + port_at:base + port_at + 2], "big")
+            pid = int.from_bytes(raw[base + pid_at:base + pid_at + 4], "little")
+            found.append((pid, port))
+    return found
 
 
 def terminate_tree(process: subprocess.Popen, *, timeout: float = 5.0) -> None:

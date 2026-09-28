@@ -178,6 +178,12 @@ class IDEBridge:
                 and (time.time() - self._last_seen) < CONNECTION_TIMEOUT
             )
 
+    def ever_connected(self) -> bool:
+        """Has any editor checked in since Mike started -- is the extension
+        there to wait for?"""
+        with self._lock:
+            return self._last_seen > 0.0
+
     def raw_context(self) -> dict:
         with self._lock:
             window = self.__preferred_window_unlocked()
@@ -213,6 +219,15 @@ class IDEBridge:
             window = self.__preferred_window_unlocked()
             return window["id"] if window else ""
 
+    def live_contexts(self) -> list[dict]:
+        """Every live window's latest snapshot, the preferred one first -- to
+        find the window a project is open in."""
+        with self._lock:
+            preferred = self.__preferred_window_unlocked()
+            live = sorted(self.__live_windows_unlocked(),
+                          key=lambda w: (w is not preferred, -w["seen"]))
+            return [dict(w["payload"]) for w in live]
+
     # ── Context ingest ───────────────────────────────────────
 
     def _store_context(self, payload: dict) -> None:
@@ -236,14 +251,21 @@ class IDEBridge:
 
     # ── Commands out to the editor ───────────────────────────
 
-    def send_command(self, action: str, params: dict, timeout: float = 12.0) -> dict:
-        """Queue a command and block until the editor reports back."""
+    def send_command(self, action: str, params: dict, timeout: float = 12.0,
+                     window_id: str = "") -> dict:
+        """Queue a command and block until the editor reports back.
+
+        `window_id` sends it to that window whichever one the student is in
+        now: a command running in one window's terminal is read and stopped
+        there, not in the window they've since clicked into."""
 
         if not self.is_connected():
             return {"ok": False, "error": "No editor is connected."}
 
         command_id = uuid.uuid4().hex
         command = {"id": command_id, "action": action, "params": params}
+        if window_id:
+            command["window"] = window_id
 
         with self._lock:
             self._pending.append(command)
@@ -255,6 +277,10 @@ class IDEBridge:
                 remaining = deadline - time.time()
                 if remaining <= 0:
                     self._results.pop(command_id, None)
+                    # Never picked up (its window closed): not carried out
+                    # later, long after the answer stopped mattering.
+                    if command in self._pending:
+                        self._pending.remove(command)
                     return {"ok": False, "error": "The editor didn't respond in time."}
                 self._result_ready.wait(remaining)
 
@@ -280,8 +306,10 @@ class IDEBridge:
                     preferred = self.__preferred_window_unlocked()
                     target = preferred["id"] if preferred else ""
 
-                    if not window_id or not target or window_id == target:
-                        return self._pending.pop(0)
+                    for index, command in enumerate(self._pending):
+                        aimed = command.get("window") or target
+                        if not window_id or not aimed or window_id == aimed:
+                            return self._pending.pop(index)
 
                 remaining = deadline - time.time()
                 if remaining <= 0:

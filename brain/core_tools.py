@@ -27,6 +27,19 @@ class FunctionDeclaration:
 
 types = SimpleNamespace(FunctionDeclaration=FunctionDeclaration)
 
+
+def _shell() -> str:
+    """Which shell run_command's commands reach, as a fact: the model writes
+    for the shell it thinks it has, and on Windows that's settled here."""
+    import platform
+    if platform.system() != "Windows":
+        return "the system shell"
+    try:
+        from hostplatform import processes
+        return "bash (Git Bash)" if processes._resolve_windows_bash() else "cmd.exe, as Git Bash isn't installed"
+    except Exception:
+        return "the system shell"
+
 TOOL_DECLARATIONS = [
 
     # --------------------------------------------------------
@@ -194,9 +207,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="run_command",
         description=(
-            "Execute a shell command that finishes on its own and return its "
-            "output. Do NOT use this for servers or anything that keeps "
-            "running — it will time out. Use run_background for those."
+            f"Execute a shell command in {_shell()} that finishes on its own and "
+            "return its output. Do NOT use this for servers or anything that "
+            "keeps running — it will time out. Use run_background for those."
         ),
         parameters_json_schema={
             "type": "object",
@@ -231,7 +244,9 @@ TOOL_DECLARATIONS = [
         description=(
             "Start a long-running process that should keep running — a dev "
             "server, a watcher, anything that doesn't exit on its own. "
-            "Returns immediately once it's up instead of waiting for it."
+            "Returns immediately once it's up instead of waiting for it. With "
+            "their VS Code connected it runs in a terminal there, where they "
+            "can watch it."
         ),
         parameters_json_schema={
             "type": "object",
@@ -497,25 +512,27 @@ TOOL_DECLARATIONS = [
         description=(
             "Get what the user is currently looking at in their code editor: "
             "the project, the open file, the cursor position, any selected "
-            "code, and the errors or warnings the editor is reporting. "
-            "Use this when the user asks about 'this code' or 'this error' "
-            "in their editor. Not for documents: use read_document."
+            "code, the errors or warnings the editor is reporting, and the "
+            "latest commands in its terminal with their output. Use this when "
+            "the user asks about 'this code', 'this error' or something that "
+            "failed when they ran it. Not for documents: use read_document."
         ),
     ),
 
     types.FunctionDeclaration(
         name="ide_open_file",
         description=(
-            "Open a file in the user's editor, optionally jumping to a line. "
-            "Use this to show the user something, not to read a file — "
-            "use read_file when you need the contents yourself."
+            "Open a file (optionally at a line) or a whole project folder in "
+            "the user's VS Code and bring it to the front: to show them "
+            "something, or to open a project you made so they can follow "
+            "along. Not for reading a file: use read_lines for that."
         ),
         parameters_json_schema={
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Absolute path of the file to open",
+                    "description": "Absolute path of the file or folder to open",
                 },
                 "line": {
                     "type": "integer",

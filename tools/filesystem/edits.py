@@ -111,6 +111,37 @@ def _problems(file: Path, problems: list[dict]) -> str:
     return f"VS Code shows these in {file.name} after this edit:\n" + "\n".join(shown)
 
 
+#: After a write to disk, how long VS Code's checkers get to look at the
+#: files: a warm language server answers in about a second (measured: three
+#: files, 1.0s); a clean file usually says nothing at all, so this is also the
+#: most a clean write waits. check_syntax waits longer when asked.
+EDITOR_CHECK_SECONDS = 2.5
+#: At most this many files checked (and opened as tabs) per write.
+EDITOR_CHECK_MAX = 10
+
+
+def _checked_in_editor(files: list[Path]) -> dict[str, dict] | None:
+    """What the student's VS Code says about files just written to disk --
+    {path: {"reported", "problems"}} for those in a project it has open, so
+    a broken file is known at the step that broke it. Each opens as a tab
+    behind the one they're on: it's what VS Code checks, and it's the work."""
+    try:
+        from ide import manager
+        return manager.problems_for([str(f) for f in files[:EDITOR_CHECK_MAX]],
+                                    wait=EDITOR_CHECK_SECONDS)
+    except Exception:
+        return None
+
+
+def _note_editor_check(result: dict, file: Path) -> dict:
+    """Add VS Code's word on one file written to disk to its result."""
+    found = _checked_in_editor([file])
+    info = next(iter(found.values()), None) if found else None
+    if info and (info["problems"] or info["reported"]):
+        result["problems"] = _problems(file, info["problems"])
+    return result
+
+
 def _finish_in_editor(file: Path, before: str, after: str, result: dict) -> dict | None:
     """Write through the editor holding the file. The finished tool result, or
     None when no editor holds it and the disk should be written instead."""
@@ -266,12 +297,27 @@ def write_files(files: list[dict]) -> dict:
             written.append(file)
         except (OSError, ValueError) as exc:
             results.append({"path": str(file), "error": str(exc)})
+    # Written through the editor, a file already has VS Code's word on it.
+    on_disk = [r for r in results if not r.get("error") and not r.get("editor")]
+    checked = _checked_in_editor([Path(r["path"]) for r in on_disk]) if on_disk else None
+    editor_note = {}
+    if checked:
+        for r in on_disk:
+            info = checked.get(r["path"])
+            if info and (info["problems"] or info["reported"]):
+                r["problems"] = _problems(Path(r["path"]), info["problems"])
+        quiet = [Path(p).name for p, i in checked.items() if not i["problems"] and not i["reported"]]
+        if quiet:
+            editor_note["editor_check"] = (
+                f"VS Code reported nothing on {', '.join(quiet)} within "
+                f"{EDITOR_CHECK_SECONDS:g}s -- a clean file usually says nothing, but a slow "
+                "checker can too.")
     failed = [r for r in results if r.get("error")]
     summary = f"Wrote {len(written)} of {len(entries)} file(s)."
     if failed:
         summary += f" {len(failed)} failed; the others were written."
     return {"status": "success" if written else "error", "result": summary, "files": results,
-            **({"error": summary} if not written else {})}
+            **editor_note, **({"error": summary} if not written else {})}
 
 
 def edit_file(
@@ -382,7 +428,7 @@ def edit_file(
         return {"status": "error", "error": f"Could not write {file}: {exc}"}
 
     _ensure_visible_change(file, previous_mtime)
-    return result
+    return _note_editor_check(result, file)
 
 
 def multi_edit(path: str, edits: list[dict]) -> dict:
@@ -482,4 +528,4 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
         return {"status": "error", "error": f"Could not write {file}: {exc}"}
 
     _ensure_visible_change(file, previous_mtime)
-    return result
+    return _note_editor_check(result, file)

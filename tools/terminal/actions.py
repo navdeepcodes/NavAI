@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 import os
 import subprocess
 import threading
@@ -86,41 +87,89 @@ def run(
             "duration_ms": round((time.monotonic() - started) * 1000),
         }
 
+    # Read as it comes, so a command that turns out to be a server can be
+    # handed over still running, with what it has printed so far.
+    out: list[str] = []
+    err: list[str] = []
+    merged: list[str] = []
+    readers = [threading.Thread(target=_collect, args=(stream, bucket, merged), daemon=True)
+               for stream, bucket in ((process.stdout, out), (process.stderr, err))]
+    for reader in readers:
+        reader.start()
+
+    def finished(**extra) -> dict:
+        return {"stdout": _clip("".join(out)), "stderr": _clip("".join(err)), "cwd": workdir,
+                "command": command, "duration_ms": round((time.monotonic() - started) * 1000),
+                **extra}
+
+    deadline = started + timeout
+    while True:
+        try:
+            process.wait(timeout=max(0.0, min(_SERVER_CHECK_EVERY, deadline - time.monotonic())))
+            break
+        except subprocess.TimeoutExpired:
+            pass
+        if time.monotonic() >= deadline:
+            processes.terminate_tree(process, timeout=5)
+            # The tree is gone, so every pipe writer has exited and the
+            # readers finish with whatever was already buffered.
+            _join(readers)
+            return finished(exit_code=None, timed_out=True, timeout_seconds=timeout)
+        # Still going: has it turned out to be a server? Waiting on one to
+        # finish held a whole task up for the full minute (measured: a
+        # student's site built in 116s, 60 of them this wait).
+        if time.monotonic() - started >= _SERVER_CHECK_AFTER:
+            ports = processes.listening_ports(process.pid)
+            if ports:
+                _adopt(process, command, workdir, merged)
+                return finished(exit_code=None, timed_out=False, still_running=True,
+                                pid=process.pid, listening_on=ports)
+
+    _join(readers)
+    return finished(exit_code=process.returncode, timed_out=False)
+
+
+#: When a command is still going after this long, Mike starts checking whether
+#: it's really a server -- a process listening on a port -- and how often.
+_SERVER_CHECK_AFTER = 3.0
+_SERVER_CHECK_EVERY = 1.5
+
+
+def _collect(stream, bucket: list[str], merged: list[str]) -> None:
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        processes.terminate_tree(process, timeout=5)
-        # The tree is gone, so every pipe writer has exited and this drains
-        # whatever was already buffered without blocking further.
-        stdout, stderr = process.communicate()
-        return {
-            "exit_code": None,
-            "timed_out": True,
-            "timeout_seconds": timeout,
-            "stdout": _clip(_decode(stdout)),
-            "stderr": _clip(_decode(stderr)),
-            "cwd": workdir,
+        for line in iter(stream.readline, ""):
+            bucket.append(line)
+            merged.append(line)
+            if len(merged) > 2000:          # a chatty server can't grow this forever
+                del merged[:1000]
+    except Exception:
+        pass
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+
+
+def _join(readers: list[threading.Thread]) -> None:
+    """Let the readers catch up. Bounded: a child left running in the
+    background can hold the pipe open, and its output isn't this command's."""
+    for reader in readers:
+        reader.join(timeout=2.0)
+
+
+def _adopt(process: subprocess.Popen, command: str, workdir: str, merged: list[str]) -> None:
+    """Keep a command that turned out to be a server running, as one of the
+    background processes: listed, read and stopped like the others."""
+    with _processes_lock:
+        _processes[process.pid] = {
+            "pid": process.pid,
             "command": command,
-            "duration_ms": round((time.monotonic() - started) * 1000),
+            "cwd": workdir,
+            "process": process,
+            "output": merged,
+            "started_at": time.time(),
         }
-
-    return {
-        "exit_code": process.returncode,
-        "timed_out": False,
-        "stdout": _clip(_decode(stdout)),
-        "stderr": _clip(_decode(stderr)),
-        "cwd": workdir,
-        "command": command,
-        "duration_ms": round((time.monotonic() - started) * 1000),
-    }
-
-
-def _decode(stream) -> str:
-    if stream is None:
-        return ""
-    if isinstance(stream, bytes):
-        return stream.decode("utf-8", errors="replace")
-    return str(stream)
 
 
 # ============================================================
@@ -159,6 +208,97 @@ def _drain(pid: int, stream) -> None:
             pass
 
 
+class _EditorRun:
+    """A command running in a terminal in the student's VS Code, looked after
+    like one of Mike's own: listed, read and stopped through the editor. It
+    answers the few questions the registry asks a Popen."""
+
+    #: How long one look at it is trusted before asking the editor again.
+    FRESH = 1.0
+
+    def __init__(self, window: str, run_id: str, pid: int, terminal: str) -> None:
+        self.window, self.run_id, self.pid, self.terminal = window, run_id, pid, terminal
+        self.returncode: int | None = None
+        self._state: dict = {"running": True}
+        self._seen = 0.0
+        self._ended = False
+
+    def _look(self) -> dict:
+        if self._ended or time.monotonic() - self._seen < self.FRESH:
+            return self._state
+        from ide import manager
+        state = manager.run_output(self.window, self.run_id)
+        self._seen = time.monotonic()
+        if state.get("ok"):
+            self._state = state
+            if not state.get("running"):
+                self.returncode = state.get("exitCode")
+                self._ended = True
+        return self._state
+
+    def poll(self) -> int | None:
+        if self._look().get("running"):
+            return None
+        # Ended with no code the shell reported (stopped, or its terminal
+        # closed): not a success to report as 0.
+        return self.returncode if self.returncode is not None else -1
+
+    def output(self) -> str:
+        return _clip(str(self._look().get("output") or "").strip())
+
+    def stop(self) -> None:
+        from ide import manager
+        result = manager.stop_run(self.window, self.run_id)
+        if result.get("ok"):
+            self._state, self._ended = result, True
+            self.returncode = result.get("exitCode")
+
+
+#: Ids for editor runs whose shell didn't say its process id.
+_editor_ids = itertools.count(900_001)
+
+#: How long a new background process is watched before it's reported as up
+#: -- long enough to catch one that fails on startup.
+_SETTLE_SECONDS = 2.5
+
+
+def _run_in_editor(command: str, workdir: str) -> dict | None:
+    """Start it in the student's VS Code terminal, when one is connected: a
+    dev server Mike starts is theirs to watch, read and stop, beside their
+    code -- not a process out of sight. None to run it the hidden way."""
+    try:
+        from ide import manager
+        started = manager.run_in_terminal(command, workdir, wait=_SETTLE_SECONDS)
+    except Exception:
+        logger.exception("Could not start %r in the editor.", command)
+        return None
+    if not started:
+        return None
+    pid = started.get("pid")
+    run = _EditorRun(str(started.get("window") or ""), str(started.get("id") or ""),
+                     pid if isinstance(pid, int) else next(_editor_ids),
+                     str(started.get("terminal") or ""))
+    with _processes_lock:
+        _processes[run.pid] = {
+            "pid": run.pid,
+            "command": command,
+            "cwd": workdir,
+            "process": run,
+            "output": [],
+            "started_at": time.time(),
+            "editor": True,
+        }
+    result = {"pid": run.pid, "command": command, "cwd": workdir,
+              "output": _clip(str(started.get("output") or "").strip()),
+              "where": (f"In the {run.terminal!r} terminal in their VS Code, "
+                        "where they can watch it and stop it themselves.")}
+    if started.get("running"):
+        return {**result, "running": True}
+    run.returncode = started.get("exitCode")
+    run._state, run._ended = started, True
+    return {**result, "running": False, "exit_code": started.get("exitCode")}
+
+
 def run_background(command: str, cwd: str | None = None) -> dict:
     """
     Start a long-running process (a server, a watcher) and return immediately.
@@ -166,6 +306,7 @@ def run_background(command: str, cwd: str | None = None) -> dict:
     The process is detached so it outlives this call; a short settle window
     catches commands that fail on startup rather than reporting a false
     success. Registered so it can be listed, read, and killed afterwards.
+    With the student's VS Code connected it runs in a terminal there instead.
     """
 
     if not command.strip():
@@ -173,6 +314,10 @@ def run_background(command: str, cwd: str | None = None) -> dict:
 
     workdir = cwd or os.getcwd()
     logger.info("Starting background command: %s (cwd=%s)", command, workdir)
+
+    shown = _run_in_editor(command, workdir)
+    if shown is not None:
+        return shown
 
     # spawn_detached groups the process (its own session on POSIX, its own
     # process group on Windows) so kill_process can stop the whole tree
@@ -201,8 +346,7 @@ def run_background(command: str, cwd: str | None = None) -> dict:
         ).start()
 
     # If it dies immediately, that's a failure worth reporting now.
-    settle = 2.5
-    deadline = time.monotonic() + settle
+    deadline = time.monotonic() + _SETTLE_SECONDS
     while time.monotonic() < deadline:
         if process.poll() is not None:
             break
@@ -232,7 +376,12 @@ def _recent_output(pid: int, limit: int = 200) -> str:
         entry = _processes.get(pid)
         if entry is None:
             return ""
-        lines = entry["output"][-limit:]
+        if entry.get("editor"):
+            process = entry["process"]
+        else:
+            lines = entry["output"][-limit:]
+    if entry.get("editor"):
+        return "\n".join(process.output().splitlines()[-limit:])
     return _clip("".join(lines).strip())
 
 
@@ -318,6 +467,11 @@ def kill_process(pid: int) -> dict:
         return {"pid": pid, "running": False, "result": "It had already exited."}
 
     try:
+        if entry.get("editor"):
+            # In the student's VS Code terminal: stopped there (Ctrl+C, then
+            # the terminal closed if that isn't enough).
+            process.stop()
+            return {"pid": pid, "running": False, "result": f"Stopped pid {pid} in their VS Code terminal."}
         # process was started with spawn_detached, so it leads its own
         # group/session — terminate_tree stops that whole group, which is
         # what actually reaches children a shell spawned (a dev server's
@@ -330,9 +484,11 @@ def kill_process(pid: int) -> dict:
 
 
 def shutdown_all() -> None:
-    """Called at app teardown so Mike doesn't leave orphaned servers behind."""
+    """Called at app teardown so Mike doesn't leave orphaned servers behind.
+    What runs in the student's VS Code terminal isn't an orphan: it's there
+    in front of them, and stays theirs to stop."""
     with _processes_lock:
-        pids = list(_processes.keys())
+        pids = [pid for pid, entry in _processes.items() if not entry.get("editor")]
     for pid in pids:
         try:
             kill_process(pid)

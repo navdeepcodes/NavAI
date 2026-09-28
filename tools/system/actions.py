@@ -22,7 +22,7 @@ def open_application(name: str, path: str | None = None) -> str:
 
     name = name.strip()
     before = _window_ids()
-    shell.open_application(name, path)
+    handed_over = shell.open_application(name, path) is not False
 
     # Launching is not opening. A process can start and never show a window
     # (a bad name that resolved to something else, an app that fails at
@@ -35,6 +35,10 @@ def open_application(name: str, path: str | None = None) -> str:
             "still be starting, or it may not have opened. Check with "
             "list_windows before relying on it."
         )
+    if path and not handed_over:
+        return (f"Opened {name} — its window “{window}” is open — but it couldn't be "
+                f"handed {path}, so that isn't open in it yet. Say so; they can open it "
+                "from inside the app.")
     target = f"{path} in {name}" if path else name
     return f"Opened {target} — its window “{window}” is open."
 

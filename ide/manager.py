@@ -5,9 +5,12 @@ later means adding a module here — not touching the brain, the tools, or the U
 """
 from __future__ import annotations
 
+import os
+
 from ide.bridge import IDEBridge
 from ide.contracts import Diagnostic, IDEContext
 from ide.vscode_adapter import VSCodeAdapter
+from logs.logger import logger
 
 _bridge = IDEBridge()
 _adapters = [VSCodeAdapter(_bridge)]
@@ -213,6 +216,221 @@ def replace_in_editor(path: str, start: tuple[int, int], end: tuple[int, int],
         return adapter.replace_range(where, start, end, old, new)
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
+
+
+# ── Opening things, where the student can see them ───────────
+#
+# Through VS Code's own program, not its code.cmd: a path the model wrote,
+# handed to a .cmd, would be read by cmd.exe, where a "&" in it starts another
+# command. Code.exe with a path is how Explorer's "Open with Code" does it:
+# an already-running VS Code takes the request -- the window that has the
+# folder open comes to the front, or a new one opens.
+
+#: Extra arguments for every Code.exe start. Empty for students; a test points
+#: them at a separate profile so the real VS Code is left alone.
+EXTRA_ARGS: list[str] = []
+
+
+def _code_program() -> str | None:
+    from pathlib import Path
+
+    from ide.install import find_vscode_cli
+    cli = find_vscode_cli()
+    if not cli:
+        return None
+    exe = Path(cli).resolve().parent.parent / ("Code.exe" if os.name == "nt" else "code")
+    return str(exe) if exe.is_file() else None
+
+
+def _start_code(args: list[str]) -> dict:
+    import subprocess
+
+    from hostplatform.processes import NO_WINDOW
+    program = _code_program()
+    if program is None:
+        return {"ok": False, "error": "VS Code isn't installed on this computer, or I can't find it."}
+    try:
+        subprocess.Popen([program, *EXTRA_ARGS, *args], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=NO_WINDOW)
+    except OSError as exc:
+        return {"ok": False, "error": f"VS Code wouldn't start: {exc}"}
+    return {"ok": True}
+
+
+def _within(path: str, root: str) -> bool:
+    if not root:
+        return False
+    try:
+        full, base = (os.path.normcase(os.path.abspath(p)) for p in (path, root))
+        return os.path.commonpath([full, base]) == base
+    except ValueError:          # different drives
+        return False
+
+
+def _window_for(path: str) -> IDEContext | None:
+    """The connected window whose project holds `path` -- the student's
+    current one when several do, or when none does."""
+    adapter = active_adapter()
+    if adapter is None or not hasattr(adapter, "context_of"):
+        return None
+    windows = [adapter.context_of(raw) for raw in _bridge.live_contexts()]
+    for ctx in windows:
+        if any(_within(path, root) for root in (ctx.workspace_folders or [ctx.workspace_root])):
+            return ctx
+    return windows[0] if windows else None
+
+
+#: How long opening a project waits for its window to connect: a cold VS Code
+#: on the target laptop took 14.5s to open a folder and connect.
+FOLDER_CONNECT_SECONDS = 25.0
+
+
+def _await_window(folder: str) -> bool:
+    """Wait for the window showing `folder` to connect, so what Mike does next
+    in that project -- the files he writes, the server he starts -- lands in
+    it, not in whichever window was connected before."""
+    import time
+    deadline = time.monotonic() + FOLDER_CONNECT_SECONDS
+    while time.monotonic() < deadline:
+        for raw in _bridge.live_contexts():
+            workspace = raw.get("workspace") or {}
+            if any(_same_file(folder, root) for root in (workspace.get("folders") or [])):
+                return True
+        time.sleep(0.5)
+    return False
+
+
+def _raise_window(ctx: IDEContext | None) -> None:
+    """Bring the VS Code window showing this project to the front. Opening a
+    file there doesn't: the student asked Mike from somewhere else and saw
+    nothing happen."""
+    if os.name != "nt":
+        return
+    try:
+        from hostplatform.foreground import bring_to_front, windows_of
+        windows = windows_of("Code.exe")
+        if not windows:
+            return
+        name = (ctx.workspace_name if ctx else "") or ""
+        # VS Code titles its windows "file - project - Visual Studio Code".
+        hwnd = next((h for h, title in windows
+                     if name and (f" - {name} - " in title or title.startswith(f"{name} - "))),
+                    windows[0][0])
+        bring_to_front(hwnd)
+    except Exception:
+        logger.debug("Couldn't bring VS Code to the front.", exc_info=True)
+
+
+def open_in_editor(path: str, line: int | None = None) -> dict:
+    """Show a file (at a line) or a whole project folder in VS Code, in front.
+
+    A folder opens in its own window, or brings forward the one that already
+    has it. A file opens in the window whose project holds it, through the
+    extension when it's connected, and VS Code comes to the front; with no
+    extension, VS Code's own program opens it."""
+    full = os.path.abspath(os.path.expanduser(path))
+    if not os.path.exists(full):
+        return {"ok": False, "error": f"There's nothing at {full} to open."}
+    if os.path.isdir(full):
+        seen_an_editor = _bridge.ever_connected()
+        started = _start_code([full])
+        if started.get("ok"):
+            started.update(kind="folder", path=full,
+                           connected=seen_an_editor and _await_window(full))
+        return started
+    ctx = _window_for(full) if is_connected() else None
+    adapter = active_adapter()
+    if ctx is not None and adapter is not None:
+        result = adapter.open_file(full, line, window=ctx.window_id)
+        if result.get("ok"):
+            _raise_window(ctx)
+            return {"ok": True, "kind": "file", "path": full, "project": ctx.workspace_name}
+    started = _start_code(["--goto", f"{full}:{line}" if line else full])
+    if started.get("ok"):
+        started.update(kind="file", path=full)
+    return started
+
+
+# ── The terminal ─────────────────────────────────────────────
+
+def run_in_terminal(command: str, cwd: str, wait: float = 4.0) -> dict | None:
+    """Run `command` in a terminal in the student's VS Code -- the one whose
+    project holds `cwd` -- where they can watch it and stop it themselves,
+    and follow it for Mike. None when that can't be done (no editor, an older
+    extension, a terminal VS Code can't follow): run it the hidden way then."""
+    ctx = _window_for(cwd) if is_connected() else None
+    adapter = active_adapter()
+    if ctx is None or adapter is None or not ctx.can_run_commands \
+            or not hasattr(adapter, "run_in_terminal"):
+        return None
+    from hostplatform import processes
+    # The terminal's tab: the command, shortened at a word where it's long.
+    words = " ".join(command.split())
+    name = "Mike: " + (words if len(words) <= 32 else words[:32].rsplit(" ", 1)[0] + " …")
+    try:
+        result = adapter.run_in_terminal(command, cwd, name, processes.editor_shell(), wait,
+                                         window=ctx.window_id)
+    except Exception:
+        logger.exception("Running in the editor's terminal failed.")
+        return None
+    if not result.get("ok"):
+        logger.info("The editor couldn't run %r (%s); running it out of sight.",
+                    command, result.get("error"))
+        return None
+    return result
+
+
+def run_output(window: str, run_id: str) -> dict:
+    adapter = active_adapter()
+    if adapter is None or not hasattr(adapter, "run_output"):
+        return {"ok": False, "error": "VS Code isn't connected to Mike any more."}
+    return adapter.run_output(window, run_id)
+
+
+def stop_run(window: str, run_id: str) -> dict:
+    adapter = active_adapter()
+    if adapter is None or not hasattr(adapter, "stop_run"):
+        return {"ok": False, "error": "VS Code isn't connected to Mike any more."}
+    return adapter.stop_run(window, run_id)
+
+
+def terminal_report() -> str:
+    """Every recent command in the editor's terminals, with its output."""
+    return get_context().describe_terminal(brief=False)
+
+
+# ── The editor's own checks ──────────────────────────────────
+
+def problems_for(paths: list[str], wait: float = 2.5) -> dict[str, dict] | None:
+    """What VS Code's own checkers -- the TypeScript server, Pylance, the JSON
+    and CSS checkers -- say about files Mike just wrote: {path: {"reported",
+    "problems"}}, for the files inside a connected project. None when there's
+    nothing to ask (no editor, files elsewhere, an older extension)."""
+    if not paths or not is_connected():
+        return None
+    ctx = _window_for(paths[0])
+    adapter = active_adapter()
+    if ctx is None or adapter is None or not hasattr(adapter, "problems"):
+        return None
+    roots = ctx.workspace_folders or [ctx.workspace_root]
+    inside = [p for p in paths if any(_within(p, r) for r in roots)]
+    if not inside:
+        return None
+    try:
+        result = adapter.problems(inside, wait, window=ctx.window_id)
+    except Exception:
+        logger.exception("Asking the editor for problems failed.")
+        return None
+    if not result.get("ok"):
+        return None
+    out: dict[str, dict] = {}
+    for item in result.get("files") or []:
+        mine = next((p for p in inside if _same_file(p, str(item.get("path") or ""))), None)
+        if mine is not None:
+            out[mine] = {"reported": bool(item.get("reported")),
+                         "problems": list(item.get("problems") or [])}
+    return out or None
 
 
 def set_ask_handler(handler) -> None:

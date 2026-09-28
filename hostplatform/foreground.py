@@ -40,6 +40,41 @@ def _is_front(user32, hwnd: int, wait: float) -> bool:
         time.sleep(0.05)
 
 
+def windows_of(exe_name: str) -> list[tuple[int, str]]:
+    """The visible, titled top-level windows of one program ("Code.exe"),
+    front-most first, as (hwnd, title)."""
+    import win32api
+    import win32gui
+    import win32process
+
+    wanted = exe_name.lower()
+    names: dict[int, str] = {}
+
+    def exe(pid: int) -> str:
+        if pid not in names:
+            try:
+                handle = win32api.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+                try:
+                    names[pid] = win32process.GetModuleFileNameEx(handle, 0).rsplit("\\", 1)[-1].lower()
+                finally:
+                    win32api.CloseHandle(handle)
+            except Exception:
+                names[pid] = ""
+        return names[pid]
+
+    found: list[tuple[int, str]] = []
+
+    def visit(hwnd, _):
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd)
+            if title and exe(win32process.GetWindowThreadProcessId(hwnd)[1]) == wanted:
+                found.append((hwnd, title))
+        return True
+
+    win32gui.EnumWindows(visit, None)
+    return found
+
+
 def bring_to_front(hwnd: int) -> bool:
     import ctypes
 
