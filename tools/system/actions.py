@@ -35,6 +35,7 @@ def open_application(name: str, path: str | None = None) -> str:
             "still be starting, or it may not have opened. Check with "
             "list_windows before relying on it."
         )
+    _point_at_window(window, f"Opening {name}")
     if path and not handed_over:
         return (f"Opened {name} — its window “{window}” is open — but it couldn't be "
                 f"handed {path}, so that isn't open in it yet. Say so; they can open it "
@@ -46,6 +47,20 @@ def open_application(name: str, path: str | None = None) -> str:
 # How long to wait for a launched app's window. Most apps show one in well
 # under a second; a cold Word or VS Code can take several.
 OPEN_WINDOW_TIMEOUT = 8.0
+
+
+def _point_at_window(title: str, label: str) -> None:
+    """Let the guide show where the app he opened is. Never raises."""
+    try:
+        from computer import attention
+        controller = _controller()
+        if controller is None or not attention.active():
+            return
+        found = next((w for w in controller.list_windows() if w.title == title), None)
+        if found is not None:
+            attention.window(found.bounds, label)
+    except Exception:
+        pass
 
 
 def _controller():

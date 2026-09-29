@@ -379,6 +379,16 @@ class GeneralTab(_Tab):
             _row("Reduce motion", "Calmer, simpler animations everywhere in Mike.", motion),
         ]))
 
+        self.add(_group("While Mike works in other apps"))
+        collapse = Switch(bool(preferences.get("guide_collapse", True)))
+        collapse.toggled.connect(lambda on: preferences.set_value("guide_collapse", on))
+        guide = Switch(bool(preferences.get("guide_nib", True)))
+        guide.toggled.connect(lambda on: preferences.set_value("guide_nib", on))
+        self.add(_rows_card([
+            _row("Step aside", "Mike's window goes to the corner while he works in your other apps.", collapse),
+            _row("Show where he's working", "The nib glides to what he's clicking or typing, so you can follow along.", guide),
+        ]))
+
         self.add(_group("Startup and notifications"))
         from hostplatform import autostart
         login = Switch(autostart.is_enabled())

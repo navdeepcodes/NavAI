@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShort
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon
 
 from brain.core_runtime import CoreRuntime
+from computer import attention
 
 from ide import manager as ide_manager
 from logs.logger import logger
@@ -16,6 +17,7 @@ from ui.controller.ui_controller import UIController
 from ui.system.global_hotkey import GlobalHotkey
 from ui.workspace.workspace import MikeWorkspace
 from ui.workspace.corner import CornerPresence
+from ui.workspace.guide import Guide
 from ui.theme.stylesheet import GLOBAL_STYLESHEET
 
 
@@ -94,6 +96,13 @@ class MikeWindow(QMainWindow):
             page=self.page,
             floating=self.corner,
         )
+
+        # While Mike works in other apps this window steps aside and the nib
+        # shows where he is (computer/attention.py is where actions say so).
+        self.guide = Guide(home=self._guide_home)
+        self.controller.guide = self.guide
+        attention.set_listener(self.guide.request)
+        self.guide.outside_work.connect(self._collapse_for_task)
 
         self._settings_hooks["on_voice_toggle"] = self.controller.set_voice_enabled
         self._settings_hooks["on_wake_toggle"] = self._set_wake
@@ -370,6 +379,39 @@ class MikeWindow(QMainWindow):
         except Exception:
             logger.exception("Could not show the corner presence.")
 
+    def _guide_home(self) -> tuple[int, int]:
+        """Where the nib lives: the corner window's mark, in screen pixels."""
+        import ctypes
+        from ctypes import wintypes
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(wintypes.HWND(int(self.corner.winId())), ctypes.byref(rect))
+        scale = self.corner.devicePixelRatioF()
+        return int(rect.left + 34 * scale), int(rect.top + 34 * scale)
+
+    def _collapse_for_task(self, x: int, y: int) -> None:
+        """Mike has started working outside this window: step aside, leaving
+        only the corner Mike, once per task -- and not at all if the student
+        brought the window back meanwhile (a task collapses it once). An action
+        inside this very window doesn't count as outside."""
+        from config import preferences
+        if not preferences.get("guide_collapse", True):
+            return
+        if self.isMinimized() or not self.isVisible():
+            return
+        if x >= 0 and y >= 0 and self._own_window_holds(x, y):
+            return
+        self._go_corner()
+
+    def _own_window_holds(self, x: int, y: int) -> bool:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            rect = wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(wintypes.HWND(int(self.winId())), ctypes.byref(rect))
+            return rect.left <= x < rect.right and rect.top <= y < rect.bottom
+        except Exception:
+            return False
+
     def _on_corner_dismissed(self) -> None:
         """The corner was closed by its ✕. Mike is not lost — the window stays
         minimised in the taskbar, reachable by a click, the tray, or the
@@ -568,6 +610,7 @@ class MikeWindow(QMainWindow):
             engine.shutdown()
 
         step("model engine", _stop_engine)
+        step("guide", lambda: attention.set_listener(None))
         step("ide bridge", ide_manager.stop)
         step("hotkey", self.hotkey.unregister)
         step("tray", self.tray.hide)

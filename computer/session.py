@@ -19,6 +19,7 @@ import logging
 import os
 import time
 
+from computer import attention
 from computer.base import (
     ComputerError,
     Observation,
@@ -342,6 +343,7 @@ class ComputerSession:
                 "preferred: it is checked against a real element."
             )}
 
+        self._attend("click", _click_label(element if ref else None, button, count), x=x, y=y)
         try:
             result = self.controller().click(int(x), int(y), button=button, count=count)
         except ComputerError as exc:
@@ -418,6 +420,7 @@ class ComputerSession:
         # control had focus. Reading it costs one accessibility call.
         before = self._focused()
 
+        self._attend("type", "Typing", element=before)
         try:
             result = self.controller().type_text(text).as_dict()
         except ComputerError as exc:
@@ -500,6 +503,8 @@ class ComputerSession:
             *mods, key = [part.strip() for part in key.split("+") if part.strip()]
             modifiers = [*(modifiers or []), *mods]
         note = self._ensure_front()
+        self._attend("key", "Pressing " + "+".join([*(modifiers or []), key]),
+                     element=self._focused())
         try:
             result = self.controller().press_keys(key, modifiers).as_dict()
         except ComputerError as exc:
@@ -522,6 +527,7 @@ class ComputerSession:
             if problem:
                 return {"status": "error", "error": problem, "retry_safe": True}
             x, y = element.bounds.center
+        self._attend("scroll", "Scrolling", x=x, y=y)
         try:
             result = self.controller().scroll(dx, dy, x, y).as_dict()
         except ComputerError as exc:
@@ -529,6 +535,31 @@ class ComputerSession:
         if note and result.get("status") == "success":
             result["result"] = result.get("result", "") + note
         return result
+
+    def _attend(self, kind: str, label: str, *, element=None, x=None, y=None) -> None:
+        """Say where Mike is about to act, so the nib can go there first. At a
+        control's centre when he has one; else the front window's. Never
+        raises and never holds the action up for long (see attention)."""
+        if not attention.active():
+            return
+        try:
+            if x is None or y is None:
+                bounds = None
+                if element is not None and element.bounds.width >= 2 and element.bounds.height >= 2:
+                    bounds = element.bounds
+                else:
+                    front = next((w for w in self.controller().list_windows() if w.frontmost), None)
+                    bounds = front.bounds if front is not None else None
+                if bounds is None:
+                    x = y = None
+                elif kind == "window":
+                    attention.window(bounds, label)
+                    return
+                else:
+                    x, y = bounds.center
+            attention.point(kind, x, y, label)
+        except Exception:
+            logger.debug("Couldn't say where Mike is working.", exc_info=True)
 
     def list_windows(self) -> dict:
         ok, why = self.availability()
@@ -558,7 +589,14 @@ class ComputerSession:
             # The previous observation belongs to the previous app.
             self._observation = None
             self._app = name
+            self._attend("window", f"Switching to {name}")
         return result.as_dict()
+
+
+def _click_label(element, button: str, count: int) -> str:
+    what = "Right-clicking" if button == "right" else "Double-clicking" if count == 2 else "Clicking"
+    name = (getattr(element, "label", "") or "").strip()
+    return f"{what} {name[:28]}" if name else what
 
 
 # One session per process. The observation it holds is short-lived state about

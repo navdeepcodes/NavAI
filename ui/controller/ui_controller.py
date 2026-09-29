@@ -258,6 +258,7 @@ class UIController(QObject):
 
         self._stop_preparing()
         self._page.show_thinking()
+        self._guide_turn(True)
 
         self._page.input.set_enabled(False)
 
@@ -524,6 +525,7 @@ class UIController(QObject):
                 logger.exception("Could not attach revert snapshot.")
 
     def _on_finished(self) -> None:
+        self._guide_turn(False)
 
         self._stop_preparing()
         self._page.hide_thinking()
@@ -625,8 +627,19 @@ class UIController(QObject):
         self._page.input.set_enabled(True)
         self._page.input.focus()
 
+    def _guide_turn(self, begin: bool) -> None:
+        """The task starts or ends, for the nib that shows where Mike works."""
+        guide = getattr(self, "guide", None)
+        if guide is None:
+            return
+        try:
+            guide.begin_turn() if begin else guide.end_turn()
+        except Exception:
+            logger.debug("The guide couldn't follow the turn.", exc_info=True)
+
     def _on_error(self, error: str) -> None:
 
+        self._guide_turn(False)
         self._stop_preparing()
         self._page.hide_thinking()
 
@@ -1112,6 +1125,7 @@ class UIController(QObject):
         with no new message following it.
         """
 
+        self._guide_turn(False)
         if self._worker is None:
             # No turn running — but Mike may still be reading a finished
             # answer aloud. Stop / Esc should silence him too, rather than do

@@ -57,6 +57,10 @@ DEFAULTS: dict[str, Any] = {
     "corner_anchor": "",
     "edge_enabled": True,
     "reduced_motion": False,
+    # While Mike works in other apps: his window steps aside to the corner,
+    # and the nib shows where he's working. Either can be turned off.
+    "guide_collapse": True,
+    "guide_nib": True,
     "onboarding_complete": False,
 
     # These were read and written all over the app but never declared here, so

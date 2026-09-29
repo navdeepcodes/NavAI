@@ -318,8 +318,26 @@ def _raise_window(ctx: IDEContext | None) -> None:
                      if name and (f" - {name} - " in title or title.startswith(f"{name} - "))),
                     windows[0][0])
         bring_to_front(hwnd)
+        _point_at(hwnd)
     except Exception:
         logger.debug("Couldn't bring VS Code to the front.", exc_info=True)
+
+
+def _point_at(hwnd: int) -> None:
+    """Show where VS Code came forward (the guide's nib, if it's running)."""
+    try:
+        import win32gui
+
+        from computer import attention
+        if not attention.active():
+            return
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+
+        class _Where:
+            x, y, width, height = left, top, right - left, bottom - top
+        attention.window(_Where, "Opening in VS Code")
+    except Exception:
+        pass
 
 
 def open_in_editor(path: str, line: int | None = None) -> dict:
