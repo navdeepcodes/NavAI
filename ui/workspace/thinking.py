@@ -1,11 +1,12 @@
 """The wait, written by hand.
 
-While Mike thinks, the nib writes what he's doing — "Thinking it through",
-"Piecing it together" — in real handwriting, stroke by stroke, the ink landing
-glossy and drying as it goes. The thought holds for a breath, fades from the
-page, and the next one is written. A long wait settles onto reassurance
-("Almost there") and shows how long it's been, because a clock that keeps
-moving is the honest difference between slow and stuck.
+While Mike thinks, the nib writes what he's doing — "Weighing the
+possibilities", "Distilling the essentials" — in real handwriting, stroke by
+stroke, the ink landing glossy and drying as it goes. The thought holds for a
+breath, fades from the page, and the next one is written. A long wait settles
+onto reassurance ("Adding the final touches") and shows how long it's been,
+because a clock that keeps moving is the honest difference between slow and
+stuck.
 
 Built on ui.workspace.handwriting (Hershey pen strokes, broad-nib ink) and the
 same nib drawing as the app's mark, so the pen you see thinking is the logo.
@@ -24,30 +25,34 @@ from ui.panel import style
 from ui.workspace import handwriting as hw
 
 
-# Short thoughts in Mike's register — a smart person half-answering you from
-# the next room, not a status bar. No jokes (they wear out on the fourth read),
-# nothing cutesy. The last two are held back for waits long enough to want
-# reassurance rather than novelty.
+# Thoughts in Mike's register: a considered mind at work, described with a
+# little craft — specific enough to feel like real thinking, never a status
+# bar, never a joke (jokes wear out on the fourth read). Kept within the width
+# the handwriting has room for. The last two are held back for waits long
+# enough to want reassurance rather than novelty.
 THOUGHTS = (
-    "Thinking it through",
-    "Working it out",
-    "Looking at this",
-    "Piecing it together",
-    "Following the thread",
-    "Checking the details",
-    "Turning it over",
-    "Lining things up",
-    "Reading it carefully",
-    "Making sense of it",
-    "Getting the shape of it",
+    "Weighing the possibilities",
+    "Tracing the logic",
+    "Distilling the essentials",
+    "Considering every angle",
+    "Choosing the right words",
+    "Sketching an approach",
+    "Reasoning it through",
+    "Examining the details",
+    "Gathering my thoughts",
+    "Refining the answer",
+    "Mapping out a plan",
+    "Connecting the threads",
+    "Composing a reply",
+    "Reading between the lines",
     # reassurance tail
-    "Almost there",
-    "Nearly done",
+    "Adding the final touches",
+    "Almost ready",
 )
 _REASSURING_TAIL = 2
 
 #: The widest a thought is written, in pen units -- the clock sits past it.
-_WIDEST = 330.0
+_WIDEST = 335.0
 #: A longer hint is written smaller, down to this much of the usual size.
 _SMALLEST = 0.72
 #: What the pen has no strokes for, as it would be written by hand.
