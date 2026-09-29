@@ -367,3 +367,45 @@ def test_every_document_tool_runs_through_the_runtime_and_can_be_switched_off(wo
     monkeypatch.setattr(permissions, "_pref_set", lambda name: {"documents"} if name == "abilities_off" else set())
     off = runtime._execute_tool("create_document", {"path": str(work / "q.docx"), "content": "x"})
     assert off["status"] == "error" and "Work with documents" in off["error"] and not (work / "q.docx").exists()
+
+
+# ── attached files ───────────────────────────────────────────
+
+def test_an_attached_file_arrives_with_its_path_so_mike_can_do_things_with_it(work):
+    from tools.documents import attach
+    a, b = _pdf(work, "week1.pdf", "Alpha", 3), _pdf(work, "week2.pdf", "Beta", 2)
+    text = attach.describe_all([str(a), str(b)])
+    for path in (a, b):
+        assert f"path: {path}" in text, "the tools need the full path"
+    assert "PDF, " in text and "pages" in text and "Alpha page 1" in text
+    assert "Read the rest with read_document" in text
+
+
+def test_a_photo_of_notes_is_read_by_ocr_and_not_described_by_the_slow_model(work):
+    from tools.documents import attach
+    asked = []
+    picture, _pdf_ = _scanned_pdf(work) if ocr.available() else (None, None)
+    if picture is None:
+        pytest.skip("Windows OCR isn't available here")
+    text = attach.describe(str(picture), describe_image=lambda p: asked.append(p) or "a diagram")
+    assert "photosynthesis" in text.lower() and "read by OCR" in text
+    assert asked == [], "a picture with text needs no picture model"
+
+
+def test_a_picture_with_no_text_is_described_and_a_missing_file_is_said(work):
+    from PIL import Image
+    from tools.documents import attach
+    blank = work / "blank.png"
+    Image.new("RGB", (300, 200), "white").save(blank)
+    seen = []
+    text = attach.describe(str(blank), describe_image=lambda p: seen.append(p) or "a plain white square")
+    assert seen == [str(blank)] and "a plain white square" in text and "300x200" in text
+    gone = attach.describe(str(work / "gone.pdf"))
+    assert "path:" in gone and "isn't there" in gone
+
+
+def test_the_preview_budget_is_shared_between_attachments(work):
+    from tools.documents import attach
+    files = [str(_pdf(work, f"f{i}.pdf", f"Name{i}", 3)) for i in range(8)]
+    text = attach.describe_all(files)
+    assert len(text) < attach.TOTAL_PREVIEW + 8 * 700

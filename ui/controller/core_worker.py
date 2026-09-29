@@ -82,49 +82,36 @@ class CoreRuntimeWorker(QObject):
 
     # =====================================================
 
-    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff"}
-    _MAX_DOC_CHARS = 12000        # a budget so one huge PDF can't swamp the turn
-
     def _with_attachments(self, message: str) -> str:
-        import os
+        """Each attached file as facts (name, full path, what it is) and a
+        preview: Mike needs the path to DO anything with it -- merge, convert,
+        read the rest (tools/documents/attach.py)."""
+        from tools.documents import attach
 
-        blocks = []
-        for path in self._attachments:
-            name = os.path.basename(path)
-            self.tool_start.emit(f"Reading {name}")
-            content = self._read_one(path)
-            self.tool_end.emit("done")
-            blocks.append(
-                f"[The user attached a file: {name}]\n{content}\n"
-                f"[end of {name}]")
+        def each(name: str, starting: bool) -> None:
+            if starting:
+                self.tool_start.emit(f"Reading {name}")
+            else:
+                self.tool_end.emit("done")
 
-        preamble = "\n\n".join(blocks)
+        preamble = attach.describe_all(self._attachments, describe_image=self._describe_image, on_each=each)
         if message.strip():
             return f"{preamble}\n\n{message}"
         # No words, just a file: give Mike a sensible default intent.
         return f"{preamble}\n\nHave a look at this and tell me what you make of it."
 
-    def _read_one(self, path: str) -> str:
-        import os
-
-        ext = os.path.splitext(path)[1].lower()
+    @staticmethod
+    def _describe_image(path: str) -> str:
+        """The picture model's description of a picture with no text in it."""
         try:
-            if ext in self._IMAGE_EXTS:
-                from vision.vision import Vision
+            from vision.vision import Vision
 
-                desc = Vision().analyze(
-                    path,
-                    "Describe this image in full: any text, equations, "
-                    "diagrams, code or handwriting shown, and what it depicts.")
-                return f"(an image; here is what it shows)\n{desc}"
-            from tools.filesystem.document_reader import read_document
-
-            text = read_document(path) or ""
-            if len(text) > self._MAX_DOC_CHARS:
-                text = text[:self._MAX_DOC_CHARS] + "\n...[truncated]"
-            return text or "(the file appears to be empty)"
+            return Vision().analyze(
+                path,
+                "Describe this image in full: any equations, diagrams, code or "
+                "handwriting shown, and what it depicts.")
         except Exception as exc:
-            return f"(couldn't read this file: {exc})"
+            return f"(couldn't describe it: {exc})"
 
     def _request_confirmation(self, description: str):
         """True, False, or "always" (allowed for the session)."""
