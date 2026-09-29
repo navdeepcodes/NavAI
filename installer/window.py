@@ -38,9 +38,21 @@ class _Worker(QThread):
     progress = Signal(int, str)
     done = Signal(bool, str)
 
+    def __init__(self, wait_for: int | None = None) -> None:
+        super().__init__()
+        self._wait_for = wait_for
+
     def run(self) -> None:
         try:
             source = core.source_dir()
+            if self._wait_for:
+                # The Mike that started this update is quitting: let it finish.
+                self.progress.emit(1, "Waiting for Mike to close…")
+                core.wait_for_exit([self._wait_for], 60)
+            if core.running_mike():
+                self.progress.emit(2, "Closing Mike…")
+                if not core.stop_running_mike():
+                    raise RuntimeError("Mike is still running -- quit him from the tray and try again")
             self.progress.emit(2, "Preparing…")
             core.copy_tree(source, core.INSTALL_DIR, lambda p, m: self.progress.emit(p, m))
             self.progress.emit(97, "Adding Mike to your Start Menu…")
@@ -54,9 +66,10 @@ class _Worker(QThread):
 class InstallerWindow(QWidget):
     SHADOW = 18
 
-    def __init__(self) -> None:
+    def __init__(self, update_from: int | None = None) -> None:
         super().__init__()
-        self.setWindowTitle("Install Mike")
+        self._update_from = update_from
+        self.setWindowTitle("Updating Mike" if update_from else "Install Mike")
         self.setFixedSize(520, 330)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setWindowFlags(Qt.FramelessWindowHint)
@@ -191,6 +204,21 @@ class InstallerWindow(QWidget):
         buttons.addWidget(self._go)
         outer.addLayout(buttons)
 
+        if self._update_from:
+            try:
+                from config.settings import VERSION
+            except Exception:
+                VERSION = "the newest version"
+            self._body.setText(
+                f"Mike is updating to {VERSION}.\n\nYour chats, memory and settings "
+                "stay exactly as they are. He'll be back in a moment.")
+            QTimer.singleShot(300, self._install)
+        elif core.running_mike():
+            self._body.setText(
+                self._body.text() + "\n\nMike is running right now; installing "
+                "closes him first. Your chats and settings are kept.")
+            self._go.setText("Close Mike and install")
+
     # ── behaviour ───────────────────────────────────────────
     def _install(self) -> None:
         self._go.setEnabled(False)
@@ -199,7 +227,7 @@ class InstallerWindow(QWidget):
         self._bar.setValue(0)
         self._status.setText("Preparing…")
 
-        self._worker = _Worker()
+        self._worker = _Worker(self._update_from)
         self._worker.progress.connect(self._on_progress)
         self._worker.done.connect(self._on_done)
         self._worker.start()
@@ -212,6 +240,12 @@ class InstallerWindow(QWidget):
         if not ok:
             self._status.setStyleSheet("color:#B4472F;background:transparent;")
             self._status.setText(f"Couldn't finish: {error[:90]}")
+            if self._update_from and core.already_installed():
+                # copy_tree keeps the old version when a swap fails: reopen it.
+                self._body.setText("The update didn't finish, so your current version "
+                                   "of Mike was kept. It's opening again now.")
+                QTimer.singleShot(2500, self._launch_and_quit)
+                return
             self._go.setText("Close")
             self._go.setEnabled(True)
             try:
@@ -222,6 +256,12 @@ class InstallerWindow(QWidget):
             return
 
         self._bar.hide()
+        if self._update_from:
+            self._body.setText("Mike is up to date. Starting him again…")
+            self._status.setStyleSheet(f"color:{GOOD};background:transparent;")
+            self._status.setText("Updated")
+            QTimer.singleShot(900, self._launch_and_quit)
+            return
         if core.ollama_present():
             self._body.setText(
                 "Mike is installed.\n\nHe's in your Start Menu, and Ctrl+Shift+Space "
@@ -283,7 +323,13 @@ def run_installer() -> int:
             UI_FONT = _style.BRAND_FAMILY
     except Exception:
         pass
-    window = InstallerWindow()
+    update_from = None
+    if "--update-from" in sys.argv:
+        try:
+            update_from = int(sys.argv[sys.argv.index("--update-from") + 1])
+        except (IndexError, ValueError):
+            update_from = 0
+    window = InstallerWindow(update_from=update_from)
     screen = app.primaryScreen().availableGeometry()
     window.move(screen.center().x() - window.width() // 2,
                 screen.center().y() - window.height() // 2 - 40)

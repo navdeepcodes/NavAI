@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to attach the build to (must already exist)"
-        required: true
-        default: "v1.0.0"
+        description: "Release tag to attach the build to (must already exist). Leave empty to only build."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -44,11 +44,12 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Mike-windows-1.0.0
+          name: Mike-windows
           path: dist/Mike-windows-*.zip
           retention-days: 30
 
       - name: Attach to release
+        if: ${{ inputs.release_tag != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}

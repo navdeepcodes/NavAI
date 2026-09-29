@@ -11,7 +11,7 @@ load_dotenv(dotenv_path=ENV_FILE)
 
 APP_NAME = os.getenv("APP_NAME", "Mike")
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
 
 DEFAULT_BROWSER = os.getenv("DEFAULT_BROWSER", "Opera")
@@ -47,7 +47,7 @@ WEBSITE = "https://huddlecode.com"
 SUPPORT_EMAIL = ""
 #: Bump when the Privacy Policy or Terms change materially; people are asked
 #: to accept the new version on their next launch.
-LEGAL_VERSION = "2026-09-29.1"  # .1: text read from scans is kept on your computer
+LEGAL_VERSION = "2026-09-29.2"  # .2: Mike checks GitHub for updates
 
 # ── Accounts (Supabase) ───────────────────────────────────────
 # Optional Mike accounts: email, name and photo, synced across computers.

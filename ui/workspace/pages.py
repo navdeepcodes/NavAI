@@ -401,10 +401,14 @@ class GeneralTab(_Tab):
         self._login = login
         notify = Switch(bool(preferences.get("notifications_enabled", True)))
         notify.toggled.connect(lambda on: preferences.set_value("notifications_enabled", on))
+        updates = Switch(bool(preferences.get("check_updates", True)))
+        updates.toggled.connect(lambda on: preferences.set_value("check_updates", on))
         self.add(_rows_card([
             _row("Open Mike when you sign in", login_desc, login),
             _row("Notifications", "A quiet notification when Mike finishes or needs you "
                  "while his window is closed.", notify),
+            _row("Check for updates", "Mike asks GitHub about new versions twice a day and "
+                 "tells you; nothing installs until you say so.", updates),
         ]))
 
         from config import settings
@@ -1160,6 +1164,21 @@ class AboutTab(_Tab):
             _row("Settings", "", _key_hint("Ctrl+,")),
         ]))
 
+        self.add(_group("Updates"))
+        updater = self._hooks.get("updater")
+        check = _button("Check now")
+        self._update_status = _label(
+            (getattr(updater, "last_status", "") or f"You have Mike {VERSION}."),
+            style.SMALL, style.INK_MUTE)
+        if updater is not None:
+            check.clicked.connect(lambda: updater.check(manual=True))
+            updater.status.connect(self._on_update_status)
+        else:
+            check.setEnabled(False)
+        self.add(_rows_card([_row("Mike updates", "", check)]))
+        self._update_status.setContentsMargins(4, 0, 0, 0)
+        self.add(self._update_status)
+
         self.add(_group("Help"))
         report = _button("Create report…")
         report.clicked.connect(self._report)
@@ -1193,6 +1212,12 @@ class AboutTab(_Tab):
         foot.setContentsMargins(4, 6, 0, 0)
         self.add(foot)
         self.body.addStretch(1)
+
+    def _on_update_status(self, text: str) -> None:
+        try:
+            self._update_status.setText(text)
+        except RuntimeError:        # the page was closed
+            pass
 
     # ── brain status ──
     def _brain_card(self) -> QWidget:

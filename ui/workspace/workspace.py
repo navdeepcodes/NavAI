@@ -10,7 +10,7 @@ underneath is untouched — the window is a shell around the same Mike.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRectF, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QAbstractButton, QHBoxLayout, QLabel, QStackedWidget, QVBoxLayout, QWidget,
@@ -92,6 +92,21 @@ class MikeWorkspace(QWidget):
         self.chat.brain_banner.start_requested.connect(self.health.start_ollama)
         self.chat.brain_banner.retry_requested.connect(self.health.check)
         self._hooks["brain_health"] = self.health
+
+        # A newer Mike: checked quietly, offered in the chat, installed only
+        # when the student says so (ui/workspace/updater.py).
+        from ui.workspace.updater import Updater
+        self.updater = Updater(quit_app=lambda: self._hooks.get("quit_app", lambda: None)(),
+                               parent=self)
+        self.updater.available.connect(self.chat.update_banner.offer)
+        self.updater.progress.connect(self.chat.update_banner.show_progress)
+        self.updater.failed.connect(self.chat.update_banner.show_error)
+        self.updater.updated.connect(
+            lambda v: self.chat.add_notice(f"Mike was updated to {v}.", "info"))
+        self.chat.update_banner.update_requested.connect(self.updater.install)
+        self.chat.update_banner.notes_requested.connect(self._open_release_notes)
+        self._hooks["updater"] = self.updater
+        QTimer.singleShot(0, self.updater.start)
         self._hooks.setdefault("chats_deleted", self._on_chats_deleted)
 
         # The account: the profile row, the greeting and Settings follow it,
@@ -291,6 +306,13 @@ class MikeWorkspace(QWidget):
     def set_wake_listening(self, on: bool) -> None:
         """Whether "Hey Mike" is really live, so hints only promise what works."""
         self.chat._hero.set_wake_listening(on)
+
+    def _open_release_notes(self) -> None:
+        offer = self.updater.offer
+        if offer is not None:
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl(offer.page))
 
     def _on_chats_deleted(self) -> None:
         """Every chat was erased from Settings: start fresh, empty the rail."""

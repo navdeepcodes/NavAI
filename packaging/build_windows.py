@@ -87,6 +87,9 @@ def main() -> None:
     version = _version()
     print(f"Building Mike {version} for Windows.\n")
 
+    # Piper (the neural voice) is git-ignored; a fresh checkout fetches it.
+    subprocess.run([sys.executable, str(PACKAGING_DIR / "fetch_runtime.py")],
+                   cwd=REPO_ROOT, check=True)
     _pregenerate_comtypes()
     # The open-source licences screen lists exactly what this build bundles.
     print("-> Writing open-source licence notices...")

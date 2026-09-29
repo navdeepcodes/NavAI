@@ -21,8 +21,9 @@ internet. It is written to match what the app actually does.
   Mike account, it holds your email, your name and, if you add one, your
   photo — never your conversations, memory, files or activity.
 - **Mike uses the internet only for specific things you'll recognise** —
-  downloading its models, searches and websites you ask for, your account if
-  you sign in, and email if you connect Gmail. Each is listed below.
+  downloading its models, checking for updates, searches and websites you ask
+  for, your account if you sign in, and email if you connect Gmail. Each is
+  listed below.
 - **You're in control.** You can see, export and delete everything Mike keeps,
   and turn off any ability in **Settings → Permissions**.
 
@@ -89,7 +90,14 @@ Mike connects to the internet only in these situations:
    below.
 5. **Checks you ask for.** Developer tools such as "check this URL" contact the
    address you give.
-6. **Fast mode, only if you connect it.** Mike sends your conversation — your
+6. **Checking for updates.** A few seconds after it starts and then twice a
+   day, the installed Mike asks GitHub (where Mike is published) whether a
+   newer version exists. GitHub sees your IP address and the version of Mike
+   you have — nothing about you or what you do with Mike. A new version is
+   downloaded from GitHub only when you choose **Update now**, and it's checked
+   against the published file before it's installed. Turn the check off in
+   **Settings → General → Check for updates**.
+7. **Fast mode, only if you connect it.** Mike sends your conversation — your
    messages, Mike's replies, and what Mike's steps find (for example the
    contents of files it reads for a task you gave it) — and your voice
    commands to Cloudflare Workers AI, on the Cloudflare account you connected.

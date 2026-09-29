@@ -280,6 +280,104 @@ class _BrainBanner(QFrame):
         self.show()
 
 
+class _UpdateBanner(QFrame):
+    """A newer Mike is out: what it is, and "Update now" (ui/workspace/updater.py)."""
+
+    update_requested = Signal()
+    notes_requested = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        from PySide6.QtWidgets import QPushButton, QProgressBar
+        self.setObjectName("updateBanner")
+        row = QHBoxLayout(self)
+        row.setContentsMargins(14, 12, 12, 12)
+        row.setSpacing(12)
+        row.addWidget(_NoticeIcon("info"), 0, Qt.AlignTop)
+        text = QVBoxLayout()
+        text.setSpacing(4)
+        self._title = QLabel("")
+        self._title.setFont(style.font(style.BODY, QFont.Weight.DemiBold))
+        self._title.setStyleSheet(f"color:{style.INK};background:transparent;")
+        text.addWidget(self._title)
+        self._detail = QLabel("")
+        self._detail.setWordWrap(True)
+        self._detail.setFont(style.font(style.SMALL))
+        self._detail.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
+        text.addWidget(self._detail)
+        self._bar = QProgressBar()
+        self._bar.setTextVisible(False)
+        self._bar.setFixedHeight(4)
+        self._bar.setRange(0, 100)
+        self._bar.setStyleSheet(
+            f"QProgressBar{{background:{style.HAIRLINE};border:none;border-radius:2px;}}"
+            f"QProgressBar::chunk{{background:{style.accent()};border-radius:2px;}}")
+        self._bar.hide()
+        text.addWidget(self._bar)
+        row.addLayout(text, 1)
+
+        def button(label, primary=False):
+            b = QPushButton(label)
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFont(style.font(style.SMALL, QFont.Weight.DemiBold))
+            if primary:
+                b.setStyleSheet(
+                    f"QPushButton{{background:{style.accent()};color:{style.on_accent()};border:none;"
+                    f"border-radius:9px;padding:7px 14px;}}")
+            else:
+                b.setStyleSheet(
+                    f"QPushButton{{background:transparent;color:{style.INK_SOFT};"
+                    f"border:1px solid {style.HAIRLINE};border-radius:9px;padding:6px 12px;}}"
+                    f"QPushButton:hover{{color:{style.INK};border-color:{style.INK_MUTE};}}")
+            row.addWidget(b, 0, Qt.AlignVCenter)
+            return b
+
+        self._notes = button("What's new")
+        self._notes.clicked.connect(self.notes_requested.emit)
+        self._later = button("Later")
+        self._later.clicked.connect(self.hide)
+        self._go = button("Update now", primary=True)
+        self._go.clicked.connect(self._start)
+        tint = QColor(style.accent())
+        tint.setAlpha(18)
+        self.setStyleSheet(
+            f"QFrame#updateBanner{{background:rgba({tint.red()},{tint.green()},{tint.blue()},"
+            f"{tint.alpha()});border:1px solid {style.HAIRLINE};border-radius:14px;}}")
+        self.hide()
+
+    def offer(self, update) -> None:
+        self._title.setText(f"Mike {update.version} is ready")
+        what = update.headline or "Fixes and improvements."
+        self._detail.setText(f"{what} Mike restarts to update; your chats and settings stay.")
+        for b in (self._notes, self._later, self._go):
+            b.show()
+            b.setEnabled(True)
+        self._bar.hide()
+        self.show()
+
+    def _start(self) -> None:
+        self._go.setEnabled(False)
+        self._later.hide()
+        self._notes.hide()
+        self._bar.setValue(0)
+        self._bar.show()
+        self._detail.setText("Starting the download…")
+        self.update_requested.emit()
+
+    def show_progress(self, percent: int, message: str) -> None:
+        self._bar.setValue(max(0, min(100, percent)))
+        self._detail.setText(message)
+        self.show()
+
+    def show_error(self, message: str) -> None:
+        self._bar.hide()
+        self._detail.setText(message)
+        self._go.setText("Try again")
+        self._go.setEnabled(True)
+        self._later.show()
+        self.show()
+
+
 class ConfirmCard(_Confirm):
     """The confirmation, in the workspace's type scale, with a long preview
     (an edit's before/after) kept scrollable so the buttons never leave the
@@ -546,6 +644,8 @@ class ChatPage(QWidget):
 
         self.brain_banner = _BrainBanner()
         dcol.addWidget(self.brain_banner)
+        self.update_banner = _UpdateBanner()
+        dcol.addWidget(self.update_banner)
         # what you're getting done, in view above where you type
         self.mission = MissionBar()
         dcol.addWidget(self.mission)

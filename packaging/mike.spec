@@ -51,6 +51,10 @@ hiddenimports = [
     # (get_provider), so nothing statically imports it; without this the
     # packaged app would silently have only the SAPI fallback.
     "voice.providers.piper",
+    # Updates: the workspace loads the updater lazily, and the updater loads
+    # the installer's download and swap code only when a check runs.
+    "ui.workspace.updater",
+    "installer.updates",
     # Reading a student's PDF / Word / PowerPoint files. document_reader
     # imports these inside the function that needs them, and they were never
     # installed at all until the production pass found "pypdf isn't

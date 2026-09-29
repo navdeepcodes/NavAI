@@ -61,6 +61,10 @@ DEFAULTS: dict[str, Any] = {
     # and the nib shows where he's working. Either can be turned off.
     "guide_collapse": True,
     "guide_nib": True,
+    # Updates: ask GitHub for a newer Mike twice a day (Settings → General),
+    # and the version that last ran, so Mike can say he was updated.
+    "check_updates": True,
+    "last_run_version": "",
     "onboarding_complete": False,
 
     # These were read and written all over the app but never declared here, so
