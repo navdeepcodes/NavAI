@@ -20,6 +20,14 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests import _isolate  # noqa: F401
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _coding_on(monkeypatch):
+    """These exercise the coding tools, which are off until the user turns
+    them on (brain/permissions.py, "Work with code")."""
+    monkeypatch.setattr("brain.permissions.DEFAULT_OFF", frozenset())
 
 
 def _rt():

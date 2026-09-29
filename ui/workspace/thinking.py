@@ -1,0 +1,234 @@
+"""The wait, written by hand.
+
+While Mike thinks, the nib writes what he's doing — "Weighing the
+possibilities", "Distilling the essentials" — in real handwriting, stroke by
+stroke, the ink landing glossy and drying as it goes. The thought holds for a
+breath, fades from the page, and the next one is written. A long wait settles
+onto reassurance ("Adding the final touches") and shows how long it's been,
+because a clock that keeps moving is the honest difference between slow and
+stuck.
+
+Built on ui.workspace.handwriting (Hershey pen strokes, broad-nib ink) and the
+same nib drawing as the app's mark, so the pen you see thinking is the logo.
+With Reduce motion on, the thought is simply shown, written, with the pen at
+rest.
+"""
+from __future__ import annotations
+
+import random
+
+from PySide6.QtCore import QPointF, QTimer
+from PySide6.QtGui import QColor, QPainter
+from PySide6.QtWidgets import QWidget
+
+from ui.panel import style
+from ui.workspace import handwriting as hw
+
+
+# Thoughts in Mike's register: a considered mind at work, described with a
+# little craft — specific enough to feel like real thinking, never a status
+# bar, never a joke (jokes wear out on the fourth read). Kept within the width
+# the handwriting has room for. The last two are held back for waits long
+# enough to want reassurance rather than novelty.
+THOUGHTS = (
+    "Weighing the possibilities",
+    "Tracing the logic",
+    "Distilling the essentials",
+    "Considering every angle",
+    "Choosing the right words",
+    "Sketching an approach",
+    "Reasoning it through",
+    "Examining the details",
+    "Gathering my thoughts",
+    "Refining the answer",
+    "Mapping out a plan",
+    "Connecting the threads",
+    "Composing a reply",
+    "Reading between the lines",
+    # reassurance tail
+    "Adding the final touches",
+    "Almost ready",
+)
+_REASSURING_TAIL = 2
+
+#: The widest a thought is written, in pen units -- the clock sits past it.
+_WIDEST = 335.0
+#: A longer hint is written smaller, down to this much of the usual size.
+_SMALLEST = 0.72
+#: What the pen has no strokes for, as it would be written by hand.
+_PLAIN = str.maketrans({"“": '"', "”": '"', "‘": "'", "’": "'", "…": "...", "—": "-", "–": "-"})
+
+
+def _fitted(text: str) -> str:
+    """A hint the pen can write in the space: plain characters, and shortened
+    only when even smaller writing wouldn't fit it."""
+    text = " ".join(text.translate(_PLAIN).split())
+    if not hw.available():
+        return text
+    cut = text
+    while len(cut) > 12 and hw.Script(cut if cut == text else cut + "...").width > _WIDEST / _SMALLEST:
+        cut = cut[:-3].rstrip()
+    return cut if cut == text else cut + "..."
+
+
+class ThinkingLine(QWidget):
+    """A thought, handwritten by the nib, held, faded, and replaced."""
+
+    _HOLD_S = 1.1          # the finished thought rests before it fades
+    _FADE_S = 0.45
+    _GAP_S = 0.25
+    _FRAME_MS = 16
+    _LONG_WAIT_S = 11.0    # past here, stay on the reassuring tail
+    _SHOW_ELAPSED_S = 8.0  # past here, also show how long it's been
+    _PACE = 1.35           # a little quicker than a careful hand
+    _HINT_WRITE_S = 1.4    # a step's name is news: written in this long, whatever its length
+
+    def __init__(self, size: int = 16, parent=None) -> None:
+        super().__init__(parent)
+        self._size = size                       # the text's reading size, px
+        # handwriting sits a little larger than type, like a note in the margin
+        self._scale = size * 1.55 / 21.0        # px per Hershey unit
+        self.setFixedHeight(int(size * 3.4))
+        self._t = 0.0
+        self._elapsed = 0.0
+        self._phase = "write"
+        self._phase_start = 0.0
+        self._index = 0
+        self._script: hw.Script | None = None
+        self._hint = ""
+        self._pace = self._PACE
+        self._frame = QTimer(self)
+        self._frame.timeout.connect(self._on_frame)
+        self._pick_first()
+
+    # ── lifecycle ─────────────────────────────────────────
+    def start(self) -> None:
+        self._t = 0.0
+        self._elapsed = 0.0
+        self._pick_first()
+        if not self._frame.isActive():
+            self._frame.start(self._FRAME_MS)
+
+    def stop(self) -> None:
+        # Timers hold a reference to a widget the page is about to delete;
+        # stopping explicitly keeps a tick from firing into a torn-down widget.
+        self._frame.stop()
+
+    def showEvent(self, e) -> None:
+        super().showEvent(e)
+        if not self._frame.isActive():
+            self._frame.start(self._FRAME_MS)
+
+    def hideEvent(self, e) -> None:
+        super().hideEvent(e)
+        self._frame.stop()
+
+    def set_hint(self, text: str) -> None:
+        """What Mike is doing, once it's known ("Writing style.css"): written
+        like a thought, then held -- not faded for the next one -- until it
+        changes or the wait is over. The clock keeps counting."""
+        text = _fitted(text or "")
+        if not text or text == self._hint:
+            return
+        self._hint = text
+        self._script = hw.Script(text) if hw.available() else None
+        # A thought takes 5-7s to write at the easy pace; a file name that
+        # changes with each file can't: the same hand, quicker.
+        self._pace = (max(self._PACE, self._script.duration / self._HINT_WRITE_S)
+                      if self._script else self._PACE)
+        self._phase, self._phase_start = "write", self._t
+
+    # ── the clock ─────────────────────────────────────────
+    def _set(self, index: int) -> None:
+        self._index = index
+        self._script = hw.Script(THOUGHTS[index]) if hw.available() else None
+        self._pace = self._PACE
+        self._phase, self._phase_start = "write", self._t
+
+    def _pick_first(self) -> None:
+        self._set(random.randrange(len(THOUGHTS) - _REASSURING_TAIL))
+
+    def _next_thought(self) -> None:
+        body = len(THOUGHTS) - _REASSURING_TAIL
+        if self._elapsed >= self._LONG_WAIT_S:
+            # Long wait: settle onto the reassuring tail instead of implying
+            # fresh activity that isn't happening.
+            self._set(body + ((self._index + 1) % _REASSURING_TAIL)
+                      if self._index >= body else body)
+            return
+        choice = self._index
+        while choice == self._index and body > 1:
+            choice = random.randrange(body)
+        self._set(choice)
+
+    def _write_time(self) -> float:
+        return (self._script.duration / self._pace) if self._script else 1.2
+
+    def _on_frame(self) -> None:
+        dt = self._FRAME_MS / 1000.0
+        self._t += dt
+        self._elapsed += dt
+        if style.reduced_motion():
+            self._phase, self._phase_start = "hold", self._t
+            self.update()
+            return
+        since = self._t - self._phase_start
+        if self._phase == "write" and since >= self._write_time():
+            self._phase, self._phase_start = "hold", self._t
+        elif self._phase == "hold" and since >= self._HOLD_S and not self._hint:
+            self._phase, self._phase_start = "fade", self._t
+        elif self._phase == "fade" and since >= self._FADE_S:
+            self._phase, self._phase_start = "gap", self._t
+        elif self._phase == "gap" and since >= self._GAP_S:
+            self._next_thought()
+        self.update()
+
+    # ── painting ──────────────────────────────────────────
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        sc = self._scale
+        if self._script is not None and self._script.width > _WIDEST:
+            sc *= _WIDEST / self._script.width       # a long hint, written smaller
+        baseline = QPointF(4.0, self.height() * 0.62)
+        # Neutral ink: the writing lands a touch brighter and settles to the
+        # soft tone -- no accent colour in the words.
+        ink = QColor(style.INK_SOFT)
+        wet = QColor(style.INK)
+        since = self._t - self._phase_start
+
+        # how long it's been, at a fixed place so the number stays readable
+        if self._elapsed >= self._SHOW_ELAPSED_S:
+            secs = int(self._elapsed)
+            label = f"{secs}s" if secs < 60 else f"{secs // 60}m {secs % 60:02d}s"
+            p.setFont(style.font(style.CAPTION))
+            p.setPen(QColor(style.INK_MUTE))
+            widest = _WIDEST * self._scale
+            p.drawText(int(baseline.x() + widest + 26), int(baseline.y()), label)
+
+        if self._script is None:
+            # no stroke data: a plain, honest line rather than nothing
+            p.setFont(style.font(self._size))
+            p.setPen(ink)
+            p.drawText(int(baseline.x()), int(baseline.y()), self._hint or THOUGHTS[self._index])
+            return
+
+        script = self._script
+        if self._phase == "write":
+            t, opacity, pen = since * self._pace, 1.0, True
+        elif self._phase == "hold":
+            t, opacity, pen = script.duration + 1.0, 1.0, True
+        elif self._phase == "fade":
+            t, opacity, pen = script.duration + 1.0, max(0.0, 1.0 - since / self._FADE_S), False
+        else:
+            return
+
+        tip = script.paint(p, baseline, sc, t, ink, wet, opacity)
+        if pen:
+            _x, _y, down = script.pen_at(t)
+            resting = self._phase == "hold"
+            if resting:
+                # pen lifted off the page at the end of the thought, poised
+                down = False
+            hw.paint_pen(p, tip, self._size * 2.3, QColor(style.accent()),
+                         QColor(style.accent()).darker(210), down)

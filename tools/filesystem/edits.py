@@ -59,6 +59,108 @@ def _diff(before: str, after: str, path: str) -> str:
     return "".join(lines)
 
 
+# ── a file open in the student's editor ──────────────────────────────────
+#
+# Its text there is the truth: it may hold changes not saved yet. Edited on
+# disk, Mike changed the older text and the editor then held two versions --
+# the student's unsaved work, or Mike's change, was lost. So an open file is
+# read from the editor and edited through it (ide/manager.py): the change
+# lands in the student's buffer, is saved, Ctrl+Z undoes it, and the editor's
+# own checker says what it thinks of the result.
+
+def _editor_text(file: Path) -> str | None:
+    """The file's text in the connected editor, unsaved changes included --
+    None when no editor has it open, and the disk is the truth."""
+    try:
+        from ide import manager
+        return manager.editor_text(str(file))
+    except Exception:
+        return None
+
+
+def _position(text: str, offset: int) -> tuple[int, int]:
+    """(line, column) at `offset`, 0-based, the column in UTF-16 units as
+    editors count it."""
+    line = text.count("\n", 0, offset)
+    start = text.rfind("\n", 0, offset) + 1
+    return line, len(text[start:offset].encode("utf-16-le")) // 2
+
+
+def _write_through_editor(file: Path, before: str, after: str) -> dict | None:
+    """before -> after as one replacement of the part that changed, applied by
+    the editor. Its answer (ok, problems, changed), or None when no editor
+    holds the file any more."""
+    from ide import manager
+    head = 0
+    limit = min(len(before), len(after))
+    while head < limit and before[head] == after[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and before[-1 - tail] == after[-1 - tail]:
+        tail += 1
+    return manager.replace_in_editor(
+        str(file), _position(before, head), _position(before, len(before) - tail),
+        before[head:len(before) - tail], after[head:len(after) - tail])
+
+
+def _problems(file: Path, problems: list[dict]) -> str:
+    if not problems:
+        return f"VS Code shows no errors or warnings in {file.name} after this edit."
+    shown = [f"- line {p.get('line')}: {p.get('severity')}: {p.get('message')}"
+             + (f" [{p['source']}]" if p.get("source") else "") for p in problems[:10]]
+    return f"VS Code shows these in {file.name} after this edit:\n" + "\n".join(shown)
+
+
+#: After a write to disk, how long VS Code's checkers get to look at the
+#: files: a warm language server answers in about a second (measured: three
+#: files, 1.0s); a clean file usually says nothing at all, so this is also the
+#: most a clean write waits. check_syntax waits longer when asked.
+EDITOR_CHECK_SECONDS = 2.5
+#: At most this many files checked (and opened as tabs) per write.
+EDITOR_CHECK_MAX = 10
+
+
+def _checked_in_editor(files: list[Path]) -> dict[str, dict] | None:
+    """What the student's VS Code says about files just written to disk --
+    {path: {"reported", "problems"}} for those in a project it has open, so
+    a broken file is known at the step that broke it. Each opens as a tab
+    behind the one they're on: it's what VS Code checks, and it's the work."""
+    try:
+        from ide import manager
+        return manager.problems_for([str(f) for f in files[:EDITOR_CHECK_MAX]],
+                                    wait=EDITOR_CHECK_SECONDS)
+    except Exception:
+        return None
+
+
+def _note_editor_check(result: dict, file: Path) -> dict:
+    """Add VS Code's word on one file written to disk to its result."""
+    found = _checked_in_editor([file])
+    info = next(iter(found.values()), None) if found else None
+    if info and (info["problems"] or info["reported"]):
+        result["problems"] = _problems(file, info["problems"])
+    return result
+
+
+def _finish_in_editor(file: Path, before: str, after: str, result: dict) -> dict | None:
+    """Write through the editor holding the file. The finished tool result, or
+    None when no editor holds it and the disk should be written instead."""
+    outcome = _write_through_editor(file, before, after)
+    if outcome is None or outcome.get("open") is False:
+        return None
+    if not outcome.get("ok"):
+        if outcome.get("changed"):
+            error = ("The file changed in the editor while I was editing it, so nothing "
+                     "was changed. Read it again and redo the edit.")
+        else:
+            error = (f"The editor couldn't apply the edit ({outcome.get('error') or 'no reason given'}). "
+                     "Nothing was changed.")
+        return {"status": "error", "error": error}
+    result["editor"] = "Applied in the editor and saved; Ctrl+Z there undoes it."
+    result["problems"] = _problems(file, outcome.get("problems") or [])
+    return result
+
+
 def read_lines(path: str, offset: int = 1, limit: int = 400) -> dict:
     """
     Read a file with line numbers, optionally a slice of it.
@@ -74,10 +176,12 @@ def read_lines(path: str, offset: int = 1, limit: int = 400) -> dict:
     if file.is_dir():
         return {"status": "error", "error": f"{file} is a directory, not a file."}
 
-    try:
-        text = file.read_text(encoding="utf-8", errors="replace")
-    except OSError as exc:
-        return {"status": "error", "error": f"Could not read {file}: {exc}"}
+    text = _editor_text(file)          # what the student sees, unsaved changes too
+    if text is None:
+        try:
+            text = file.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return {"status": "error", "error": f"Could not read {file}: {exc}"}
 
     lines = text.splitlines()
     total = len(lines)
@@ -104,6 +208,118 @@ def read_lines(path: str, offset: int = 1, limit: int = 400) -> dict:
     }
 
 
+#: read_files: at most this many files, and this much text in all -- several
+#: whole files at once is the point, a context window's worth is not.
+READ_FILES_MAX = 8
+READ_FILES_BUDGET = 60_000
+WRITE_FILES_MAX = 20
+
+
+def read_files(paths: list[str]) -> dict:
+    """Several files at once, each numbered as read_lines numbers it (and read
+    from the editor when it's open there). One step instead of one per file:
+    every step re-sends the conversation, so reading a task's files one by one
+    cost a model call -- and the allowance -- each."""
+    if not paths:
+        return {"status": "error", "error": "No paths were given."}
+    wanted = [str(p) for p in paths if str(p).strip()]
+    files, left = [], READ_FILES_BUDGET
+    for path in wanted[:READ_FILES_MAX]:
+        if left <= 0:
+            files.append({"path": path, "skipped": "Not read: the others filled this read. Read it next."})
+            continue
+        got = read_lines(path, 1, 400)
+        if got.get("status") != "success":
+            files.append({"path": path, "error": got.get("error")})
+            continue
+        content = got["content"]
+        entry = {"path": got["path"], "total_lines": got["total_lines"], "shown": got["shown"]}
+        if len(content) > left:
+            content = content[:left].rsplit("\n", 1)[0]
+            entry["shown"] = f"1-{content.count(chr(10)) + 1}"
+            entry["truncated"] = True
+        elif got.get("truncated"):
+            entry["truncated"] = True
+        entry["content"] = content
+        left -= len(content)
+        files.append(entry)
+    result = {"status": "success", "files": files}
+    if len(wanted) > READ_FILES_MAX:
+        result["note"] = (f"Read the first {READ_FILES_MAX} of {len(wanted)}; ask for the rest "
+                          "in another read_files.")
+    if any(f.get("truncated") for f in files):
+        result["note"] = ((result.get("note", "") + " ").lstrip()
+                          + "Some files were cut short: read_lines reads the rest by line.")
+    return result
+
+
+def write_files(files: list[dict]) -> dict:
+    """Create or replace several whole files: a new project, or a feature's
+    new files, in one step. Each file goes through the editor when it's open
+    there (so unsaved work isn't clobbered from behind and Ctrl+Z undoes it),
+    otherwise to disk; each can be undone from Mike's activity."""
+    entries = [f for f in (files or []) if isinstance(f, dict) and str(f.get("path") or "").strip()]
+    if not entries:
+        return {"status": "error", "error": "No files were given."}
+    if len(entries) > WRITE_FILES_MAX:
+        return {"status": "error",
+                "error": f"That's {len(entries)} files; write at most {WRITE_FILES_MAX} at a time."}
+    from brain import revert_store
+
+    written, results = [], []
+    for entry in entries:
+        file = resolve_path(str(entry["path"]))
+        content = str(entry.get("content") or "")
+        if file.is_dir():
+            results.append({"path": str(file), "error": "That's a folder, not a file."})
+            continue
+        existed = file.exists()
+        try:
+            if existed:
+                from tools.filesystem.file_manager import refuse_non_text
+                refuse_non_text(file)
+                revert_store.capture(str(file))
+            live = _editor_text(file) if existed else None
+            if live is not None:
+                done = _finish_in_editor(file, live, content, {"status": "success"})
+                if done is not None:
+                    if done.get("status") != "success":
+                        results.append({"path": str(file), "error": done.get("error")})
+                        continue
+                    results.append({"path": str(file), "replaced": True, "editor": True,
+                                    "problems": done.get("problems")})
+                    written.append(file)
+                    continue
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text(content, encoding="utf-8")
+            results.append({"path": str(file), "replaced": existed,
+                            "lines": len(content.splitlines())})
+            written.append(file)
+        except (OSError, ValueError) as exc:
+            results.append({"path": str(file), "error": str(exc)})
+    # Written through the editor, a file already has VS Code's word on it.
+    on_disk = [r for r in results if not r.get("error") and not r.get("editor")]
+    checked = _checked_in_editor([Path(r["path"]) for r in on_disk]) if on_disk else None
+    editor_note = {}
+    if checked:
+        for r in on_disk:
+            info = checked.get(r["path"])
+            if info and (info["problems"] or info["reported"]):
+                r["problems"] = _problems(Path(r["path"]), info["problems"])
+        quiet = [Path(p).name for p, i in checked.items() if not i["problems"] and not i["reported"]]
+        if quiet:
+            editor_note["editor_check"] = (
+                f"VS Code reported nothing on {', '.join(quiet)} within "
+                f"{EDITOR_CHECK_SECONDS:g}s -- a clean file usually says nothing, but a slow "
+                "checker can too.")
+    failed = [r for r in results if r.get("error")]
+    summary = f"Wrote {len(written)} of {len(entries)} file(s)."
+    if failed:
+        summary += f" {len(failed)} failed; the others were written."
+    return {"status": "success" if written else "error", "result": summary, "files": results,
+            **editor_note, **({"error": summary} if not written else {})}
+
+
 def edit_file(
     path: str,
     old_text: str,
@@ -128,6 +344,11 @@ def edit_file(
         return {"status": "error", "error": f"No such file: {file}", "reason": NOT_FOUND}
     if file.is_dir():
         return {"status": "error", "error": f"{file} is a directory, not a file."}
+    try:
+        from tools.filesystem.file_manager import refuse_non_text
+        refuse_non_text(file)
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}
 
     if not old_text:
         return {
@@ -135,8 +356,9 @@ def edit_file(
             "error": "old_text must not be empty. To create or overwrite a whole file, use write_file.",
         }
 
+    live = _editor_text(file)
     try:
-        before = file.read_text(encoding="utf-8")
+        before = live if live is not None else file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return {"status": "error", "error": f"Could not read {file}: {exc}"}
 
@@ -183,6 +405,18 @@ def edit_file(
     revert_store.capture(str(file))
 
     after = before.replace(old_text, new_text)
+    result = {
+        "status": "success",
+        "path": str(file),
+        "replacements": occurrences,
+        "result": f"Replaced {occurrences} occurrence(s) in {file.name}.",
+        "diff": _diff(before, after, file.name) or "(no textual change)",
+    }
+    if live is not None:
+        done = _finish_in_editor(file, before, after, result)
+        if done is not None:
+            return done
+
     try:
         previous_mtime = file.stat().st_mtime
     except OSError:
@@ -194,14 +428,7 @@ def edit_file(
         return {"status": "error", "error": f"Could not write {file}: {exc}"}
 
     _ensure_visible_change(file, previous_mtime)
-
-    return {
-        "status": "success",
-        "path": str(file),
-        "replacements": occurrences,
-        "result": f"Replaced {occurrences} occurrence(s) in {file.name}.",
-        "diff": _diff(before, after, file.name) or "(no textual change)",
-    }
+    return _note_editor_check(result, file)
 
 
 def multi_edit(path: str, edits: list[dict]) -> dict:
@@ -220,8 +447,9 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
     if not edits:
         return {"status": "error", "error": "No edits were provided."}
 
+    live = _editor_text(file)
     try:
-        before = file.read_text(encoding="utf-8")
+        before = live if live is not None else file.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as exc:
         return {"status": "error", "error": f"Could not read {file}: {exc}"}
 
@@ -277,6 +505,18 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
     from brain import revert_store
     revert_store.capture(str(file))
 
+    result = {
+        "status": "success",
+        "path": str(file),
+        "replacements": applied,
+        "result": f"Applied {applied} edit(s) to {file.name}.",
+        "diff": _diff(before, working, file.name),
+    }
+    if live is not None:
+        done = _finish_in_editor(file, before, working, result)
+        if done is not None:
+            return done
+
     try:
         previous_mtime = file.stat().st_mtime
     except OSError:
@@ -288,11 +528,4 @@ def multi_edit(path: str, edits: list[dict]) -> dict:
         return {"status": "error", "error": f"Could not write {file}: {exc}"}
 
     _ensure_visible_change(file, previous_mtime)
-
-    return {
-        "status": "success",
-        "path": str(file),
-        "replacements": applied,
-        "result": f"Applied {applied} edit(s) to {file.name}.",
-        "diff": _diff(before, working, file.name),
-    }
+    return _note_editor_check(result, file)

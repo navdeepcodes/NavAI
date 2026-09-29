@@ -55,3 +55,5 @@ audio/responses/
 # release, not in git history.
 /build/
 /dist/
+# Bundled TTS runtime (piper binary + voice models) — fetched, not committed
+runtime/

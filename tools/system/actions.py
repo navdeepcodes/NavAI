@@ -21,11 +21,93 @@ def open_application(name: str, path: str | None = None) -> str:
         raise ValueError("Application name is required.")
 
     name = name.strip()
-    shell.open_application(name, path)
+    before = _window_ids()
+    handed_over = shell.open_application(name, path) is not False
 
-    if path:
-        return f"Opened {path} in {name}."
-    return f"Opened {name}."
+    # Launching is not opening. A process can start and never show a window
+    # (a bad name that resolved to something else, an app that fails at
+    # start-up, one still loading), and "Opened X" is a claim the user acts
+    # on. So it is only made once a window for it is actually seen.
+    window = _wait_for_window(name, before)
+    if window is None:
+        return (
+            f"Launched {name}, but no window for it has appeared yet — it may "
+            "still be starting, or it may not have opened. Check with "
+            "list_windows before relying on it."
+        )
+    _point_at_window(window, f"Opening {name}")
+    if path and not handed_over:
+        return (f"Opened {name} — its window “{window}” is open — but it couldn't be "
+                f"handed {path}, so that isn't open in it yet. Say so; they can open it "
+                "from inside the app.")
+    target = f"{path} in {name}" if path else name
+    return f"Opened {target} — its window “{window}” is open."
+
+
+# How long to wait for a launched app's window. Most apps show one in well
+# under a second; a cold Word or VS Code can take several.
+OPEN_WINDOW_TIMEOUT = 8.0
+
+
+def _point_at_window(title: str, label: str) -> None:
+    """Let the guide show where the app he opened is. Never raises."""
+    try:
+        from computer import attention
+        controller = _controller()
+        if controller is None or not attention.active():
+            return
+        found = next((w for w in controller.list_windows() if w.title == title), None)
+        if found is not None:
+            attention.window(found.bounds, label)
+    except Exception:
+        pass
+
+
+def _controller():
+    try:
+        from computer.session import SESSION
+        ok, _ = SESSION.availability()
+        return SESSION.controller() if ok else None
+    except Exception:
+        return None
+
+
+def _window_ids() -> set:
+    controller = _controller()
+    if controller is None:
+        return set()
+    try:
+        return {w.window_id for w in controller.list_windows()}
+    except Exception:
+        return set()
+
+
+def _wait_for_window(name: str, before: set, timeout: float = OPEN_WINDOW_TIMEOUT) -> str | None:
+    """The title of the window the launch produced, or None if none appeared.
+
+    Accepts a window whose app or title carries the name ("notepad",
+    "Calculator", "... - Visual Studio Code"), or any new window that has come
+    to the front since the launch -- nothing here knows a particular app.
+    """
+    import time
+
+    controller = _controller()
+    if controller is None:
+        return None
+    wanted = name.casefold()
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            windows = controller.list_windows()
+        except Exception:
+            return None
+        for w in windows:
+            named = wanted in (w.app or "").casefold() or wanted in (w.title or "").casefold()
+            new_in_front = w.frontmost and w.window_id not in before
+            if (named and (w.window_id not in before or w.frontmost)) or new_in_front:
+                return w.title or w.app
+        time.sleep(0.2)
+    return None
 
 
 # ---------------------------------------------------------

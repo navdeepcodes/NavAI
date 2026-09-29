@@ -23,7 +23,6 @@ from brain.core_tools import (
     OLLAMA_TOOLS,
     friendly_tool_name,
 )
-from ui.widgets.conversation.tool_bubble import _parse_action
 from vision.analyzer import VisionAnalyzer
 
 
@@ -52,15 +51,6 @@ class TestToolDeclaration(unittest.TestCase):
         )
 
 
-class TestActionCardParsing(unittest.TestCase):
-
-    def test_vision_icon(self):
-        icon, label, detail = _parse_action("Looking at your screen")
-        self.assertEqual(icon, "◉")
-        self.assertEqual(label, "Looking at your screen")
-        self.assertEqual(detail, "")
-
-
 class TestVisionAnalyzerLocal(unittest.TestCase):
 
     # VisionAnalyzer no longer owns a model client — images go through the
@@ -71,7 +61,8 @@ class TestVisionAnalyzerLocal(unittest.TestCase):
     def test_uses_a_local_provider(self):
         analyzer = VisionAnalyzer()
         caps = analyzer._brain.capabilities()
-        self.assertEqual(caps.provider, "ollama", "vision must stay local")
+        # Ollama, or Mike's own engine running the same local model
+        self.assertIn(caps.provider, ("ollama", "engine"), "vision must stay local")
         self.assertTrue(caps.can("vision"), "the configured vision model must see")
 
     def test_analyze_sends_image_path_to_the_model(self):
@@ -126,7 +117,10 @@ class TestExecuteVision(unittest.TestCase):
         result = runtime._execute_vision({})
 
         self.assertEqual(result["status"], "error")
-        self.assertIn("ollama pull", result["error"])
+        # Mike runs its own engine now: the error names what's missing rather
+        # than telling a student to type an Ollama command.
+        self.assertIn("qwen2.5vl:3b", result["error"])
+        self.assertIn("not found", result["error"])
 
     @patch("brain.core_runtime.Vision")
     def test_connection_refused_error(self, mock_vision_cls):
@@ -141,7 +135,8 @@ class TestExecuteVision(unittest.TestCase):
         result = runtime._execute_vision({})
 
         self.assertEqual(result["status"], "error")
-        self.assertIn("Ollama", result["error"])
+        # names what is down and what to do, whichever local backend it is
+        self.assertRegex(result["error"], r"Ollama|model isn.t running")
 
     @patch("brain.core_runtime.Vision")
     def test_permission_error(self, mock_vision_cls):

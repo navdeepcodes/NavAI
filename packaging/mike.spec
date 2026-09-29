@@ -11,7 +11,7 @@
 # script" tell.
 import os
 
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -41,8 +41,48 @@ hiddenimports = [
     "computer.windows",
     "voice.recognizer.windows",
     "voice.providers.windows",
+    # The wake word ("Hey Mike") and the first-run tour are reached the same
+    # way -- a platform dispatch and a lazy import inside run() -- so they are
+    # invisible to the static graph and, without these, the packaged app would
+    # silently have no wake word and no welcome on a machine that isn't this one.
+    "voice.wake.windows",
+    "ui.welcome",
+    # Mike's Windows neural voice. Reached through the voice-provider dispatch
+    # (get_provider), so nothing statically imports it; without this the
+    # packaged app would silently have only the SAPI fallback.
+    "voice.providers.piper",
+    # Reading a student's PDF / Word / PowerPoint files. document_reader
+    # imports these inside the function that needs them, and they were never
+    # installed at all until the production pass found "pypdf isn't
+    # installed" on an attached PDF -- listed explicitly so a lazy import can
+    # never again silently leave them out of the package.
+    "pypdf",
+    # documents: the tools load lazily, and Qt's PDF renderer draws scanned pages for OCR
+    *collect_submodules("tools.documents"),
+    "PySide6.QtPdf",
+    *collect_submodules("docx"),
+    *collect_submodules("pptx"),
     "win32com.client",
+    # Pygments loads lexers and styles by name at runtime (get_lexer_by_name,
+    # the "one-dark"/"friendly" styles), which the static graph never sees --
+    # without these the packaged app would render every code block as plain,
+    # uncoloured text. markdown_it's rules load the same way.
+    *collect_submodules("pygments"),
+    *collect_submodules("markdown_it"),
+    # main.py imports these only when the exe is sitting outside its install
+    # location, so nothing on the static import graph reaches them -- and a
+    # missing installer is invisible until a real user unzips the release.
+    "installer.core",
+    "installer.window",
     *collect_submodules("faster_whisper"),
+    # ToolRegistry finds Mike's tools by walking the tools package at runtime
+    # (pkgutil.iter_modules), so the static graph only ever reached the ones
+    # something else happened to import. Measured in the installed app: every
+    # open_application / open_url / ide call failed with "Unknown tool: system"
+    # and Mike fell back to run_command, turning a 4s "open notepad" into a
+    # minute of retries. Collect the whole package so the frozen app has the
+    # same tools as source.
+    *collect_submodules("tools"),
 ]
 
 # Mike is one app, but its optional surfaces each drag in a large dependency
@@ -52,7 +92,36 @@ analysis = Analysis(
     [os.path.join(REPO_ROOT, "main.py")],
     pathex=[REPO_ROOT],
     binaries=[],
-    datas=[],
+    datas=[
+        (os.path.join(REPO_ROOT, "packaging", "icon.ico"), "packaging"),
+        # Mike's typeface, Source Serif 4 (SIL Open Font License; OFL.txt ships
+        # with it). Registered at startup by ui.panel.style.load_fonts() --
+        # without these files every surface falls back to Segoe UI.
+        (os.path.join(REPO_ROOT, "ui", "fonts"), os.path.join("ui", "fonts")),
+        # The Privacy Policy, Terms and open-source licences, shown in
+        # Settings -> About and on first run; they must ship with the app.
+        (os.path.join(REPO_ROOT, "docs", "legal"), os.path.join("docs", "legal")),
+        # The VS Code bridge extension. Without this the editor integration
+        # is unreachable for anyone who didn't clone the repo: ide/bridge.py
+        # starts, listens on 8787, and nothing ever connects, because the
+        # .vsix that the other half of the protocol lives in was never
+        # shipped. Bundling it is what lets Mike offer to install it.
+        (os.path.join(REPO_ROOT, "vscode-extension", "mike-bridge-0.3.1.vsix"),
+         "vscode-extension"),
+        # The Piper neural-voice runtime: piper.exe, its DLLs and espeak-ng
+        # data, and the bundled English voice models. This is what makes Mike
+        # speak in a natural voice on a machine that only unzipped the release
+        # -- without it the voice provider finds no runtime and falls back to
+        # the SAPI system voice. Lives in runtime/ (git-ignored, fetched at
+        # setup) and is copied to piper/ beside the app.
+        (os.path.join(REPO_ROOT, "runtime", "piper"), "piper"),
+        # python-docx / python-pptx load their XML templates from package data.
+        *collect_data_files("docx"),
+        *collect_data_files("pptx"),
+        # faster-whisper's Silero voice-activity model, which the wake word
+        # uses to skip sound that isn't speech before running Whisper.
+        *collect_data_files("faster_whisper"),
+    ],
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
@@ -64,6 +133,10 @@ analysis = Analysis(
         "_pytest",
         "pyinstaller",
         "PyInstaller",
+        # No longer used: Mike's tool schemas are plain JSON Schema now. Kept
+        # out explicitly so a stale install in the build environment can't
+        # drag its ~40 MB of dependencies back into the package.
+        "google.genai",
         # Qt modules Mike never loads. PySide6 is the single largest
         # contributor to bundle size; these are the ones with no call site.
         "PySide6.QtWebEngineCore",
@@ -106,6 +179,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=os.path.join(REPO_ROOT, "packaging", "icon.ico"),
 )
 
 coll = COLLECT(

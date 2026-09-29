@@ -78,35 +78,44 @@ def test_voice_manager_auto_stop_signal():
 
 
 def test_voice_button_speaking_state():
-    """The live UI signals voice state through the Instrument dial, not an
-    emoji button.
+    """Voice state reaches the composer the app actually shows.
 
-    This previously asserted `btn.text() == "🔊"` against
-    ui.widgets.input.VoiceButton, which the current app no longer uses — the
-    Instrument surfaces replaced it and nothing in ui/instrument, ui/app.py or
-    the controller references that widget. Rewritten against the surface the
-    controller actually drives, so it tests shipped behaviour rather than a
-    retired widget.
+    UIController pushes raw voice states through page.input.voice; the mic
+    button must follow them, and the voice panel must take the message
+    field's place while the user speaks (and give it back afterwards).
     """
     from PySide6.QtWidgets import QApplication
 
     app = QApplication.instance() or QApplication(sys.argv)  # noqa: F841
 
-    from ui.instrument.home import HomeSurface
+    from config import preferences
+    from ui.workspace.workspace import MikeWorkspace
 
-    page = HomeSurface({})
+    preferences.set_value("voice_enabled", True)
+    page = MikeWorkspace({})
+    page.show()
+    composer = page.input
 
-    # These are the exact states UIController pushes through .input.voice.
-    page.input.voice.set_state("recording")
-    assert page.input.dial.state() == "listening"
+    composer.voice.set_state("recording")
+    assert composer.voice.voice_state() == "recording"
+    assert composer._status.state() == "recording"
+    assert not composer._field.isVisible(), "the trace replaces the field while you speak"
 
-    page.input.voice.set_state("transcribing")
-    assert page.input.dial.state() == "thinking"
+    # The page going to "thinking" when transcription starts must not reset the mic.
+    composer.voice.set_state("transcribing")
+    composer.voice.set_state("thinking")
+    assert composer.voice.voice_state() == "transcribing"
 
-    page.input.voice.set_state("speaking")
-    assert page.input.dial.state() == "responding"
+    composer.voice.set_state("speaking")
+    assert composer.voice.voice_state() == "speaking"
+    assert composer._field.isVisible(), "you can still type while Mike speaks"
 
-    print("PASS: voice state reaches the live dial")
+    composer.voice.set_state("idle")
+    assert composer.voice.voice_state() == "idle"
+    assert not composer._status.isVisible()
+    page.close()
+
+    print("PASS: voice state reaches the live composer")
 
 
 def test_wake_word_detector_import():

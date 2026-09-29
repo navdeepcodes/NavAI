@@ -111,8 +111,10 @@ def test_diagnostics_reports_hardware_and_voice():
     assert isinstance(hardware["concerns"], list)
 
     voice = diagnostics.check_voice()
-    assert voice["configured"] in ("native", "qwen")
-    assert voice["will_use"] in ("native", "qwen")
+    # piper is the Windows default neural voice; native is the fallback
+    # everywhere; qwen is the macOS neural voice.
+    assert voice["configured"] in ("native", "piper", "qwen")
+    assert voice["will_use"] in ("native", "piper", "qwen")
     # The configured voice and the one that will speak are not always the
     # same, and when they differ the reason must be recorded.
     if voice["configured"] != voice["will_use"]:
@@ -139,7 +141,7 @@ def test_a_hand_edited_preference_of_the_wrong_type_is_ignored(tmp_path, monkeyp
     from config import preferences
     importlib.reload(preferences)
 
-    assert preferences.get("voice_provider") == "native", "a dict got through"
+    assert preferences.get("voice_provider") == preferences.DEFAULTS["voice_provider"],         "a dict got through"
     assert preferences.get("voice_rate") == 185, "a string rate got through"
     assert preferences.get("wake_word_enabled") is True, "a string bool got through"
     assert preferences.get("voice_qwen_speaker") == "Aiden", "a valid value was lost"

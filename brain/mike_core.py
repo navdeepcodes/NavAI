@@ -22,8 +22,21 @@ from logs.logger import logger
 # ceiling, and it has room to spare), and trimming now distinguishes the
 # conversation from the tool trace instead of treating them as one stream.
 MAX_HISTORY = 80
+#: Messages a reopened chat brings back into the model's context.
+RESTORE_MESSAGES = 12
 MAX_TOOL_LOG = 10
 SUMMARY_TRIGGER_TURNS = 6
+
+# The situation summary is a full call to the same local model (measured: ~73
+# output tokens at ~4.5 tok/s, ~25 s). It used to run every SUMMARY_TRIGGER_TURNS
+# turns, immediately — so the next thing the student said queued behind it and
+# a 4 s answer took 29 s, every sixth turn, in conversations short enough that
+# every turn was still in context anyway. It is only needed once history nears
+# the trim point (old turns are about to be dropped), so it now runs only then,
+# and only after Mike has been idle for a moment; if the user starts a new turn
+# first, it backs off and is rescheduled after that turn.
+SUMMARY_HEADROOM = 20          # start summarising this many messages before the trim
+SUMMARY_IDLE_SECONDS = 20.0    # ...and only after this long with no new turn
 VISION_FRESHNESS_SECONDS = 120
 
 SUMMARY_PROMPT = """\
@@ -118,12 +131,56 @@ class MikeCore:
         # message via sync_project(), not cached indefinitely — the IDE
         # workspace can change while Mike keeps running.
         self.project_id: int | None = None
-        self.situation_summary: str = situation_store.load(project_id=None)
+        # Starts empty. The summary describes *one conversation*, and it used to
+        # be loaded from a single global row here — so the summary of whatever
+        # was said days ago ("the user says nothing is going right…") was
+        # injected into every turn of every later session, and a student's
+        # first "hey" was answered with "rough day?". A conversation's summary
+        # now travels with that conversation (conversation_store) and is put
+        # back only by restore_conversation().
+        self.situation_summary: str = ""
 
         self._last_vision: tuple[str, float] | None = None
 
         self._turns_since_summary = 0
         self._summarizing = False
+
+        # Bumped whenever the conversation is replaced (new chat / reopened
+        # chat). A background summary refresh records the epoch it started in
+        # and is discarded if the conversation changed underneath it, so a
+        # summary of the old chat can never land on the new one.
+        self._epoch = 0
+
+    # =====================================================
+    # Conversation lifecycle
+    # =====================================================
+
+    def reset_conversation(self) -> None:
+        """Start a genuinely fresh conversation: no turns, no summary, no
+        'recent activity' carried over from the one before."""
+        self._epoch += 1
+        self.history = []
+        self.tool_log = []
+        self.situation_summary = ""
+        self._turns_since_summary = 0
+
+    def restore_conversation(self, turns: list[dict[str, Any]], summary: str = "") -> None:
+        """Put a saved conversation back so Mike continues it with the same
+        context he had: its user/assistant turns and its own summary."""
+        self.reset_conversation()
+        # The most recent exchanges, not the whole chat: after a restart the
+        # model has lost its cache, and every restored token is re-read at
+        # this machine's cold speed (~60 tokens/s measured) before the first
+        # answer. A long chat restored whole cost minutes. The summary, and a
+        # mission's own record, carry what came before.
+        kept = [
+            {"role": t["role"], "content": t["content"]}
+            for t in turns
+            if t.get("role") in ("user", "assistant") and t.get("content")
+        ]
+        self.history = kept[-RESTORE_MESSAGES:]
+        self.situation_summary = summary or ""
+        self.trim_history()
 
     # =====================================================
     # Project scope
@@ -147,7 +204,12 @@ class MikeCore:
             return
 
         self.project_id = new_id
-        self.situation_summary = situation_store.load(project_id=new_id)
+        # A project keeps a summary of the work in that repo. Leaving every
+        # project (back to no project) must not resurrect some unrelated old
+        # global summary — see __init__.
+        self.situation_summary = (
+            situation_store.load(project_id=new_id) if new_id is not None else ""
+        )
 
     # =====================================================
     # Conversation history
@@ -292,30 +354,42 @@ class MikeCore:
 
     def _maybe_refresh_summary(self) -> None:
 
-        near_limit = len(self.history) >= MAX_HISTORY - 4
-
-        due = self._turns_since_summary >= SUMMARY_TRIGGER_TURNS
-
-        if not (near_limit or due):
+        # Only when old turns are about to be trimmed away: before that point
+        # the full conversation is already in context and a summary adds a
+        # ~25 s model call for nothing.
+        near_limit = len(self.history) >= MAX_HISTORY - SUMMARY_HEADROOM
+        if not near_limit:
             return
 
         if self._summarizing:
             return
 
-        turns_snapshot = list(self.history)
-        old_summary = self.situation_summary
-        project_snapshot = self.project_id
-
         self._summarizing = True
-        self._turns_since_summary = 0
-
-        thread = threading.Thread(
-            target=self._refresh_summary,
-            args=(old_summary, turns_snapshot, project_snapshot),
+        threading.Thread(
+            target=self._refresh_when_idle,
+            args=(len(self.history), self._epoch),
             daemon=True,
-        )
+        ).start()
 
-        thread.start()
+    def _refresh_when_idle(self, history_len: int, epoch: int) -> None:
+        """Wait for a quiet moment, then summarise — never in front of the
+        user's next message. The local model serves one request at a time, so
+        a summary started as a turn ends is a summary the next turn waits for."""
+        # Right at the trim point there's no time to wait for a quiet moment:
+        # summarise now rather than let turns be dropped unsummarised.
+        urgent = history_len >= MAX_HISTORY - 4
+        deadline = time.monotonic() + (0.0 if urgent else SUMMARY_IDLE_SECONDS)
+        while time.monotonic() < deadline:
+            if len(self.history) != history_len or epoch != self._epoch:
+                # A new turn (or a different conversation) began: back off.
+                # The next completed turn schedules another attempt.
+                self._summarizing = False
+                return
+            time.sleep(0.25)
+
+        self._turns_since_summary = 0
+        self._refresh_summary(
+            self.situation_summary, list(self.history), self.project_id, epoch)
 
     # -----------------------------------------------------
 
@@ -324,6 +398,7 @@ class MikeCore:
         old_summary: str,
         turns: list[dict],
         project_id: int | None,
+        epoch: int | None = None,
     ) -> None:
 
         try:
@@ -357,9 +432,19 @@ class MikeCore:
 
             summary = (result.text or "").strip()
 
+            # The conversation was replaced while this ran (new chat, or a
+            # different chat reopened): this summary describes one that no
+            # longer exists here, so it must not be applied or saved.
+            if epoch is not None and epoch != self._epoch:
+                return
+
             if summary:
 
-                situation_store.save(summary, project_id=project_id)
+                # Project summaries persist per project. The no-project scope
+                # is conversation-owned (conversation_store) and is never
+                # reloaded from situation_store, so don't write it there.
+                if project_id is not None:
+                    situation_store.save(summary, project_id=project_id)
 
                 # Only update the live summary if the project hasn't changed
                 # under us mid-refresh — otherwise this would clobber the

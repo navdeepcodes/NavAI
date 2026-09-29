@@ -252,3 +252,16 @@ if __name__ == "__main__":
     for fn in [v for k, v in sorted(globals().items()) if k.startswith("test_")]:
         fn()
     print("\nAll tool-call parsing tests passed.")
+
+
+def test_running_out_of_memory_is_said_as_that_not_as_a_parse_failure():
+    """Ollama reports a model that can't be loaded as HTTP 500 too. It was
+    told as "a tool call the server couldn't parse" -- and retried twice,
+    53s, failing the same way each time."""
+    provider = _ollama_provider()
+    error = provider.translate_error(Exception(
+        "llama-server startup failed after projector CPU offload retry: llama-server reported "
+        "out-of-memory during startup: ggml_gallocr_reserve_n_impl: failed to allocate Vulkan0 "
+        "buffer of size 175505408 (status code: 500)"))
+    assert "memory" in error.human() and "parse" not in error.human()
+    assert error.retry_safe is False

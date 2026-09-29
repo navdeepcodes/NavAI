@@ -55,12 +55,14 @@ class StreamEvent:
     `kind` is one of:
       text       — a chunk of assistant prose, in `text`
       tool_call  — a completed tool call, in `tool_call`
+      preparing  — a tool call still being written: its name, and the
+                   arguments that are whole so far, in `tool_call`
       error      — the model or provider failed, in `error`; the loop stops
       done       — the turn finished; `truncated` says whether it finished
                    because the model was done or because it ran out of room
     """
 
-    kind: Literal["text", "tool_call", "error", "done"]
+    kind: Literal["text", "tool_call", "preparing", "error", "done"]
     text: str = ""
     tool_call: ToolCall | None = None
     error: "BrainError | None" = None
@@ -111,6 +113,8 @@ class BrainError:
     message: str
     detail: str = ""
     retry_safe: bool = False
+    #: The HTTP status, when the failure was an HTTP answer (0 otherwise).
+    status: int = 0
 
     def human(self) -> str:
         return self.message
@@ -303,10 +307,24 @@ class BrainProvider(ABC):
         transport failure; yield a StreamEvent(kind="error") instead."""
 
     @abstractmethod
-    def complete(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResult:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
         """One-shot reply, for callers that don't stream (summarisation,
         wrap-up). Providers without streaming may implement stream() on top
-        of this so the runtime keeps working either way."""
+        of this so the runtime keeps working either way.
+
+        max_tokens caps this one request's generation, overriding the
+        provider's configured limit. It exists for a caller that wants the
+        model to *process* a prompt without paying to generate a reply it
+        will throw away -- CoreRuntime.warm() sends the shared prefix purely
+        to get it into the KV cache, and without a cap it would sit there
+        generating up to the full num_predict budget for nobody.
+        """
 
     @abstractmethod
     def health(self) -> BrainError | None:

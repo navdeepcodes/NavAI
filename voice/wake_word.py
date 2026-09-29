@@ -54,6 +54,13 @@ class WakeWordDetector:
         if self._backend is not None:
             self._backend.resume()
 
+    def take_preroll(self):
+        """What was said after "Hey Mike" before the recorder opened, and the
+        room's noise level -- (None, None) if nothing is held."""
+        if self._backend is None:
+            return None, None
+        return self._backend.take_preroll()
+
     @property
     def is_active(self) -> bool:
         return self._backend.is_active if self._backend is not None else False

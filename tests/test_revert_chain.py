@@ -6,7 +6,7 @@ unrelated write — clicking "revert this" in History silently discarded
 that state with zero warning and zero way back.
 
 Proves two things against the real code (not a mock): a revert always
-snapshots first, and HomeSurface._revert_change links that snapshot to a
+snapshots first, and Undo in Settings → Activity links that snapshot to a
 real activity row, so a mistaken revert is itself always one more click
 away from being undone.
 """
@@ -56,12 +56,24 @@ def test_revert_survives_an_intervening_edit():
     print("PASS: revert() snapshots the current state before overwriting it")
 
 
-def test_home_revert_change_links_snapshot_to_a_findable_activity_row():
+def _click_undo(tab):
+    """Press the newest row's Undo in the Activity tab — twice, because Undo
+    asks once before it acts."""
+    from PySide6.QtWidgets import QPushButton
+
+    buttons = [b for b in tab.findChildren(QPushButton) if b.text() == "Undo" and b.isVisibleTo(tab)]
+    assert buttons, "a change with a snapshot must offer Undo"
+    buttons[0].click()
+    assert buttons[0].text() == "Undo this?", "Undo must ask once before acting"
+    buttons[0].click()
+
+
+def test_activity_undo_links_snapshot_to_a_findable_activity_row():
     from PySide6.QtWidgets import QApplication
 
     from brain import activity_store, revert_store
     from tools.filesystem import actions
-    from ui.instrument.home import HomeSurface
+    from ui.workspace.pages import ActivityTab
 
     QApplication.instance() or QApplication(sys.argv)
 
@@ -71,11 +83,11 @@ def test_home_revert_change_links_snapshot_to_a_findable_activity_row():
     Path(target).write_text('{"v": 1}')
     row1 = activity_store.begin("Writing config.json")
     actions.write_file(target, '{"v": 2}')
+    activity_store.complete(row1, "Wrote config.json", True)
     revert_store.attach_to_activity(row1)
 
-    page = HomeSurface({})
-    snap1 = revert_store.for_activity(row1)
-    page._revert_change(snap1["id"])
+    tab = ActivityTab()
+    _click_undo(tab)
 
     assert Path(target).read_text() == '{"v": 1}'
 
@@ -87,14 +99,31 @@ def test_home_revert_change_links_snapshot_to_a_findable_activity_row():
     assert snap2 is not None, "the revert's own before-state must be linked to its activity row"
     assert snap2["previous_content"] == '{"v": 2}'
 
-    # And that revert is itself revertible, through the exact same UI path.
-    page._revert_change(snap2["id"])
+    # And that revert is itself revertible, through the exact same UI path —
+    # the tab has rebuilt, so the newest Undo belongs to the revert.
+    _click_undo(tab)
     assert Path(target).read_text() == '{"v": 2}', "reverting the revert must restore what it undid"
 
-    print("PASS: HomeSurface._revert_change makes every revert itself revertible")
+    print("PASS: Activity → Undo makes every revert itself revertible")
+
+
+def test_failed_actions_offer_no_undo():
+    from PySide6.QtWidgets import QApplication, QPushButton
+
+    from brain import activity_store
+    from ui.workspace.pages import ActivityTab
+
+    QApplication.instance() or QApplication(sys.argv)
+    activity_store.clear()
+    row = activity_store.begin("Opening Notepad")
+    activity_store.complete(row, "Notepad isn't installed.", False)
+
+    tab = ActivityTab()
+    labels = [b.text() for b in tab.findChildren(QPushButton)]
+    assert "Undo" not in labels
 
 
 if __name__ == "__main__":
     test_revert_survives_an_intervening_edit()
-    test_home_revert_change_links_snapshot_to_a_findable_activity_row()
+    test_activity_undo_links_snapshot_to_a_findable_activity_row()
     print("\nAll revert-chain regression tests passed.")

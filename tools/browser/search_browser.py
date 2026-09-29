@@ -42,6 +42,7 @@ def _fetch(url: str, timeout: int = 9) -> str:
         encoding="utf-8",
         errors="replace",
         timeout=timeout + 3,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     return result.stdout if result.returncode == 0 else ""
 

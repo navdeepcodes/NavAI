@@ -1,28 +1,40 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QThread, QTimer
+import threading
+from typing import TYPE_CHECKING
 
-from brain import activity_store, projects
+from PySide6.QtCore import QObject, QThread, QTimer, Signal
+
+from brain import activity_store, conversation_store, projects
 from brain.core_runtime import CoreRuntime
 from config import preferences
 from ui.controller.core_worker import CoreRuntimeWorker
-from ui.instrument.edge import EdgeStrip
-from ui.instrument.home import HomeSurface
-from ui.instrument.invoke import InvokeLine
 from voice.speaker import Speaker
 from voice.voice_input import VoiceInputManager
 from voice.wake_word import WakeWordDetector
 from logs.logger import logger
 
+if TYPE_CHECKING:
+    from ui.workspace.corner import CornerPresence
+    from ui.workspace.workspace import MikeWorkspace
+
 
 class UIController(QObject):
+
+    #: "Hey Mike" was heard. The wake listener hears it on its own thread;
+    #: a signal carries it to this one. Called directly, as it was, the
+    #: handler ran on the listener's thread: its QTimer.singleShot never
+    #: fired there (measured -- a plain Python thread has no event loop), so
+    #: on Windows the corner said "listening" and the mic never opened.
+    _wake_heard = Signal()
+    #: "Mike: Ask about this" in VS Code -- asked on the bridge's thread.
+    _ide_asked = Signal(str)
 
     def __init__(
         self,
         runtime: CoreRuntime,
-        page: HomeSurface,
-        floating: InvokeLine | None = None,
-        edge: EdgeStrip | None = None,
+        page: MikeWorkspace,
+        floating: CornerPresence | None = None,
     ) -> None:
 
         super().__init__()
@@ -30,7 +42,6 @@ class UIController(QObject):
         self._runtime = runtime
         self._page = page
         self._floating = floating
-        self._edge = edge
 
         self._thread: QThread | None = None
         self._worker: CoreRuntimeWorker | None = None
@@ -43,12 +54,51 @@ class UIController(QObject):
         self._voice = VoiceInputManager()
         self._speaker = Speaker()
         self._response_text = ""
+        # The text of the bubble being streamed right now. A turn can hold
+        # several bubbles (a sentence before a tool, the answer after it), and
+        # each must end holding only its own words.
+        self._bubble_text = ""
         self._spoken_up_to = 0
         self._speech_pump_timer = QTimer()
         self._speech_pump_timer.setInterval(100)
         self._speech_pump_timer.timeout.connect(self._pump_speech)
 
-        self._wake = WakeWordDetector(on_wake=self._on_wake_word)
+        # A step being written out (several files' content): which one, once
+        # it has taken more than a moment -- a quick one would only flash.
+        self._preparing_timer = QTimer()
+        self._preparing_timer.setSingleShot(True)
+        self._preparing_timer.setInterval(400)
+        self._preparing_timer.timeout.connect(self._show_preparing)
+        self._preparing = ""
+        self._preparing_shown = False
+
+        self._wake_heard.connect(self._on_wake_word)
+        self._wake = WakeWordDetector(on_wake=self._wake_heard.emit)
+
+        self._ide_asked.connect(self._on_ide_ask)
+        try:
+            from ide import manager as ide_manager
+            ide_manager.set_ask_handler(self._ide_asked.emit)
+        except Exception:
+            logger.debug("Couldn't take questions from the editor.", exc_info=True)
+
+        # Lets the speech-to-text prewarm's initial wait be cut short on
+        # shutdown, so a window torn down within a few seconds of opening
+        # doesn't leave a thread sleeping — which a rapid open/close cycle
+        # otherwise accumulates one at a time.
+        self._prewarm_stop = threading.Event()
+        self._prewarm_thread: threading.Thread | None = None
+
+        # The saved conversation this chat belongs to. Created lazily on the
+        # first message, so opening Mike and closing him again doesn't leave
+        # empty chats cluttering History.
+        self._conversation_id: int | None = None
+        self.mission_welcome = ""
+
+        # What the user is getting done, kept true from the files themselves.
+        from ui.controller.mission_tracker import MissionTracker
+        self._missions = MissionTracker(self)
+        self._missions.changed.connect(self._on_mission_changed)
 
         self._connect()
 
@@ -82,6 +132,10 @@ class UIController(QObject):
             self._on_voice_error
         )
 
+        self._voice.nothing_heard.connect(
+            self._on_nothing_heard
+        )
+
         self._page.activity.stop_requested.connect(
             self.cancel_active
         )
@@ -90,9 +144,17 @@ class UIController(QObject):
             lambda: self._resolve_confirmation(True)
         )
 
+        always = getattr(self._page.confirm, "always", None)
+        if always is not None:
+            always.connect(lambda: self._resolve_confirmation("always"))
+
         self._page.confirm.denied.connect(
             lambda: self._resolve_confirmation(False)
         )
+
+        mission_bar = getattr(self._page, "mission", None)
+        if mission_bar is not None:
+            mission_bar.drop_requested.connect(self._drop_mission)
 
         if self._floating:
             self._floating.message_submitted.connect(
@@ -101,37 +163,109 @@ class UIController(QObject):
             self._floating.cancel_requested.connect(
                 self.cancel_active
             )
+            # the corner's own mic and approvals: the same as the full window's
+            self._floating.voice_requested.connect(self._on_voice_button)
+            self._floating.answered.connect(self._resolve_confirmation)
 
     def startup(self) -> None:
 
+        # Reopening Mike continues the chat you were in, if it's recent. Done
+        # before the model warm-up below so the warmed prefix is the one the
+        # next question will actually use.
+        self.resume_recent_conversation()
+        self._missions.start()
+
         if preferences.get("wake_word_enabled", True):
             self._wake.start()
+
+        # Pay the model's cold prefill now, off the GUI thread, while the
+        # user is still reading the greeting -- see CoreRuntime.warm(). On a
+        # machine with no GPU offload path this is the difference between a
+        # first reply that lands in seconds and one that takes minutes.
+        # Daemon so it can never hold up quitting, and it touches nothing
+        # the UI owns.
+        threading.Thread(
+            target=self._runtime.warm, name="model-warm", daemon=True,
+        ).start()
+
+        # Load the speech-to-text model now too, so the first spoken turn
+        # doesn't freeze on a first-run download. Started a few seconds behind
+        # the brain warm so the window paints and the greeting speaks first,
+        # then the (network-bound) model download runs while the user reads.
+        # Only when voice is actually in play — no point pulling ~1.5GB for
+        # someone who has turned voice off.
+        if preferences.get("voice_enabled", True) or preferences.get("wake_word_enabled", True):
+            def _prewarm_stt() -> None:
+                # Interruptible wait: if the window is torn down first, this
+                # returns immediately instead of holding a sleeping thread.
+                if self._prewarm_stop.wait(3):
+                    return
+                try:
+                    from voice.recognizer import get_recognizer
+                    get_recognizer().prewarm()
+                except Exception:
+                    logger.exception("Speech-to-text prewarm failed.")
+            self._prewarm_thread = threading.Thread(
+                target=_prewarm_stt, name="stt-prewarm", daemon=True)
+            self._prewarm_thread.start()
+
+        # Syntax highlighting loads its modules the first time a reply has
+        # code -- measured, a 188ms freeze at the end of that reply. Loaded in
+        # the background a moment after launch instead.
+        def _warm_render() -> None:
+            if self._prewarm_stop.wait(2):
+                return
+            try:
+                from ui.panel import richtext
+                richtext.warm()
+            except Exception:
+                logger.debug("Couldn't load the syntax highlighters ahead.", exc_info=True)
+        threading.Thread(target=_warm_render, name="render-warm", daemon=True).start()
 
     def _on_floating_submit(self, text: str) -> None:
         self._floating.clear_response()
         self._floating.set_state("thinking")
         self.process_message(text)
 
-    def process_message(self, message: str) -> None:
+    def process_message(self, message: str, by_voice: bool = False) -> None:
 
         message = message.strip()
 
-        if not message:
+        # An attachment on its own is a real turn ("here, read this"), so a
+        # message is allowed to be empty as long as something was attached.
+        attachments = self._page.take_attachments()
+        if not message and not attachments:
             return
+        # Spoken turns get a spoken conversation: see _maybe_follow_up.
+        self._by_voice = by_voice
 
         self._retire_active_worker()
 
-        self._mirror_edge("thinking")
 
-        self._page.add_user_message(message)
+        self._page.add_user_message(message, attachments=attachments)
 
+        # Keep what was said, so the chat survives a restart and shows up in
+        # History. Attachments are recorded by name — the file itself stays
+        # where the user keeps it.
+        if self._conversation_id is None:
+            self._conversation_id = conversation_store.create()
+        import os as _os
+        conversation_store.add_message(
+            self._conversation_id, "user", message,
+            [_os.path.basename(a) for a in attachments],
+        )
+        self._notify_conversation()
+
+        self._stop_preparing()
         self._page.show_thinking()
+        self._guide_turn(True)
 
         self._page.input.set_enabled(False)
 
         self._stream_bubble = None
         self._action_card = None
         self._response_text = ""
+        self._spoken_up_to = 0          # counted in _response_text: a stale one skips the next reply's first words
         self._speaker.stop()
         # A new turn is the right moment to give the preferred voice another
         # go. Retrying mid-reply turns one failure into a stutter of them;
@@ -148,6 +282,7 @@ class UIController(QObject):
         self._worker = CoreRuntimeWorker(
             self._runtime,
             message,
+            attachments=attachments,
         )
 
         self._worker.moveToThread(self._thread)
@@ -156,7 +291,9 @@ class UIController(QObject):
 
         self._worker.token.connect(self._on_token)
         self._worker.tool_start.connect(self._on_tool_start)
+        self._worker.tool_progress.connect(self._on_tool_progress)
         self._worker.tool_end.connect(self._on_tool_end)
+        self._worker.preparing.connect(self._on_preparing)
         self._worker.finished.connect(self._on_finished)
         self._worker.error.connect(self._on_error)
         self._worker.confirmation_needed.connect(
@@ -168,23 +305,49 @@ class UIController(QObject):
 
         self._thread.start()
 
+    def _on_preparing(self, label: str) -> None:
+        """Mike has started writing a step out -- several files' content can
+        take a while: say which, instead of a line of unrelated thoughts."""
+        self._preparing = label
+        if self._preparing_shown:
+            self._page.thinking_hint(label)
+        elif not self._preparing_timer.isActive():
+            self._preparing_timer.start()
+
+    def _show_preparing(self) -> None:
+        if self._preparing and self._worker is not None:
+            self._preparing_shown = True
+            self._page.thinking_hint(self._preparing)
+            if self._floating and self._floating.isVisible():
+                self._floating.show_tool_status(self._preparing)
+
+    def _stop_preparing(self) -> None:
+        self._preparing_timer.stop()
+        self._preparing, self._preparing_shown = "", False
+
     def _on_token(self, text: str) -> None:
 
+        self._stop_preparing()
         self._page.hide_thinking()
 
         if self._stream_bubble is None:
             self._stream_bubble = self._page.begin_mike_stream()
+            self._bubble_text = ""
             # Deliberately not suppressing the wake word here — this is what
             # lets "Hey Mike" interrupt him mid-sentence. Verified empirically
             # against this machine's own TTS output (twice, saying the wake
             # phrase itself) with zero false triggers before relying on it.
-            self._page.input.voice.set_state("speaking")
+            # Only shown as speaking when there is actually a voice: with
+            # speech turned off, the mic claiming "speaking" was a small lie.
+            if self._speech_allowed():
+                self._page.input.voice.set_state("speaking")
             self._speech_pump_timer.start()
 
             if self._floating and self._floating.isVisible():
                 self._floating.set_state("speaking")
 
         self._stream_bubble.append_text(text)
+        self._bubble_text += text
         self._response_text += text
         self._try_speak_sentences()
 
@@ -200,13 +363,13 @@ class UIController(QObject):
         if not self._speech_allowed():
             return
         pending = self._response_text[self._spoken_up_to:]
-        import re
-        parts = re.split(r'(?<=[.!?])\s+', pending)
-        if len(parts) > 1:
-            for sentence in parts[:-1]:
-                if sentence.strip():
-                    self._speaker.speak_sentence(sentence)
-            self._spoken_up_to = len(self._response_text) - len(parts[-1])
+        cuts = _sentence_cuts(pending, first=self._spoken_up_to == 0)
+        start = 0
+        for end in cuts:
+            if pending[start:end].strip():
+                self._speaker.speak_sentence(pending[start:end])
+            start = end
+        self._spoken_up_to += start
 
     def _pump_speech(self) -> None:
         self._speaker.pump()
@@ -225,54 +388,43 @@ class UIController(QObject):
             if self._floating and self._floating.isVisible():
                 self._floating.finish()
 
-    # The edge exists for when Mike has no other surface on screen. If the
-    # Home or the floating input is already up, a second strip saying the same
-    # thing is just clutter.
-    _EDGE_WORTH_A_GLANCE = ("working", "needs_user", "error")
+            self._maybe_follow_up()
 
-    def _edge_available(self) -> bool:
+    #: After answering something said aloud, Mike listens this long for a
+    #: reply -- "yes, save it" -- before going back to waiting for "Hey Mike".
+    FOLLOW_UP_SECONDS = 5
 
-        if self._edge is None:
-            return False
-
-        if self._floating is not None and self._floating.isVisible():
-            return False
-
-        window = self._page.window()
-        if window is not None and window.isVisible() and not window.isMinimized():
-            return False
-
-        return True
-
-    def _mirror_edge(self, state: str, text: str = "") -> None:
-        """
-        Reflects real state, but only states a person would actually want to
-        catch out of the corner of their eye. "Thinking" is not one of them.
-        """
-
-        if self._edge is None:
+    def _maybe_follow_up(self) -> None:
+        """A spoken question, a spoken answer, and then the mic stays open a
+        moment: a conversation, not a series of commands each needing the
+        name first. Only after a spoken turn that has fully finished -- never
+        while an approval is waiting, where a spoken "yes" would start a new
+        turn instead of answering the card."""
+        by_voice, self._by_voice = getattr(self, "_by_voice", False), False
+        if not by_voice or not preferences.get("voice_follow_up", True):
+            return
+        if self._worker is not None or self._page.state() in ("working", "needs_user"):
             return
 
-        try:
-            if not self._edge_available():
-                self._edge.dismiss()
-                return
-
-            if state in self._EDGE_WORTH_A_GLANCE:
-                self._edge.show_state(state, text)
-            else:
-                self._edge.dismiss()
-
-        except Exception:
-            logger.exception("Edge surface update failed.")
+        def listen() -> None:
+            if self._voice.state == "idle" and not self._speaker.is_speaking():
+                self._start_voice(follow_up=True)
+        QTimer.singleShot(250, listen)
 
     def _on_tool_start(self, description: str) -> None:
 
-        self._mirror_edge("working", description)
-
+        self._stop_preparing()
         self._page.hide_thinking()
 
+        # What Mike said before this step is finished: give it its full
+        # render, without the "Copy" a final answer carries.
+        if self._stream_bubble is not None:
+            try:
+                self._stream_bubble.set_text(self._bubble_text, final=False)
+            except TypeError:
+                self._stream_bubble.set_text(self._bubble_text)
         self._stream_bubble = None
+        self._bubble_text = ""
 
         self._action_card = self._page.add_action_card(
             description
@@ -283,6 +435,18 @@ class UIController(QObject):
         # workspace root), so this can be filtered per-project later without
         # a second table — untagged rows just mean "no project was open".
         self._activity_row = activity_store.begin(description, project_id=projects.current())
+
+        if self._floating and self._floating.isVisible():
+            self._floating.show_tool_status(description)
+
+    def _on_tool_progress(self, description: str) -> None:
+        """Updates the current row's own text in place -- for a step like a
+        model download, whose duration is real (minutes, not the second or
+        two most tool calls take) and worth narrating as it goes, rather
+        than a card whose label is fixed the moment it appears."""
+        if self._action_card is not None and hasattr(self._action_card, "update_text"):
+            self._action_card.update_text(description)
+
 
         if self._floating and self._floating.isVisible():
             self._floating.show_tool_status(description)
@@ -327,6 +491,15 @@ class UIController(QObject):
             if self._floating and self._floating.isVisible():
                 self._floating.show_tool_done(label or status[:40], success=not is_error)
 
+        # The dead gap. A finished step settles to a static tick, and the
+        # model then takes seconds-to-a-minute composing what it will say
+        # about it -- during which nothing on screen moved at all. Watching a
+        # motionless "done" row for a minute reads as a hang, which is the
+        # exact thing the thinking animation exists to prevent; it was just
+        # never brought back after the first tool call took it away.
+        # _on_token hides it again the instant the reply starts arriving.
+        self._page.show_thinking()
+
     def _finalize_retired_activity(self, row_id: int, status: str) -> None:
         """
         Same bookkeeping as _on_tool_end, for a tool_start that already fired
@@ -352,10 +525,54 @@ class UIController(QObject):
                 logger.exception("Could not attach revert snapshot.")
 
     def _on_finished(self) -> None:
+        self._guide_turn(False)
 
+        self._stop_preparing()
         self._page.hide_thinking()
 
+        # Fast mode switched models this turn (the day's allowance ran out,
+        # Cloudflare unreachable, or back again): one line, so a reply that is
+        # suddenly slow -- or fast again -- has a reason the student can see.
+        take_notice = getattr(getattr(self._runtime, "_brain", None), "take_notice", None)
+        if callable(take_notice):
+            try:
+                notice = take_notice()
+            except Exception:
+                notice = None
+            if isinstance(notice, str) and notice:
+                self._add_notice(notice, "info")
+
+        # The reply is complete, so the shape-level tells can be seen and
+        # removed: the "or should I distract you?" support-menu and stray
+        # emoji the model adds against instructions. Rewrite the bubble only
+        # when this actually changes something, so an ordinary reply — which
+        # is almost all of them — never flickers. Voice is cleaned separately,
+        # in clean_for_speech, since it speaks sentence by sentence.
+        from brain.reply_style import humanize_reply
+        # What hasn't been spoken yet, counted in the text as it streamed: the
+        # tidied text below can be shorter, and counting in it made the last
+        # words skip or repeat -- the voice not matching the reply.
         remainder = self._response_text[self._spoken_up_to:].strip()
+        humanized = humanize_reply(self._response_text)
+        self._response_text = humanized
+        # Always finalise the bubble: set_text does the full, syntax-highlighted
+        # Markdown render (streaming only ever did the fast plain pass), and it
+        # applies the humanised text whether or not the guard changed anything.
+        # It gets its own words only — the whole turn's text here repeated any
+        # sentence Mike said before a tool ("I'll set that up. I'll set that
+        # up. Done — …").
+        if self._stream_bubble is not None:
+            self._stream_bubble.set_text(humanize_reply(self._bubble_text))
+        self._bubble_text = ""
+
+        # The corner streamed the raw tokens, so it still shows the pre-guard
+        # text (the "or should I distract you?" menu the humaniser strips). Give
+        # it the cleaned final reply too, so the companion never shows what the
+        # main surface just removed.
+        if (self._floating is not None and self._floating.isVisible()
+                and humanized.strip()):
+            self._floating.set_response(humanized)
+
         if remainder and self._speech_allowed():
             self._speaker.speak_sentence(remainder)
         self._speaker.finish_streaming()
@@ -376,6 +593,20 @@ class UIController(QObject):
 
         answer = self._response_text.strip()
 
+        # Save Mike's final (humanised) reply and the conversation's running
+        # summary, so reopening this chat restores exactly what was said and
+        # the context Mike had — not a summary of some other conversation.
+        if answer:
+            conversation_store.add_message(self._conversation_id, "assistant", answer)
+        try:
+            conversation_store.set_summary(
+                self._conversation_id, self._runtime.situation_summary)
+        except Exception:
+            logger.debug("Could not save the conversation summary.", exc_info=True)
+
+        # A turn may have started, advanced or finished a mission.
+        self._missions.refresh()
+
         self._stream_bubble = None
         self._action_card = None
         self._response_text = ""
@@ -393,25 +624,31 @@ class UIController(QObject):
         )
         self._page.set_state("speaking" if still_speaking else "idle")
 
-        # The edge carries the answer only when the Home isn't already
-        # showing it — otherwise the same text would appear twice.
-        if answer and self._edge_available():
-            self._edge.show_message(answer)
-        elif self._edge is not None:
-            self._edge.dismiss()
-
         self._page.input.set_enabled(True)
         self._page.input.focus()
 
+    def _guide_turn(self, begin: bool) -> None:
+        """The task starts or ends, for the nib that shows where Mike works."""
+        guide = getattr(self, "guide", None)
+        if guide is None:
+            return
+        try:
+            guide.begin_turn() if begin else guide.end_turn()
+        except Exception:
+            logger.debug("The guide couldn't follow the turn.", exc_info=True)
+
     def _on_error(self, error: str) -> None:
 
+        self._guide_turn(False)
+        self._stop_preparing()
         self._page.hide_thinking()
 
         readable = _humanize_error(error)
 
-        self._page.add_mike_message(readable)
+        # Shown as what it is — a problem, with its fix — rather than dressed
+        # up as something Mike said.
+        self._add_notice(readable, "error")
         self._page.set_state("error")
-        self._mirror_edge("error", readable)
 
         if self._floating and self._floating.isVisible():
             self._floating.set_response(readable)
@@ -419,25 +656,38 @@ class UIController(QObject):
 
         self._stream_bubble = None
         self._action_card = None
+        self._response_text = ""
+        self._spoken_up_to = 0
 
         self._page.input.set_enabled(True)
         self._page.input.focus()
 
-    def _show_confirmation(self, description: str) -> None:
+    def _show_confirmation(self, description: str, offer: str = "") -> None:
         """
         The worker thread is parked on an event until this resolves, so the
         prompt is shown inline rather than as a modal — same gate, no dialog.
+        `offer` is the session-long approval the card can also give ("Allow
+        edits in NavAI this session"), or "" when there's none.
         """
 
         self._state_before_confirm = self._page.state()
+        logger.info("Asking the user to approve: %s", (description or "").splitlines()[0][:160] if description else "")
 
         self._page.set_state("needs_user")
-        self._page.confirm.ask(description)
-        self._mirror_edge("needs_user", "Waiting for your approval")
+        self._page.confirm.ask(description, offer)
+        # With the workspace minimised, the corner is all there is on screen:
+        # the question is asked there too, not left waiting unseen.
+        if self._floating is not None and self._floating.isVisible():
+            self._floating.ask(description, offer)
 
-    def _resolve_confirmation(self, approved: bool) -> None:
+    def _resolve_confirmation(self, approved) -> None:
+        """True, False, or "always" -- yes, and for the rest of the session."""
 
+        logger.info("The user %s it.", "allowed it for the session" if approved == "always"
+                    else "approved" if approved else "declined")
         self._page.confirm.hide()
+        if self._floating is not None:
+            self._floating.hide_confirmation()        # answered in either place
 
         restore = getattr(self, "_state_before_confirm", "working")
         self._page.set_state(restore if restore != "needs_user" else "working")
@@ -463,9 +713,14 @@ class UIController(QObject):
         elif self._voice.state == "recording":
             self._voice.stop_recording()
 
-    def _start_voice(self) -> None:
+    def _start_voice(self, from_wake: bool = False, follow_up: bool = False) -> None:
         self._wake.suppress()
-        self._voice.start_recording()
+        # After "Hey Mike", what was said in the same breath is already heard;
+        # it starts the recording, and the room's level comes with it.
+        preroll, floor = self._wake.take_preroll() if from_wake else (None, None)
+        self._voice.start_recording(
+            preroll=preroll, noise_floor=floor,
+            no_speech_seconds=self.FOLLOW_UP_SECONDS if follow_up else None)
 
     def _on_voice_button(self) -> None:
 
@@ -501,7 +756,7 @@ class UIController(QObject):
             elif state == "transcribing":
                 self._floating.set_state("transcribing")
             elif state == "idle":
-                pass
+                self._floating.voice_stopped()        # the mic button back to "talk"
 
         if state == "idle":
             self._wake.resume()
@@ -517,11 +772,27 @@ class UIController(QObject):
         if self._floating and self._floating.isVisible():
             self._floating.set_state("thinking")
 
-        self.process_message(text)
+        self.process_message(text, by_voice=True)
+
+    def _on_ide_ask(self, question: str) -> None:
+        """A question asked in the editor. The student is in VS Code and stays
+        there: Mike answers in the corner, which doesn't take the keyboard,
+        and sees the file, selection and problems as every turn does."""
+        if self._floating is not None:
+            self._floating.show_presence()
+            self._floating.set_state("thinking")
+        self.process_message(question)
+
+    def _on_nothing_heard(self) -> None:
+        """The mic opened and nobody spoke: settle back quietly. A false "Hey
+        Mike" shouldn't leave the corner saying "listening", or a notice
+        telling someone who said nothing that Mike couldn't understand them."""
+        if self._floating and self._floating.isVisible():
+            self._floating.finish()
 
     def _on_voice_error(self, message: str) -> None:
 
-        self._page.add_mike_message(message)
+        self._add_notice(message, "info")
 
         if self._floating and self._floating.isVisible():
             self._floating.set_response(message)
@@ -545,11 +816,24 @@ class UIController(QObject):
             self._floating.activate(start_listening=True)
 
         if self._voice.state == "idle":
-            QTimer.singleShot(0, self._start_voice)
+            self._start_voice(from_wake=True)
 
     # =====================================================
     # Preferences applied to the live engines
     # =====================================================
+
+    def stop_speaking(self) -> None:
+        """Silence Mike mid-answer without touching anything else."""
+        if not (self._speaker.is_speaking() or self._speech_pump_timer.isActive()):
+            return
+        self._speaker.stop()
+        self._speech_pump_timer.stop()
+        self._page.input.voice.set_state("idle")
+        self._wake.resume()
+        if self._page.state() == "speaking":
+            self._page.set_state("idle")
+        if self._floating and self._floating.isVisible():
+            self._floating.finish()
 
     def set_voice_enabled(self, enabled: bool) -> None:
         """Turning speech off should silence Mike immediately, not next turn."""
@@ -568,6 +852,183 @@ class UIController(QObject):
                 self._wake.stop()
         except Exception:
             logger.exception("Could not change wake word state.")
+
+    # =====================================================
+    # Conversations
+    # =====================================================
+
+    #: Reopening Mike continues the last chat only if it's this recent; after
+    #: that, a new session starts fresh (the old chat stays in History).
+    RESUME_WITHIN_HOURS = 12
+
+    def _quiesce(self) -> None:
+        """Stop whatever turn is running before the conversation changes.
+
+        A cancelled worker can still append its partial reply to the runtime's
+        history as it unwinds; resetting history underneath it would let that
+        reply leak into the new chat. Cancellation stops the model stream within
+        a chunk, so the wait is normally a fraction of a second, and it is
+        bounded so a slow tool can never freeze the window.
+        """
+        self._speaker.stop()
+        self._speech_pump_timer.stop()
+        if self._worker is not None:
+            self.cancel_active()
+        for thread in list(self._retired_threads):
+            try:
+                thread.wait(2500)
+            except Exception:
+                pass
+
+    def new_conversation(self) -> None:
+        """Start a fresh chat: new screen, and Mike genuinely forgets the old
+        one (it stays saved in the rail)."""
+        self._quiesce()
+        self._conversation_id = None
+        self._runtime.new_conversation()
+        self._page.clear()
+        self._page.set_state("idle")
+        self._page.input.set_enabled(True)
+        self._page.input.focus()
+        self._notify_conversation()
+
+    def open_conversation(self, conversation_id: int) -> None:
+        """Reopen a saved chat and continue it with the context it had."""
+        convo = conversation_store.get(conversation_id)
+        if convo is None:
+            return
+        turns = conversation_store.messages(conversation_id)
+        self._quiesce()
+        self._conversation_id = conversation_id
+        self._runtime.restore_conversation(turns, convo.get("summary", ""))
+        self._page.show_conversation(turns)
+        self._page.set_state("idle")
+        self._page.input.set_enabled(True)
+        self._page.input.focus()
+        self._notify_conversation()
+
+    def _notify_conversation(self) -> None:
+        """Let the surface mark the current chat in the rail and title it."""
+        hook = getattr(self._page, "conversation_changed", None)
+        if hook is None:
+            return
+        try:
+            hook(self._conversation_id)
+        except Exception:
+            logger.exception("Could not update the conversation list.")
+
+    def _add_notice(self, text: str, kind: str) -> None:
+        add = getattr(self._page, "add_notice", None)
+        if add is not None:
+            add(text, kind)
+        else:
+            self._page.add_mike_message(text)
+
+    # =====================================================
+    # Missions
+    # =====================================================
+
+    def _on_mission_changed(self, mission, newly_done: list, _changes: list) -> None:
+        bar = getattr(self._page, "mission", None)
+        if bar is not None:
+            bar.set_mission(mission, newly_done)
+        if self._floating is not None and hasattr(self._floating, "set_mission"):
+            self._floating.set_mission(mission, newly_done)
+        if mission and mission.get("conversation_id") is None and self._conversation_id:
+            from brain import mission_store
+            mission_store.bind_conversation(mission["id"], self._conversation_id)
+
+    def _drop_mission(self) -> None:
+        from brain import mission_store
+        mission = self._missions.current
+        if not mission:
+            return
+        try:
+            mission_store.finish(mission["id"], "dropped")
+        except Exception:
+            logger.exception("Could not stop tracking the mission.")
+            return
+        self._add_notice(f"Stopped tracking “{mission['goal']}”.", "info")
+        self._missions.refresh()
+
+    def _resume_mission(self) -> bool:
+        """Open Mike into the mission you left, and say what moved since.
+
+        Everything said here is read from the files -- no model call -- so it
+        is there the instant the window is, and it is true.
+        """
+        from brain import mission_store
+        try:
+            mission = mission_store.active()
+            if mission is None:
+                return False
+            mission = mission_store.evaluate(mission["id"])["mission"]
+            changes = mission_store.changes_since_seen(mission["id"])
+        except Exception:
+            logger.exception("Could not resume the mission.")
+            return False
+        conv = mission.get("conversation_id")
+        if conv and conversation_store.get(conv):
+            self.open_conversation(int(conv))
+        # Back within half an hour and nothing moved: just be there. A welcome
+        # on every restart is the kind of thing people learn to ignore.
+        ago = mission_store.seen_ago(mission["id"])
+        if not changes and ago is not None and ago < 30 * 60:
+            return True
+        text = _welcome_back(mission, changes)
+        self.mission_welcome = text
+        self._page.add_mike_message(text)
+        if self._conversation_id is None:
+            self._conversation_id = conversation_store.create()
+            mission_store.bind_conversation(mission["id"], self._conversation_id)
+            self._notify_conversation()
+        conversation_store.add_message(self._conversation_id, "assistant", text)
+        self._runtime.note_assistant(text)
+        mission_store.mark_seen(mission["id"])
+        return True
+
+    def resume_recent_conversation(self) -> None:
+        import time as _time
+        if self._resume_mission():
+            return
+        try:
+            last = conversation_store.latest()
+        except Exception:
+            last = None
+        if not last:
+            return
+        age_h = (_time.time() - float(last.get("updated_at") or 0)) / 3600.0
+        if age_h <= self.RESUME_WITHIN_HOURS:
+            self.open_conversation(int(last["id"]))
+            # Opening Mike into an earlier chat should say so, rather than
+            # leave someone wondering why old messages are on screen.
+            if hasattr(self._page, "add_notice"):
+                ago = ("a few minutes ago" if age_h < 0.25 else
+                       "earlier" if age_h < 1 else
+                       f"{int(age_h)} hour{'s' if int(age_h) != 1 else ''} ago")
+                self._page.add_notice(
+                    f"Picking up the chat from {ago}. Press Ctrl+N for a fresh one.", "info")
+
+    @property
+    def conversation_id(self) -> int | None:
+        return self._conversation_id
+
+    @property
+    def wake_listening(self) -> bool:
+        """Is "Hey Mike" actually being listened for right now — not just
+        switched on in Settings, but running on this machine?"""
+        try:
+            return bool(self._wake.is_active)
+        except Exception:
+            return False
+
+    def reload_voice(self) -> None:
+        """A voice picked in settings — rebuild the speaker's provider so it
+        takes effect immediately rather than on the next launch."""
+        try:
+            self._speaker.reload_provider()
+        except Exception:
+            logger.exception("Could not reload the voice.")
 
     def _speech_allowed(self) -> bool:
         return bool(preferences.get("voice_enabled", True))
@@ -605,6 +1066,8 @@ class UIController(QObject):
         for signal, slot in (
             (old_worker.token, self._on_token),
             (old_worker.tool_start, self._on_tool_start),
+            (old_worker.tool_progress, self._on_tool_progress),
+            (old_worker.preparing, self._on_preparing),
             (old_worker.finished, self._on_finished),
             (old_worker.error, self._on_error),
             (old_worker.confirmation_needed, self._show_confirmation),
@@ -662,7 +1125,12 @@ class UIController(QObject):
         with no new message following it.
         """
 
+        self._guide_turn(False)
         if self._worker is None:
+            # No turn running — but Mike may still be reading a finished
+            # answer aloud. Stop / Esc should silence him too, rather than do
+            # nothing while he talks on.
+            self.stop_speaking()
             return
 
         self._retire_active_worker()
@@ -675,12 +1143,18 @@ class UIController(QObject):
         self._action_card = None
 
         self._page.confirm.hide()
-        self._page.add_mike_message("Cancelled.")
+        mark_stopped = getattr(self._page, "mark_stopped", None)
+        if mark_stopped is not None:
+            mark_stopped()
+        if hasattr(self._page, "add_notice"):
+            self._page.add_notice("You stopped Mike. Nothing else from that request will run.",
+                                  "stopped")
+        else:
+            self._page.add_mike_message("Cancelled.")
         self._page.set_state("idle")
-        self._mirror_edge("idle")
 
         if self._floating and self._floating.isVisible():
-            self._floating.set_response("Cancelled.")
+            self._floating.set_response("Stopped.")
             self._floating.finish()
 
         self._page.input.set_enabled(True)
@@ -713,8 +1187,26 @@ class UIController(QObject):
             return
         self._shutdown_done = True
 
+        self._missions.stop()
+        # What you saw this session is "seen": next time Mike reports only
+        # what moved while he was closed.
+        try:
+            from brain import mission_store
+            mission = mission_store.active()
+            if mission is not None:
+                mission_store.evaluate(mission["id"])
+                mission_store.mark_seen(mission["id"])
+        except Exception:
+            logger.debug("Could not settle the mission on quit.", exc_info=True)
+
         self._speaker.stop()
         self._wake.stop()
+
+        # Cut the speech-to-text prewarm's wait short and let the thread go.
+        self._prewarm_stop.set()
+        if self._prewarm_thread is not None and self._prewarm_thread.is_alive():
+            self._prewarm_thread.join(timeout=0.5)
+        self._prewarm_thread = None
 
         if self._worker is not None:
             self._worker.cancel()
@@ -732,6 +1224,28 @@ class UIController(QObject):
             thread.wait(3000)
 
         self._retired_threads.clear()
+
+
+def _welcome_back(mission: dict, changes: list[str]) -> str:
+    from brain import mission_store
+    done, total = mission_store.progress(mission)
+    nxt = mission_store.next_step(mission)
+    due = f", due {mission['deadline']}" if mission.get("deadline") else ""
+    lines = [f"Welcome back — **{mission['goal']}**{due}."]
+    if changes:
+        lines.append("Since last time: " + "; ".join(changes) + ".")
+    elif any(f["role"] == "work" for f in mission.get("files", [])):
+        lines.append("Nothing in your files has changed since last time.")
+    if nxt is None:
+        lines.append(f"All {total} steps are done — say the word and I'll wrap it up.")
+    else:
+        measure = ""
+        if nxt["section"] and "words" in (nxt["evidence"] or ""):
+            measure = f" ({nxt['evidence'].split(' in ')[0]} so far)"
+        lines.append(f"{done} of {total} done. Next: **{nxt['title']}**{measure}.")
+    if mission.get("blocker"):
+        lines.append(f"Last time you were stuck on: {mission['blocker']}.")
+    return "\n\n".join(lines)
 
 
 def _humanize_error(error: str) -> str:
@@ -765,3 +1279,43 @@ def _humanize_error(error: str) -> str:
         return f"Something went wrong.\n\n{parts[1]}"
 
     return f"Something went wrong.\n\n{error}"
+
+
+#: The first thing Mike says can start at a pause in a long opening sentence
+#: -- a comma or a dash -- once it has this many words, instead of waiting
+#: for the whole sentence to arrive: on the local model a sentence takes a
+#: few seconds to write, and the voice sat silent for all of it.
+_FIRST_CLAUSE_WORDS = 8
+
+#: Words a full stop after them doesn't end the sentence.
+_ABBREVIATIONS = frozenset({"e.g", "i.e", "vs", "mr", "mrs", "ms", "dr", "st", "no", "approx"})
+
+
+def _sentence_cuts(pending: str, first: bool = False) -> list[int]:
+    """Where the not-yet-spoken text can be cut into finished sentences, as
+    end offsets. Never inside a code block: cut there, the speech cleaner
+    saw half a block it couldn't recognise and Mike read the code aloud.
+    Text after the last cut waits for more to arrive."""
+    import re
+
+    def outside_code(end: int) -> bool:
+        return pending.count("```", 0, end) % 2 == 0
+
+    def ends_sentence(m) -> bool:
+        if not outside_code(m.end()):
+            return False
+        if m.group() != ".":
+            return True
+        line_start = pending.rfind("\n", 0, m.start()) + 1
+        before = pending[line_start:m.start()]
+        if re.fullmatch(r"\s*\d{1,2}", before):        # "1." opening a list item
+            return False
+        word = re.search(r"([A-Za-z.]+)$", before)
+        return not (word and word.group(1).lower() in _ABBREVIATIONS)
+
+    cuts = [m.end() for m in re.finditer(r"[.!?](?=\s)", pending) if ends_sentence(m)]
+    if first and not cuts:
+        for m in re.finditer(r"(?:,|\s[-–—])(?=\s)", pending):
+            if len(pending[:m.end()].split()) >= _FIRST_CLAUSE_WORDS and outside_code(m.end()):
+                return [m.end()]
+    return cuts

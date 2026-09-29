@@ -33,6 +33,7 @@ from brain.providers.base import (
     StreamEvent,
     ToolCall,
 )
+from brain.providers.partial_json import PartialJSON
 from logs.logger import logger
 
 DEFAULT_TIMEOUT = 120
@@ -43,6 +44,15 @@ DEFAULT_TIMEOUT = 120
 # mid-argument and the turn produces nothing usable. Measured against
 # DeepSeek writing one landing page: truncated at 900 and again at 4096.
 DEFAULT_MAX_TOKENS = 8192
+
+
+def _text(content: Any) -> str:
+    """Message content as text. Cloudflare Workers AI sends a piece that is a
+    number as a JSON number -- measured: "12 times 7" streamed `"content": 84`
+    and the turn crashed joining it to the reply; a `0` would have vanished."""
+    if content is None:
+        return ""
+    return content if isinstance(content, str) else str(content)
 
 
 class OpenAICompatibleProvider(BrainProvider):
@@ -212,12 +222,12 @@ class OpenAICompatibleProvider(BrainProvider):
 
     # ── request building ───────────────────────────────────
 
-    def _payload(self, messages, tools, stream: bool) -> dict:
+    def _payload(self, messages, tools, stream: bool, max_tokens: int | None = None) -> dict:
         body: dict[str, Any] = {
             "model": self._model,
             "messages": [self._to_openai_message(m) for m in messages],
             "temperature": self._temperature,
-            "max_tokens": self._max_tokens,
+            "max_tokens": self._max_tokens if max_tokens is None else max_tokens,
             "stream": stream,
         }
         if tools:
@@ -311,6 +321,9 @@ class OpenAICompatibleProvider(BrainProvider):
         if response.status_code != 200:
             yield StreamEvent(kind="error", error=self._http_error(response))
             return
+        # SSE is UTF-8, but a server that doesn't say so in its Content-Type
+        # (llama-server) gets decoded as Latin-1: "—" arrived as "â\x80\x94".
+        response.encoding = "utf-8"
 
         # Tool calls arrive in fragments across SSE deltas and must be
         # reassembled before they mean anything.
@@ -353,12 +366,14 @@ class OpenAICompatibleProvider(BrainProvider):
 
                 delta = choices[0].get("delta") or {}
 
-                if delta.get("content"):
-                    yield StreamEvent(kind="text", text=delta["content"])
+                text = _text(delta.get("content"))
+                if text:
+                    yield StreamEvent(kind="text", text=text)
 
                 for fragment in (delta.get("tool_calls") or []):
                     index = fragment.get("index", 0)
-                    slot = partial.setdefault(index, {"name": "", "arguments": "", "id": None})
+                    slot = partial.setdefault(index, {"name": "", "arguments": "", "id": None,
+                                                      "reader": PartialJSON(), "said": 0})
                     if fragment.get("id"):
                         slot["id"] = fragment["id"]
                     function = fragment.get("function") or {}
@@ -366,6 +381,15 @@ class OpenAICompatibleProvider(BrainProvider):
                         slot["name"] += function["name"]
                     if function.get("arguments"):
                         slot["arguments"] += function["arguments"]
+                        slot["reader"].feed(function["arguments"])
+                    # Each time another argument is whole, what the call is
+                    # so far -- "Writing style.css" while its content streams.
+                    reader = slot["reader"]
+                    if slot["name"] and reader.values > slot["said"]:
+                        slot["said"] = reader.values
+                        so_far = reader.value()
+                        yield StreamEvent(kind="preparing", tool_call=ToolCall(
+                            name=slot["name"], arguments=so_far if isinstance(so_far, dict) else {}))
 
         except Exception as exc:
             yield StreamEvent(kind="error", error=self.translate_error(exc))
@@ -376,7 +400,13 @@ class OpenAICompatibleProvider(BrainProvider):
 
         yield StreamEvent(kind="done", truncated=truncated)
 
-    def complete(self, messages: list[dict], tools: list[dict] | None = None) -> ChatResult:
+    def complete(
+        self,
+        messages: list[dict],
+        tools: list[dict] | None = None,
+        *,
+        max_tokens: int | None = None,
+    ) -> ChatResult:
         caps = self.capabilities()
         if tools and not caps.can("tools"):
             tools = None
@@ -385,7 +415,7 @@ class OpenAICompatibleProvider(BrainProvider):
             response = requests.post(
                 f"{self._base_url}/chat/completions",
                 headers=self._auth_headers(),
-                json=self._payload(messages, tools, stream=False),
+                json=self._payload(messages, tools, stream=False, max_tokens=max_tokens),
                 timeout=self._timeout,
             )
         except Exception as exc:
@@ -442,10 +472,10 @@ class OpenAICompatibleProvider(BrainProvider):
             if event.kind == "tool_call" and event.tool_call:
                 calls.append(event.tool_call)
             elif event.kind == "error":
-                return ChatResult(text=message.get("content") or "", error=event.error)
+                return ChatResult(text=_text(message.get("content")), error=event.error)
 
         return ChatResult(
-            text=message.get("content") or "",
+            text=_text(message.get("content")),
             tool_calls=calls,
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
@@ -528,8 +558,16 @@ class OpenAICompatibleProvider(BrainProvider):
         )
 
     def _http_error(self, response) -> BrainError:
-        """Map an HTTP failure to a canonical error. The response body is
-        included as detail but the request — which carries the key — is not."""
+        """Map an HTTP failure to a canonical error, keeping its status: a
+        caller that can do something about one (renew a token on a 401) acts
+        on the number, not on the wording."""
+        error = self._describe_http_error(response)
+        error.status = int(getattr(response, "status_code", 0) or 0)
+        return error
+
+    def _describe_http_error(self, response) -> BrainError:
+        """The response body is included as detail but the request — which
+        carries the key — is not."""
         # Error bodies are not standardised across "OpenAI-compatible"
         # endpoints — Gemini returns a JSON *list*, others a dict, some plain
         # text. Anything unexpected must still produce an error, never an

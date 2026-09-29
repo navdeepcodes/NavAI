@@ -1,12 +1,44 @@
 from __future__ import annotations
 
-from google.genai import types
+import re
+from dataclasses import dataclass
+from types import SimpleNamespace
 
 
 # ============================================================
 # Mike's canonical tool definitions. Provider-neutral: each brain's provider
 # translates these into whatever protocol it speaks. Named after no vendor.
 # ============================================================
+
+@dataclass(frozen=True)
+class FunctionDeclaration:
+    """One tool as the model sees it: a name, what it does, its arguments.
+
+    These used to be google.genai's FunctionDeclaration, which made importing
+    the Gemini SDK the single largest cost of starting Mike -- measured 1.55s
+    of the 2.5s it took to import the UI -- for three plain fields Mike reads
+    and a provider it does not use.
+    """
+
+    name: str
+    description: str = ""
+    parameters_json_schema: dict | None = None
+
+
+types = SimpleNamespace(FunctionDeclaration=FunctionDeclaration)
+
+
+def _shell() -> str:
+    """Which shell run_command's commands reach, as a fact: the model writes
+    for the shell it thinks it has, and on Windows that's settled here."""
+    import platform
+    if platform.system() != "Windows":
+        return "the system shell"
+    try:
+        from hostplatform import processes
+        return "bash (Git Bash)" if processes._resolve_windows_bash() else "cmd.exe, as Git Bash isn't installed"
+    except Exception:
+        return "the system shell"
 
 TOOL_DECLARATIONS = [
 
@@ -16,16 +48,14 @@ TOOL_DECLARATIONS = [
 
     types.FunctionDeclaration(
         name="open_browser",
-        description="Open the user's default web browser.",
+        description="Open the browser, blank. For a site use open_url.",
     ),
 
     types.FunctionDeclaration(
         name="open_url",
         description=(
-            "Open a specific URL in the browser. "
-            "Use this for site-specific searches by constructing the search URL directly. "
-            "For example, to search YouTube use 'https://www.youtube.com/results?search_query=QUERY', "
-            "to search Wikipedia use 'https://en.wikipedia.org/w/index.php?search=QUERY'."
+            "Open a URL in the browser. For a search on one site, build its search "
+            "URL, e.g. 'https://www.youtube.com/results?search_query=QUERY'."
         ),
         parameters_json_schema={
             "type": "object",
@@ -177,9 +207,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="run_command",
         description=(
-            "Execute a shell command that finishes on its own and return its "
-            "output. Do NOT use this for servers or anything that keeps "
-            "running — it will time out. Use run_background for those."
+            f"Execute a shell command in {_shell()} that finishes on its own and "
+            "return its output. Do NOT use this for servers or anything that "
+            "keeps running — it will time out. Use run_background for those."
         ),
         parameters_json_schema={
             "type": "object",
@@ -214,7 +244,9 @@ TOOL_DECLARATIONS = [
         description=(
             "Start a long-running process that should keep running — a dev "
             "server, a watcher, anything that doesn't exit on its own. "
-            "Returns immediately once it's up instead of waiting for it."
+            "Returns immediately once it's up instead of waiting for it. With "
+            "their VS Code connected it runs in a terminal there, where they "
+            "can watch it."
         ),
         parameters_json_schema={
             "type": "object",
@@ -239,9 +271,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="open_application",
         description=(
-            "Open or focus an application on the user's Mac. Use this only "
-            "when the user asked to open or switch to an app — not when they "
-            "are asking a question about apps."
+            "Open or focus an application on the user's computer. Use this "
+            "only when the user asked to open or switch to an app — not "
+            "when they are asking a question about apps."
         ),
         parameters_json_schema={
             "type": "object",
@@ -249,8 +281,8 @@ TOOL_DECLARATIONS = [
                 "name": {
                     "type": "string",
                     "description": (
-                        "Application name as macOS knows it, e.g. "
-                        "'Visual Studio Code', 'Safari', 'Terminal'"
+                        "The application's common name, e.g. 'Visual Studio "
+                        "Code', 'notepad', 'Calculator', 'chrome'"
                     ),
                 },
                 "path": {
@@ -273,11 +305,11 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="read_document",
         description=(
-            "Read and extract text from a document file. "
-            "Supports PDF, DOCX, PPTX, CSV, JSON, and all text-based files. "
-            "Use this instead of read_file when the user asks about a document, "
-            "especially for PDF, DOCX, or PPTX files. "
-            "For plain text files (.txt, .md, .py, etc.), read_file also works."
+            "Read a document: PDF, Word (.docx), PowerPoint, CSV, JSON, text, or a "
+            "picture of text (photo of notes, a scan -- read by OCR). Returns a few "
+            "pages at a time with page numbers and says what page comes next; ask for "
+            "pages to go further. For a long document use document_info first, and "
+            "search_document to find the part you need."
         ),
         parameters_json_schema={
             "type": "object",
@@ -285,22 +317,187 @@ TOOL_DECLARATIONS = [
                 "path": {
                     "type": "string",
                     "description": "Path to the document file",
-                }
+                },
+                "pages": {
+                    "type": "string",
+                    "description": "Which pages (or slides, or sections): 3, 3-7, 1,4,9-11 or last. Omit to start at the beginning.",
+                },
             },
             "required": ["path"],
         },
     ),
 
     types.FunctionDeclaration(
+        name="document_info",
+        description=(
+            "See how a document is laid out before reading it: pages (or slides, or "
+            "sections), title, outline of headings with their pages, and whether it's "
+            "a scan. Use it first for anything long -- a textbook chapter, a paper, a "
+            "thesis -- so you read the right pages instead of the start."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "The PDF, Word, PowerPoint, text or image file"}},
+            "required": ["path"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="search_document",
+        description=(
+            "Find where a document -- or every document in a folder -- says something, "
+            "with the page numbers (for citing) and the lines around each match. Reads "
+            "scanned pages by OCR. Use it to answer questions across long files or a "
+            "folder of papers instead of reading them all."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "A phrase, or several words that should appear on one page"},
+                "path": {"type": "string", "description": "A file or a folder (searched with everything in it). Defaults to the current folder."},
+                "regex": {"type": "boolean", "description": "Treat the query as a regular expression."},
+                "max_results": {"type": "integer", "description": "How many pages to list. Defaults to 15."},
+            },
+            "required": ["query"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="create_document",
+        description=(
+            "Make a Word (.docx), PDF, Markdown or text file from Markdown content: an "
+            "essay, report, resume, cover letter, lab write-up, study notes. Headings, "
+            "lists, tables, code, bold/italic, images and page breaks are supported. "
+            "style sets the formatting: mla, apa (double-spaced Times New Roman with "
+            "the running head or title page and hanging works cited), report, resume, "
+            "letter, or plain. A course's own rules win: override font, font_size, "
+            "line_spacing or page_size. Never replaces an existing file unless overwrite "
+            "is set. Write the whole document -- real content, in the student's own "
+            "material, not placeholders."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Where to save it; the ending (.docx, .pdf, .md, .txt) picks the format"},
+                "content": {"type": "string", "description": "The document, in Markdown. A blank line between paragraphs; # headings; - bullets; 1. numbers; | tables |; ![caption](image path)"},
+                "style": {"type": "string", "description": "mla, apa, report, resume, letter or plain (default plain)"},
+                "title": {"type": "string", "description": "The document's title (for a title page or the file's properties)"},
+                "author": {"type": "string", "description": "The student's name (MLA's running head, APA's title page)"},
+                "font": {"type": "string", "description": "Override the style's font, e.g. Arial"},
+                "font_size": {"type": "number", "description": "Override the size in points"},
+                "line_spacing": {"type": "number", "description": "1.0 single, 1.5, 2.0 double"},
+                "page_size": {"type": "string", "description": "letter or a4"},
+                "toc": {"type": "boolean", "description": "Add a table of contents (Word only)"},
+                "overwrite": {"type": "boolean", "description": "Replace the file if it exists (the old one is kept aside)"},
+            },
+            "required": ["path", "content"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="create_presentation",
+        description=(
+            "Make a PowerPoint (.pptx) deck: a class presentation, project pitch or study "
+            "deck. Give the slides; each has a title plus one of: bullets (short lines -- "
+            "few words, big type), body, an image, a table (rows), a quote, or left/right "
+            "columns; and speaker notes. The first slide with only a title is the title "
+            "slide; a slide with only a title is a section divider. theme: graphite "
+            "(black and grey) or light."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Where to save it (.pptx)"},
+                "title": {"type": "string", "description": "The deck's title"},
+                "slides": {
+                    "type": "array",
+                    "description": "The slides, in order.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "subtitle": {"type": "string"},
+                            "bullets": {"type": "array", "items": {"type": "string"}},
+                            "body": {"type": "string"},
+                            "image": {"type": "string", "description": "Path to a picture"},
+                            "caption": {"type": "string"},
+                            "table": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "Rows; the first is the header"},
+                            "quote": {"type": "string"},
+                            "attribution": {"type": "string"},
+                            "left": {"type": "array", "items": {"type": "string"}},
+                            "right": {"type": "array", "items": {"type": "string"}},
+                            "left_title": {"type": "string"},
+                            "right_title": {"type": "string"},
+                            "notes": {"type": "string", "description": "Speaker notes"},
+                        },
+                    },
+                },
+                "theme": {"type": "string", "description": "graphite (default) or light"},
+                "author": {"type": "string"},
+                "overwrite": {"type": "boolean", "description": "Replace the file if it exists"},
+            },
+            "required": ["path", "slides"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="pdf_edit",
+        description=(
+            "Work on PDFs, always into a NEW file beside the original (never changes the "
+            "original). action: merge (paths), extract (path, pages), delete_pages (path, "
+            "pages), rotate (path, degrees, optional pages), reorder (path, order), split "
+            "(path, every N pages or ranges like 1-3;4-9), compress (path: for an upload "
+            "limit), fields (path: list a form's fillable fields), fill (path, values: "
+            "field name -> value), from_images (paths: photos or scans -> one PDF), "
+            "info (path), convert (path, to: pdf from Word/PowerPoint; md or txt from "
+            "Word; txt, md or docx from PDF). pages like 3, 3-7 or 1,4,9-11."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "merge, extract, delete_pages, rotate, reorder, split, compress, fields, fill, from_images, info or convert"},
+                "path": {"type": "string", "description": "The file to work on"},
+                "paths": {"type": "array", "items": {"type": "string"}, "description": "Several files (merge, from_images), in order"},
+                "pages": {"type": "string", "description": "Which pages: 3, 3-7 or 1,4,9-11"},
+                "order": {"type": "string", "description": "The new page order, like 3,1,2 (reorder)"},
+                "degrees": {"type": "integer", "description": "90, 180 or 270 (rotate)"},
+                "every": {"type": "integer", "description": "Split into files of this many pages"},
+                "ranges": {"type": "string", "description": "Split by ranges like 1-3;4-9;10-"},
+                "values": {"type": "object", "description": "Form values: field name -> text, or true/false for a checkbox (fill)"},
+                "to": {"type": "string", "description": "pdf, md, txt or docx (convert)"},
+                "out": {"type": "string", "description": "Where to save the result: use the exact path the student asked for. Default: beside the original."},
+                "out_dir": {"type": "string", "description": "Folder for split parts"},
+            },
+            "required": ["action"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="write_document_section",
+        description=(
+            "Put text into a Word document (.docx) under a heading: replaces "
+            "that section, or adds it at the end. The only way to write into a "
+            ".docx (never write_file). Only when the user asked for it to go in "
+            "the file, and only with their own data and results, never made-up ones."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "heading": {"type": "string", "description": "e.g. Discussion"},
+                "text": {"type": "string", "description": "The section's text; blank lines split paragraphs"},
+            },
+            "required": ["path", "heading", "text"],
+        },
+    ),
+
+    types.FunctionDeclaration(
         name="calculate",
         description=(
-            "Work out an arithmetic expression exactly. Use this for any number "
-            "that matters — a total, a difference, a percentage, a sum of a column "
-            "you just read — rather than doing it in your head, where you will "
-            "occasionally be wrong in a way that looks right. "
-            "Give a plain expression, for example '2417 + 3168 + 912' or "
-            "'round(4820 / 6, 2)'. Available functions: sum, min, max, abs, round, "
-            "sqrt, floor, ceil."
+            "Work out arithmetic exactly -- any number that matters (a total, a "
+            "difference, a percentage), never in your head. A plain expression like "
+            "'2417 + 3168 + 912' or 'round(4820 / 6, 2)'; functions: sum, min, max, "
+            "abs, round, sqrt, floor, ceil."
         ),
         parameters_json_schema={
             "type": "object",
@@ -317,11 +514,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="read_spreadsheet",
         description=(
-            "Read a spreadsheet as a grid of addressed cells (.xlsx, .xlsm, .csv). "
-            "Use this instead of read_document whenever the work involves particular "
-            "cells: reading a column of figures, checking a total, or before changing "
-            "anything. It returns the grid, the formulas each cell contains, and says "
-            "explicitly when a formula's calculated value is not stored in the file."
+            "Read a spreadsheet (.xlsx, .xlsm, .csv) as addressed cells, with their "
+            "formulas and whether a formula's value is stored. Use it instead of "
+            "read_document when the work is about particular cells."
         ),
         parameters_json_schema={
             "type": "object",
@@ -339,14 +534,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="edit_spreadsheet",
         description=(
-            "Set the contents of specific cells in a spreadsheet and save it. "
-            "Give cells as an object keyed by cell reference, for example "
+            "Set cells in a spreadsheet and save it, e.g. "
             '{\"B6\": 4820, \"A6\": \"Total\", \"C6\": \"=SUM(C2:C5)\"}. '
-            "A value starting with '=' is stored as a formula. Mike does not "
-            "calculate formulas, so if the user needs the number itself, work it "
-            "out and write it as a value. The file is reopened after saving and the "
-            "cells are checked, so a failure to store is reported rather than assumed "
-            "to have worked."
+            "'=' stores a formula, which Mike can't calculate: when the user needs "
+            "the number, work it out and write the value. The saved cells are checked."
         ),
         parameters_json_schema={
             "type": "object",
@@ -370,9 +561,7 @@ TOOL_DECLARATIONS = [
         description=(
             "Find files by NAME. Use this when you know roughly what a file is "
             "called but not where it is: 'find the quarterly report', 'find a "
-            "PDF called invoice'. "
-            "To search for text INSIDE files, use search_code instead — it is "
-            "much faster and returns the matching lines, not just filenames."
+            "PDF called invoice'."
         ),
         parameters_json_schema={
             "type": "object",
@@ -401,10 +590,8 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="remember",
         description=(
-            "Save a useful fact the user explicitly asks you to remember. "
-            "Use this ONLY when the user says things like 'remember that...', "
-            "'don't forget that...', 'save this...', 'keep in mind that...'. "
-            "Do NOT use this for normal conversation or tool requests."
+            "Save a fact the user asks you to remember ('remember that...', "
+            "'don't forget...', 'keep in mind...'). Never for ordinary conversation."
         ),
         parameters_json_schema={
             "type": "object",
@@ -474,25 +661,27 @@ TOOL_DECLARATIONS = [
         description=(
             "Get what the user is currently looking at in their code editor: "
             "the project, the open file, the cursor position, any selected "
-            "code, and the errors or warnings the editor is reporting. "
-            "Use this when the user asks about 'this file', 'this code', "
-            "'this error', or what they're working on."
+            "code, the errors or warnings the editor is reporting, and the "
+            "latest commands in its terminal with their output. Use this when "
+            "the user asks about 'this code', 'this error' or something that "
+            "failed when they ran it. Not for documents: use read_document."
         ),
     ),
 
     types.FunctionDeclaration(
         name="ide_open_file",
         description=(
-            "Open a file in the user's editor, optionally jumping to a line. "
-            "Use this to show the user something, not to read a file — "
-            "use read_file when you need the contents yourself."
+            "Open a file (optionally at a line) or a whole project folder in "
+            "the user's VS Code and bring it to the front: to show them "
+            "something, or to open a project you made so they can follow "
+            "along. Not for reading a file: use read_lines for that."
         ),
         parameters_json_schema={
             "type": "object",
             "properties": {
                 "path": {
                     "type": "string",
-                    "description": "Absolute path of the file to open",
+                    "description": "Absolute path of the file or folder to open",
                 },
                 "line": {
                     "type": "integer",
@@ -540,17 +729,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="see_screen",
         description=(
-            "Look at the screen with vision. This is SLOW — several seconds — "
-            "because it runs an image through a vision model, so it is the "
-            "fallback, not the default way to inspect an application.\n"
-            "Use see_ui instead whenever you are operating an application: it "
-            "reads the same interface as text in a fraction of a second and "
-            "gives you clickable references.\n"
-            "Use see_screen when: the user asks what is on their screen; "
-            "see_ui returned nothing useful for the app you need; the content "
-            "is drawn rather than built from controls (canvas, charts, images, "
-            "video, games); you need to judge how something actually looks; or "
-            "you need spatial layout the control list cannot express."
+            "Look at the screen with vision -- slow, so a fallback. To operate an "
+            "app use see_ui. Use this when the user asks about the whole screen, "
+            "see_ui found nothing useful, or the content is drawn (images, charts, "
+            "video, games) or it's about how something looks."
         ),
         parameters_json_schema={
             "type": "object",
@@ -658,6 +840,71 @@ TOOL_DECLARATIONS = [
                 },
             },
             "required": ["path", "edits"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="read_files",
+        description=(
+            "Read several files at once, each with line numbers -- one step "
+            "instead of one per file. Use it for the files a task touches "
+            "together: the code and its tests, a page and its stylesheet, a "
+            "module and what imports it."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "File paths, up to 8.",
+                },
+            },
+            "required": ["paths"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="write_files",
+        description=(
+            "Create or replace several whole files at once: a new project's "
+            "files, or the new files a feature needs. To change part of an "
+            "existing file, use edit_file."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "files": {
+                    "type": "array",
+                    "description": "Each file's path and its full content.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"},
+                        },
+                        "required": ["path", "content"],
+                    },
+                },
+            },
+            "required": ["files"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="think",
+        description=(
+            "Think a task through before acting on it: the plan for building "
+            "something, the likely causes of a bug and how to tell them apart, "
+            "the order of the steps. For work with several steps, not for "
+            "simple questions. The user doesn't see it."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "thought": {"type": "string", "description": "Your reasoning."},
+            },
+            "required": ["thought"],
         },
     ),
 
@@ -841,13 +1088,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="send_email",
         description=(
-            "Send an email, optionally with file attachments. This goes out "
-            "over the account's mail API, so it is reliable — prefer it over "
-            "driving a webmail interface by hand.\n"
-            "Sending is irreversible and leaves the machine, so the user is "
-            "asked to confirm first and is shown the exact recipient, subject "
-            "and attachments. Compose the whole message in one call; there is "
-            "no separate draft step."
+            "Send an email, with attachments if needed, through the user's mail "
+            "account -- prefer it over driving webmail. The user confirms the exact "
+            "message first. Write the whole message in one call."
         ),
         parameters_json_schema={
             "type": "object",
@@ -868,13 +1111,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="see_ui",
         description=(
-            "Read the controls in an application's window: buttons, text fields, "
-            "links, checkboxes, tabs, with their labels and current values. Each "
-            "gets a reference like 'el7' that you pass to click_element or "
-            "scroll_ui. ALWAYS prefer this over see_screen for operating an "
-            "application: it is far faster, it names controls exactly, and it "
-            "tells you whether they are enabled. Observe again after any action "
-            "that changes the screen, because references go stale."
+            "Read an app window as text: its buttons, fields, links and tabs, "
+            "their labels and current text, each with a reference like 'el7' for "
+            "click_element or scroll_ui. Prefer it over see_screen. References go "
+            "stale after the screen changes: read again."
         ),
         parameters_json_schema={
             "type": "object",
@@ -897,10 +1137,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="click_element",
         description=(
-            "Click a control. Give the 'ref' from see_ui whenever you can — it is "
-            "checked against a real element and fails clearly if the interface "
-            "moved. Coordinates are a fallback for things the accessibility tree "
-            "cannot see. Observe again afterwards to confirm what changed."
+            "Click a control, by its 'ref' from see_ui whenever you can "
+            "(coordinates only as a fallback). For buttons, menus, tabs, checkboxes, "
+            "links and list items -- never on-screen keys: type digits and text "
+            "with type_text."
         ),
         parameters_json_schema={
             "type": "object",
@@ -917,33 +1157,42 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="type_text",
         description=(
-            "Type text into whatever currently has keyboard focus. Click the "
-            "field first. This types characters exactly as given, including "
-            "accents and other scripts; for keys with no character such as Enter "
-            "or Tab use press_keys."
+            "Type text or numbers into an app, exactly as given -- a document, a "
+            "search box, a calculator's digits and operators. A form field may need "
+            "one click first. The result says what the field now holds; some apps "
+            "show typing in a display instead, so check that before retyping. For "
+            "Enter, Tab and shortcuts use press_keys."
         ),
         parameters_json_schema={
             "type": "object",
             "properties": {
                 "text": {"type": "string", "description": "The text to type"},
+                "app": {"type": "string", "description": (
+                    "The app the text goes into: the one the user named, else the one "
+                    "they have focused. It is brought to the front first, so no "
+                    "separate focus_app")},
             },
-            "required": ["text"],
+            # Where keystrokes land is a choice the model has to make, not
+            # whatever window happens to be in front. Measured: with "app"
+            # optional, "type hello from mike in notepad" was called without
+            # it and typed into the YouTube tab that had just opened.
+            "required": ["text", "app"],
         },
     ),
 
     types.FunctionDeclaration(
         name="press_keys",
         description=(
-            "Press a named key, optionally with modifiers — Enter, Tab, Escape, "
-            "arrows, or a shortcut like cmd+s. Use type_text for ordinary "
-            "characters."
+            "Press a key or shortcut: Enter to confirm (a calculator's =, a "
+            "search), Tab, Escape, the arrows, or a shortcut like ctrl+s. Ordinary "
+            "characters go through type_text."
         ),
         parameters_json_schema={
             "type": "object",
             "properties": {
                 "key": {
                     "type": "string",
-                    "description": "Key name: return, tab, escape, space, delete, up, down, left, right, a-z, 0-9, f1-f12",
+                    "description": "return, tab, escape, space, delete, arrows, a-z, 0-9, f1-f12, or a shortcut like ctrl+s",
                 },
                 "modifiers": {
                     "type": "array",
@@ -982,6 +1231,39 @@ TOOL_DECLARATIONS = [
     ),
 
     types.FunctionDeclaration(
+        name="mission",
+        description=(
+            "Track work the user is getting done over time (an assignment, a "
+            "report), across restarts. start: a goal, the steps in order (for "
+            "coursework, the sections its brief asks for), their files, the brief "
+            "and the deadline. Section steps tick from the file itself; mark other "
+            "steps with step when the user says they're done. file adds a file; "
+            "finish when done or dropped."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["start", "step", "file", "finish"]},
+                "goal": {"type": "string"},
+                "steps": {"type": "array", "items": {"type": "string"}},
+                # Was "the documents they write in": the model then listed only
+                # the report, and the brief it had just been shown was left out.
+                "files": {"type": "array", "items": {"type": "string"},
+                          "description": "Full paths of every file the work involves: "
+                                         "the brief and the ones they write in"},
+                "brief": {"type": "string",
+                          "description": "Which of those is the brief, if it's a Word or text file"},
+                "deadline": {"type": "string"},
+                "step": {"type": "string", "description": "Step number or name"},
+                "status": {"type": "string", "description": "done/todo/blocked; finish: done/dropped"},
+                "note": {"type": "string"},
+                "path": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    ),
+
+    types.FunctionDeclaration(
         name="focus_app",
         description=(
             "Bring an already-running application to the front so it receives "
@@ -998,9 +1280,6 @@ TOOL_DECLARATIONS = [
     ),
 
 ]
-
-
-GEMINI_TOOLS = [types.Tool(function_declarations=TOOL_DECLARATIONS)]
 
 
 # ============================================================
@@ -1037,6 +1316,7 @@ MEMORY_TOOLS = frozenset({"remember", "recall_memory", "forget_memory"})
 
 _CONFIRM_ACTIONS = frozenset({
     "write_file",
+    "write_files",
     "delete_path",
     "run_command",
     # Targeted edits change the user's files just as much as a whole-file
@@ -1060,6 +1340,9 @@ _CONFIRM_ACTIONS = frozenset({
     # write_file does, and a spreadsheet has no revision history to fall back
     # on. Reading one is free.
     "edit_spreadsheet",
+    # Writing into someone's own document — their assignment — is theirs to
+    # allow, every time.
+    "write_document_section",
     # Memory is user data with no undo and no copy on disk to restore from.
     # Saving and recalling stay free; erasing is the boundary, exactly as it
     # is for files. "forget everything" reaching the database unprompted was
@@ -1085,6 +1368,14 @@ def needs_confirmation(function_name: str, args: dict) -> bool:
     # This narrows the blast radius, it does not eliminate it: an unlabelled
     # button cannot be judged this way. The limit is documented rather than
     # papered over.
+    # A new document is just made; replacing one the student has is the thing to ask.
+    if function_name in ("create_document", "create_presentation") and args.get("overwrite"):
+        try:
+            from tools.filesystem.path_utils import resolve_path
+            return resolve_path(str(args.get("path") or "")).exists()
+        except Exception:
+            return True
+
     if function_name == "click_element" and args.get("ref"):
         try:
             from computer.session import SESSION
@@ -1133,6 +1424,28 @@ def confirmation_detail(function_name: str, args: dict) -> str:
             "This leaves the machine and cannot be recalled."
         )
 
+    if function_name == "write_document_section":
+        # Whether this replaces something they wrote is read from the file.
+        import os
+
+        path = str(args.get("path") or "?")
+        heading = str(args.get("heading") or "?")
+        text = " ".join(str(args.get("text") or "").split())
+        existing = 0
+        try:
+            from brain import mission_checks
+
+            shape = mission_checks.outline(path) or {}
+            found = mission_checks.find_section(shape.get("sections", {}), heading)
+            existing = shape["sections"][found] if found else 0
+        except Exception:
+            pass
+        action = (f"Replace the “{heading}” section ({existing} words now)"
+                  if existing else f"Add a “{heading}” section")
+        return (f"{action} in {os.path.basename(path)}\n"
+                f"  new text ({len(text.split())} words) starts: {text[:140]!r}\n"
+                "A copy of the current version is kept first.")
+
     if function_name == "edit_spreadsheet":
         # Current values come from the file, so the user sees what is being
         # overwritten rather than only what it is being replaced with. A cell
@@ -1169,6 +1482,29 @@ def confirmation_detail(function_name: str, args: dict) -> str:
             + (f" (sheet {args['sheet']})" if args.get("sheet") else "")
             + f":\n{listed}\nThe file is saved in place."
         )
+
+    if function_name in ("create_document", "create_presentation"):
+        target = str(args.get("path") or "?")
+        return (f"Replace {target} with a new version. The current one is kept aside, so it can be "
+                "undone from Mike's activity.")
+
+    if function_name == "write_files":
+        # Which files, and which of them already exist -- a new project's
+        # files and a replaced one are different things to allow.
+        lines = []
+        entries = [f for f in (args.get("files") or []) if isinstance(f, dict)]
+        for entry in entries[:15]:
+            target = str(entry.get("path") or "?")
+            try:
+                from tools.filesystem.path_utils import resolve_path
+                exists = resolve_path(target).exists()
+            except Exception:
+                exists = False
+            size = len(str(entry.get("content") or "").splitlines())
+            lines.append(f"  • {target} — {'replaces the existing file' if exists else 'new'}, {size} lines")
+        if len(entries) > 15:
+            lines.append(f"  … and {len(entries) - 15} more")
+        return f"Write {len(entries)} file(s):\n" + "\n".join(lines)
 
     if function_name == "forget_memory":
         # Built from the database by the same selector that will do the
@@ -1350,46 +1686,172 @@ def check_arguments(function_name: str, args: dict) -> str | None:
     return message
 
 
+def _short_path(path) -> str:
+    """A path as a person would say it: the file, and the folder it's in.
+
+    "C:\\Users\\sam\\Documents\\Physics\\notes.md" -> "notes.md in Physics".
+    The full path stays in the tool's own arguments and result; this is only
+    what the steps card and the activity log show at a glance.
+    """
+    raw = str(path or "").strip().strip('"').strip("'")
+    if not raw:
+        return ""
+    parts = [x for x in raw.replace("\\", "/").rstrip("/").split("/") if x]
+    if not parts:
+        return raw
+    name = parts[-1]
+    if len(parts) >= 2:
+        parent = parts[-2]
+        if parent not in ("~", ".") and not parent.endswith(":"):
+            return f"{name} in {parent}"
+    return name
+
+
+def _short_url(url) -> str:
+    text = str(url or "").strip()
+    text = re.sub(r"^[a-zA-Z]+://", "", text)
+    text = re.sub(r"^www\.", "", text)
+    return text.rstrip("/") or "a page"
+
+
+def _clip(text, n: int = 48) -> str:
+    text = " ".join(str(text or "").split())
+    return text if len(text) <= n else text[: n - 1].rstrip() + "…"
+
+
+def _element_name(ref) -> str:
+    """The on-screen name of the element a computer action refers to."""
+    try:
+        from computer.session import SESSION
+        label = SESSION.element_label(str(ref) if ref else None)
+    except Exception:
+        label = ""
+    return f"“{_clip(label, 40)}”" if label else ""
+
+
+def _keys(args: dict) -> str:
+    mods = [str(m).capitalize() for m in (args.get("modifiers") or []) if m]
+    key = str(args.get("key", "") or "").strip()
+    key = key if len(key) != 1 else key.upper()
+    names = {"cmd": "Ctrl", "command": "Ctrl", "control": "Ctrl", "ctrl": "Ctrl",
+             "option": "Alt", "alt": "Alt", "shift": "Shift", "win": "Win"}
+    mods = [names.get(m.lower(), m) for m in mods]
+    return "+".join(mods + ([key.capitalize() if len(key) > 1 else key] if key else []))
+
+
+def _files_label(verb: str, paths) -> str:
+    names = [_short_path(p) for p in (paths or []) if p]
+    if len(names) == 1:
+        return f"{verb} {names[0]}"
+    if len(names) <= 3:
+        return f"{verb} " + ", ".join(names)
+    return f"{verb} {len(names)} files"
+
+
 def friendly_tool_name(function_name: str, args: dict) -> str:
+    """What Mike is doing, in the words a person would use.
+
+    Shown live in the steps card and kept in the activity log, so it names
+    things the way you'd see them — a file and its folder, a site, the button
+    being clicked — never an internal function name or an element id.
+    """
+    a = args or {}
+    path = _short_path(a.get("path"))
+    if function_name == "click_element":
+        target = _element_name(a.get("ref"))
+        count = int(a.get("count") or 1) if str(a.get("count") or "1").isdigit() else 1
+        verb = "Double-clicking" if count == 2 else "Clicking"
+        if a.get("button") == "right":
+            verb = "Right-clicking"
+        return f"{verb} {target}" if target else f"{verb} in the window"
+    if function_name == "write_document_section":
+        return f"Writing “{_clip(a.get('heading', 'a section'), 30)}” into {path or 'your document'}"
+    if function_name == "mission":
+        return {
+            "start": f"Setting up: {_clip(a.get('goal', 'the plan'), 40)}",
+            "step": "Updating your plan",
+            "file": f"Adding {path or _short_path(a.get('path'))} to your plan",
+            "finish": "Wrapping up the plan",
+        }.get(str(a.get("action", "")).lower(), "Checking your progress")
+    if function_name == "scroll_ui":
+        try:
+            dy = float(a.get("dy") or 0)
+        except (TypeError, ValueError):
+            dy = 0.0
+        return "Scrolling up" if dy > 0 else "Scrolling down" if dy < 0 else "Scrolling"
     labels = {
-        "open_browser": "Opening browser",
-        "open_url": f"Opening {args.get('url', 'URL')}",
-        "search_web": f"Searching the web for {args.get('query', '...')}",
-        "create_folder": f"Creating folder {args.get('path', '')}",
-        "create_file": f"Creating file {args.get('path', '')}",
-        "read_file": f"Reading {args.get('path', '')}",
-        "write_file": f"Writing to {args.get('path', '')}",
-        "list_directory": f"Listing {args.get('path', '')}",
-        "delete_path": f"Deleting {args.get('path', '')}",
-        "run_command": f"Running: {args.get('command', '')}",
-        "run_background": f"Starting: {args.get('command', '')}",
-        "open_application": f"Opening {args.get('name', 'application')}",
-        "read_document": f"Reading document {args.get('path', '')}",
-        "calculate": f"Working out {args.get('expression', '')}",
-        "read_spreadsheet": f"Reading spreadsheet {args.get('path', '')}",
-        "edit_spreadsheet": f"Updating spreadsheet {args.get('path', '')}",
-        "search_files": f"Searching for {args.get('query', '...')}",
+        "open_browser": "Opening your browser",
+        "open_url": f"Opening {_short_url(a.get('url'))}",
+        "search_web": f"Searching the web for “{_clip(a.get('query', '…'))}”",
+        "create_folder": f"Creating the folder {path}",
+        "create_file": f"Creating {path}",
+        "read_file": f"Reading {path}",
+        "write_file": f"Writing {path}",
+        "list_directory": f"Looking in {_short_path(a.get('path')).split(' in ')[0] or 'the folder'}",
+        "delete_path": f"Deleting {path}",
+        "run_command": f"Running: {a.get('command', '')}",
+        "run_background": f"Starting: {a.get('command', '')}",
+        "open_application": f"Opening {a.get('name') or _short_path(a.get('path')) or 'the app'}",
+        "read_document": f"Reading {path}" + (f", pages {a.get('pages')}" if a.get("pages") else ""),
+        "document_info": f"Looking over {path}",
+        "search_document": "Searching " + (_short_path(a.get("path")) if a.get("path") else "the documents")
+                           + " for “" + _clip(a.get("query", "…")) + "”",
+        "create_document": f"Making {path}",
+        "create_presentation": f"Making the presentation {path}",
+        "pdf_edit": (str(a.get("action") or "working on").replace("_", " ").capitalize() + " "
+                     + (_short_path(a.get("path")) if a.get("path") else "PDFs")),
+        "calculate": f"Working out {_clip(a.get('expression', ''), 60)}",
+        "read_spreadsheet": f"Reading {path}",
+        "edit_spreadsheet": f"Updating {path}",
+        "search_files": f"Looking for “{_clip(a.get('query', '…'))}”",
         "see_screen": "Looking at your screen",
         "ide_context": "Checking your editor",
-        "ide_open_file": f"Opening {args.get('path', '')} in your editor",
-        "ide_apply_edit": f"Editing {args.get('path', '')} in your editor",
+        "ide_open_file": f"Opening {path} in your editor",
+        "ide_apply_edit": f"Editing {path} in your editor",
         "remember": "Saving to memory",
-        "recall_memory": "Searching memory",
-        "forget_memory": "Forgetting memory",
-        "read_lines": f"Reading {args.get('path', '')}",
-        "edit_file": f"Editing {args.get('path', '')}",
-        "multi_edit": f"Editing {args.get('path', '')}",
+        "recall_memory": "Checking what I remember",
+        "forget_memory": "Forgetting a memory",
+        "read_lines": f"Reading {path}",
+        "edit_file": f"Editing {path}",
+        "multi_edit": f"Editing {path}",
+        "read_files": _files_label("Reading", a.get("paths")),
+        "write_files": _files_label("Writing", [f.get("path") for f in (a.get("files") or [])
+                                                if isinstance(f, dict)]),
+        "think": "Thinking it through",
         "project_overview": "Looking over the project",
         "project_tree": "Mapping the project structure",
-        "search_code": f"Searching the code for {args.get('query', '...')}",
+        "search_code": f"Searching the code for “{_clip(a.get('query', '…'))}”",
         "list_processes": "Checking what's running",
-        "check_url": f"Checking {args.get('url', 'a URL')}",
-        "check_port": f"Checking port {args.get('port', '')}",
-        "check_syntax": f"Checking {args.get('path', '')} parses",
-        "process_output": f"Reading output from process {args.get('pid', '')}",
-        "kill_process": f"Stopping process {args.get('pid', '')}",
+        "check_url": f"Checking {_short_url(a.get('url'))}",
+        "check_port": f"Checking port {a.get('port', '')}",
+        "check_syntax": f"Checking {path} for errors",
+        "process_output": f"Reading output from process {a.get('pid', '')}",
+        "kill_process": f"Stopping process {a.get('pid', '')}",
+        "send_email": f"Sending an email to {a.get('to') or 'someone'}",
+        "see_ui": f"Looking at {a.get('app')}" if a.get("app") else "Looking at the window",
+        "type_text": f"Typing “{_clip(a.get('text', ''), 40)}”",
+        "press_keys": f"Pressing {_keys(a) or 'a key'}",
+        "list_windows": "Checking which windows are open",
+        "focus_app": f"Switching to {a.get('name') or 'the app'}",
     }
-    return labels.get(function_name, f"Executing {function_name}")
+    label = labels.get(function_name)
+    if label:
+        return label.rstrip()
+    return function_name.replace("_", " ").capitalize()
+
+
+def preparing_label(function_name: str, args: dict) -> str:
+    """What Mike is getting ready to do, from the part of a tool call written
+    so far (only whole values -- brain/providers/partial_json.py). "" until
+    there's enough to say something true. For several files, the one being
+    written now: that's what changes while the student waits."""
+    if not args:
+        return ""
+    if function_name == "write_files":
+        paths = [f.get("path") for f in (args.get("files") or []) if isinstance(f, dict) and f.get("path")]
+        return f"Writing {_short_path(paths[-1])}" if paths else ""
+    label = friendly_tool_name(function_name, args)
+    return "" if label.endswith(":") else label
 
 
 def describe_action(function_name: str, args: dict) -> str:

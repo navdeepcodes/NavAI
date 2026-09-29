@@ -244,8 +244,11 @@ def test_no_destructive_tool_is_left_ungated():
         # covered in test_safety_audit.py. The word matched is "clear" inside
         # "fails clearly".
         "click_element",
+        # "delete_pages" is one of its actions: it writes a NEW PDF without those
+        # pages, beside the original, which is never touched (its results never
+        # overwrite a file either). Nothing is destroyed.
+        "pdf_edit",
     }
-
     destructive_words = ("delete", "forget", "remove", "erase", "clear", "kill")
     unguarded = []
     for decl in TOOL_DECLARATIONS:

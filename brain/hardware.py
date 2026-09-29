@@ -81,6 +81,17 @@ class Machine:
     free_disk_gb: float
     unified_memory: bool
     metal: bool
+    #: Whether a local model can actually be offloaded to a GPU on this
+    #: machine. This is the single fact that decides whether Mike's tuned
+    #: settings apply at all -- they were all measured GPU-resident, and on
+    #: a machine without an offload path the same numbers produced 4.4 tok/s
+    #: and a 114-second first reply. False is the honest answer for an
+    #: integrated-graphics Windows laptop: Ollama reports "100% CPU" there.
+    gpu_offload: bool = False
+    #: A GPU with its own large memory pool (CUDA/ROCm), as opposed to an
+    #: integrated one sharing system RAM. The distinction decides how much
+    #: context is safe to allocate: see config/ollama.py's _num_ctx.
+    discrete_gpu: bool = False
     notes: list[str] = field(default_factory=list)
 
     # ── detection ─────────────────────────────────────────
@@ -105,6 +116,14 @@ class Machine:
         if unified:
             notes.append("unified memory: GPU and CPU draw on the same pool")
 
+        discrete = _has_discrete_gpu(system)
+        gpu_offload = metal or discrete or _has_offload_gpu(system)
+        if system == "Windows" and not gpu_offload:
+            notes.append(
+                "no GPU offload path: a local model runs on the CPU here, so "
+                "Mike uses a smaller context than on a GPU machine"
+            )
+
         if system not in ("Darwin", "Windows"):
             notes.append(
                 f"{system} is not yet supported for computer control; "
@@ -118,7 +137,9 @@ class Machine:
             available_memory_gb=round(available, 2),
             swap_used_gb=round(swap, 2),
             free_disk_gb=round(disk, 2),
-            unified_memory=unified, metal=metal, notes=notes,
+            unified_memory=unified, metal=metal, gpu_offload=gpu_offload,
+            discrete_gpu=discrete,
+            notes=notes,
         )
 
     # ── reasoning about residency ─────────────────────────
@@ -166,6 +187,13 @@ class Machine:
             "swap_used_gb": self.swap_used_gb,
             "free_disk_gb": self.free_disk_gb,
             "unified_memory": self.unified_memory, "metal": self.metal,
+            # Must be listed here, not just on the dataclass: current() rebuilds
+            # a Machine from this dict to refresh memory pressure, so a field
+            # missing here silently reverts to its default on every call after
+            # the first. That is exactly what happened -- detection reported a
+            # GPU, and one call later the same machine reported none.
+            "gpu_offload": self.gpu_offload,
+            "discrete_gpu": self.discrete_gpu,
             "notes": list(self.notes),
         }
 
@@ -245,6 +273,46 @@ def _memory_pressure_gb() -> tuple[float, float]:
     except Exception:
         logger.debug("Could not read memory pressure.", exc_info=True)
     return 0.0, 0.0
+
+
+def _has_discrete_gpu(system: str) -> bool:
+    """A GPU with its own memory: CUDA or ROCm. Detected by its driver tool
+    being on PATH, which is what correlates with the backend actually being
+    available to Ollama rather than merely with silicon existing."""
+    if system != "Windows":
+        return False
+    return any(shutil.which(p) for p in ("nvidia-smi", "rocminfo"))
+
+
+def _has_offload_gpu(system: str) -> bool:
+    """Is there a GPU a local model can actually be offloaded to?
+
+    Deliberately narrow: this asks what Ollama can currently *use*, not what
+    display adapters exist. An integrated Intel/AMD GPU shows up in every
+    Windows device list and is not an offload target for Ollama today --
+    treating it as one is exactly how a machine ends up running a 9.7B model
+    at CPU speed while the configuration assumes GPU residency. CUDA
+    (nvidia-smi) and ROCm (rocminfo) are the two paths that do work; both are
+    detected by their presence on PATH rather than by parsing a device list,
+    because a driver tool being installed is the thing that correlates with
+    the runtime actually having the backend available.
+    """
+    if system != "Windows":
+        return False
+    for probe in ("nvidia-smi", "rocminfo"):
+        if shutil.which(probe):
+            return True
+    # An integrated GPU counts, but only once it is actually usable. This
+    # deliberately does not report True merely because Windows lists a
+    # display adapter -- every machine has one. Ollama reaches an Intel or
+    # AMD iGPU through Vulkan, so the honest test is whether a Vulkan
+    # runtime is present; without it there is no offload path regardless of
+    # what silicon exists. brain/accelerator.py handles the separate problem
+    # of Ollama having a usable iGPU and declining to use it.
+    return bool(
+        os.path.exists(os.path.join(os.environ.get("SystemRoot", r"C:\Windows"),
+                                    "System32", "vulkan-1.dll"))
+    )
 
 
 def _chip_name() -> str:

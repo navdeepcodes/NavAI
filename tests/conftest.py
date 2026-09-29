@@ -21,8 +21,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+_OWN_DATA_DIR = None
 if "MIKE_DATA_DIR" not in os.environ:
-    os.environ["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-test-")
+    _OWN_DATA_DIR = os.environ["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-test-")
+
+# Tests never talk to the real Mike accounts project. Accounts are off unless
+# a test points them somewhere (tests/test_account_e2e.py uses a local
+# Supabase; tests/test_accounts.py configures an unreachable one).
+os.environ.setdefault("MIKE_SUPABASE_URL", "")
+os.environ.setdefault("MIKE_SUPABASE_ANON_KEY", "")
 
 
 # Manual end-to-end scripts, not pytest tests. Their step functions take
@@ -131,3 +138,48 @@ def pytest_collection_modifyitems(config, items):
     for item in items:
         if item.get_closest_marker("drives_real_apps"):
             item.add_marker(skip)
+
+
+# ══ garbage collection happens on the main thread only ═════
+#
+# Mirrors ui/system/main_thread_gc.py in the app. With automatic collection on,
+# a collection can fire on any background thread (the wake-word loop, Piper,
+# speech-to-text) and finalise Qt objects left in reference cycles by earlier
+# tests on the wrong thread -- an access violation that killed the whole run
+# ("Garbage-collecting" inside a thread importing faster-whisper). pytest runs
+# tests on the main thread, so collecting between tests keeps memory reclaimed
+# and every Qt finaliser on the thread that owns it.
+
+import gc as _gc
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _gc_only_on_main_thread():
+    _gc.disable()
+    yield
+    _gc.enable()
+
+
+@pytest.fixture(autouse=True)
+def _collect_between_tests():
+    yield
+    _gc.collect()
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """The throwaway data folder goes with the run -- each run left one behind
+    (261 of them in TEMP). Only the folder made above, never a MIKE_DATA_DIR
+    the run was pointed at."""
+    if not _OWN_DATA_DIR:
+        return
+    import logging
+    import shutil
+
+    root = logging.getLogger()
+    for handler in list(root.handlers):
+        # Mike's log file is in there, and Windows won't delete an open file.
+        # Only that one: pytest's own handlers hang off the root logger too.
+        if str(getattr(handler, "baseFilename", "")).startswith(_OWN_DATA_DIR):
+            root.removeHandler(handler)
+            handler.close()
+    shutil.rmtree(_OWN_DATA_DIR, ignore_errors=True)

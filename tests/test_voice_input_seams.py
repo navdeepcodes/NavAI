@@ -42,7 +42,10 @@ def test_get_recognizer_returns_a_real_windows_backend():
     from voice.recognizer.windows import WhisperRecognizer
 
     recognizer = get_recognizer()
-    assert isinstance(recognizer, WhisperRecognizer)
+    # Fast mode stands in front of it (Cloudflare's Whisper while connected);
+    # the local backend behind is what answers offline.
+    local = getattr(recognizer, "_local", recognizer)
+    assert isinstance(local, WhisperRecognizer)
     ok, why = recognizer.available()
     assert isinstance(ok, bool) and isinstance(why, str) and why
 
@@ -134,6 +137,34 @@ def test_make_backend_returns_a_real_macos_backend():
     backend = make_backend(lambda: None)
     assert isinstance(backend, MacWakeWord)
     assert not backend.is_active
+
+
+@pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only backend")
+def test_make_backend_returns_a_real_windows_backend():
+    """The regression this guards: Windows used to raise WakeWordUnavailable
+    from make_backend, so 'Hey Mike' and voice barge-in did not exist on
+    Windows at all. It now returns a real always-on backend."""
+    from voice.wake import make_backend
+    from voice.wake.windows import WindowsWakeWord
+
+    backend = make_backend(lambda: None)
+    assert isinstance(backend, WindowsWakeWord)
+    assert not backend.is_active
+
+
+def test_windows_wake_matches_the_name_not_common_lookalikes():
+    """Pure logic, so it runs anywhere: the matcher fires on the name and its
+    plausible transcriptions but not on words that merely contain it, because
+    a wake word that trips on 'microphone' is worse than none."""
+    from voice.wake.windows import WindowsWakeWord as W
+
+    assert W._is_wake("hey mike are you there")
+    assert W._is_wake("okay mike")
+    assert W._is_wake("hey mikey")
+    assert not W._is_wake("turn on the microphone")
+    assert not W._is_wake("mic check one two")
+    assert not W._is_wake("i talked to michael")
+    assert not W._is_wake("")
 
 
 def test_make_backend_raises_a_named_error_for_an_unsupported_platform(monkeypatch):

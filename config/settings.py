@@ -35,3 +35,61 @@ GROQ_MODEL = os.getenv(
     "GROQ_MODEL",
     "llama-3.3-70b-versatile"
 )
+
+# ── Publishing ────────────────────────────────────────────────
+# Who ships Mike and where people find help. Shown in Settings → About and
+# filled into the Privacy Policy and Terms (docs/legal/*.md, {placeholders}).
+# SUPPORT_EMAIL is deliberately empty until there is a real inbox behind it:
+# the app hides the "Email support" link rather than show an address nobody
+# reads.
+PUBLISHER = "Huddlecode"
+WEBSITE = "https://huddlecode.com"
+SUPPORT_EMAIL = ""
+#: Bump when the Privacy Policy or Terms change materially; people are asked
+#: to accept the new version on their next launch.
+LEGAL_VERSION = "2026-09-29.1"  # .1: text read from scans is kept on your computer
+
+# ── Accounts (Supabase) ───────────────────────────────────────
+# Optional Mike accounts: email, name and photo, synced across computers.
+# Conversations, memory and files never leave the computer either way.
+# Accounts stay switched off — and hidden — until both values are set. The
+# project URL and its public key (the "anon" or "publishable" key, never the
+# service-role / secret key) are safe to ship in the app: row-level security
+# in supabase/migrations decides what anyone can do. Setup: docs/ACCOUNTS.md.
+SUPABASE_URL = os.getenv("MIKE_SUPABASE_URL", "https://ljvvkiaikosvznedzanx.supabase.co")
+SUPABASE_ANON_KEY = os.getenv(
+    "MIKE_SUPABASE_ANON_KEY",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxqdnZraWFpa29zdnpu"
+    "ZWR6YW54Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAyOTYzMDEsImV4cCI6MjEwNTg3MjMwMX0.kupHNFSOjH2L3_"
+    "D4vKe3bARZODmMWJRWd_StRgTY6rI",
+)
+#: Sign-in providers switched on in the Supabase project, e.g. "google".
+SUPABASE_OAUTH_PROVIDERS = [
+    p.strip() for p in os.getenv("MIKE_SUPABASE_OAUTH", "").split(",") if p.strip()
+]
+#: True makes Mike usable only when signed in. Off: an account is optional,
+#: offered once on first run and always available in Settings → Account.
+ACCOUNT_REQUIRED = os.getenv("MIKE_ACCOUNT_REQUIRED", "").lower() in ("1", "true", "yes")
+
+# ── Fast mode (Cloudflare Workers AI) ─────────────────────────
+# Each student connects their own free Cloudflare account; Mike runs a cloud
+# model on its daily free allowance and falls back to the local one. The OAuth
+# client belongs to huddlecode.com's Cloudflare account. Its ID is public by
+# design: sign-in uses PKCE, so there is no secret to ship.
+CLOUDFLARE_CLIENT_ID = os.getenv("MIKE_CLOUDFLARE_CLIENT_ID", "b4b5f1fe7d789f7ce244eaee8b647348")
+#: Exactly the scopes the client is registered with: asking for one it isn't
+#: is refused outright ("invalid_scope"), before the student even signs in.
+#: Workers AI, and reading the account's name; offline_access is what brings
+#: a refresh token. (Custom models were removed from the client: unused.)
+CLOUDFLARE_SCOPES = os.getenv(
+    "MIKE_CLOUDFLARE_SCOPES",
+    "ai.read ai.write account-settings.read offline_access",
+).split()
+#: The cloud model. Chosen by sending Mike's real first request (prompt, tools,
+#: the student's words) for ten everyday asks to every model a free account
+#: can run, and judging the first move: gemma-4-26b 10/10 at 1.7s and ~49
+#: neurons a call (~200 calls a day free); qwen3.8-27b 10/10 but 6.8s and 242;
+#: glm-4.7-flash and gpt-oss-20b 9/10; qwen3-30b-a3b 3/10 -- it answered in
+#: words and never called a tool. glm-5.3-flash and deepseek-v4-flash are
+#: paid-plan only.
+CLOUDFLARE_MODEL = os.getenv("MIKE_CLOUDFLARE_MODEL", "@cf/google/gemma-4-26b-a4b-it")

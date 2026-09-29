@@ -2,7 +2,7 @@
   "name": "mike-bridge",
   "displayName": "Mike Bridge",
   "description": "Lets the Mike desktop assistant see and act on your editor. Entirely local — nothing leaves this machine.",
-  "version": "0.1.0",
+  "version": "0.3.1",
   "publisher": "mike",
   "private": true,
   "engines": {
@@ -31,7 +31,26 @@
       {
         "command": "mike.showStatus",
         "title": "Mike: Show Connection Status"
+      },
+      {
+        "command": "mike.ask",
+        "title": "Mike: Ask about this"
       }
-    ]
+    ],
+    "keybindings": [
+      {
+        "command": "mike.ask",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "mike.ask",
+          "group": "1_mike"
+        }
+      ]
+    }
   }
 }

@@ -20,17 +20,24 @@ comtypes, not written from documentation alone:
     rather than claiming failure, since a shallow-but-honest observation is
     more useful than none.
 
+  - Scroll: UI Automation's ScrollPattern, with a synthesized mouse wheel
+    as fallback. An earlier attempt used the wheel alone and could not
+    confirm it moved anything, so scroll was left unsupported. Re-tested
+    directly here against Settings, File Explorer and Notepad — all three
+    move, and ScrollPattern additionally reports VerticalScrollPercent, so
+    the scroll is verified after the fact the way every other action is
+    (and reports "already at the bottom" honestly instead of pretending).
+
 Not yet implemented — raise NotSupportedError rather than a guess, per
 computer/base.py's per-capability contract:
 
-  scroll, drag   Mouse-wheel and drag synthesis are straightforward with
-                 SendInput in principle, but have not been exercised
-                 against a real scrollable view or drag target on this
-                 machine, and a plausible-looking implementation that has
-                 not been watched actually work is exactly the "fake
-                 capability" this codebase's own testing philosophy rules
-                 out. Left honestly unsupported until verified the same way
-                 click and type_text were.
+  drag           Drag synthesis is straightforward with SendInput in
+                 principle, but has not been exercised against a real drag
+                 target on this machine, and a plausible-looking
+                 implementation that has not been watched actually work is
+                 exactly the "fake capability" this codebase's own testing
+                 philosophy rules out. Left honestly unsupported until
+                 verified the same way click, type_text and scroll were.
 
 No extra dependency beyond what requirements.txt already declares for
 Windows (comtypes, pywin32) plus ctypes (stdlib) for SendInput, which
@@ -39,7 +46,7 @@ neither package wraps directly.
 from __future__ import annotations
 
 import ctypes
-import subprocess
+import re
 import time
 from ctypes import wintypes
 
@@ -59,6 +66,7 @@ from computer.base import (
     UIElement,
     WindowInfo,
 )
+from hostplatform.foreground import bring_to_front
 
 # ══ SendInput plumbing ═════════════════════════════════════
 # pywin32 wraps the legacy, deprecated mouse_event/keybd_event; SendInput is
@@ -99,6 +107,7 @@ _MOUSEEVENTF_LEFTDOWN = 0x0002
 _MOUSEEVENTF_LEFTUP = 0x0004
 _MOUSEEVENTF_RIGHTDOWN = 0x0008
 _MOUSEEVENTF_RIGHTUP = 0x0010
+_MOUSEEVENTF_WHEEL = 0x0800
 _KEYEVENTF_EXTENDEDKEY = 0x0001
 _KEYEVENTF_KEYUP = 0x0002
 _KEYEVENTF_UNICODE = 0x0004
@@ -129,6 +138,32 @@ def _key_input(vk: int, down: bool, unicode: bool = False) -> _INPUT:
             flags |= _KEYEVENTF_EXTENDEDKEY
         ki = _KEYBDINPUT(vk, 0, flags, 0, None)
     return _INPUT(_INPUT_KEYBOARD, _INPUT_UNION(ki=ki))
+
+
+_WS_EX_NOACTIVATE = 0x08000000
+
+# Pause after each typed character so the app keeps up with the input
+# instead of falling behind and reading key state that has since changed.
+_KEY_PACE = 0.012
+
+_VkKeyScanW = ctypes.windll.user32.VkKeyScanW
+_VkKeyScanW.argtypes = [ctypes.c_wchar]
+_VkKeyScanW.restype = ctypes.c_short
+
+
+def _key_for(ch: str) -> tuple[int, bool] | None:
+    """(virtual key, needs Shift) that types `ch` on the current keyboard
+    layout, or None when the layout has no plain key for it (or needs AltGr)."""
+    scan = _VkKeyScanW(ch)
+    if scan == -1:
+        return None
+    vk, state = scan & 0xFF, (scan >> 8) & 0xFF
+    if state & 0x06:          # needs Ctrl/Alt (AltGr): let the unicode path send it
+        return None
+    shift = bool(state & 0x01)
+    if 0x41 <= vk <= 0x5A and ctypes.windll.user32.GetKeyState(0x14) & 1:
+        shift = not shift     # Caps Lock flips letters, so undo it
+    return vk, shift
 
 
 def _send_input(*inputs: _INPUT) -> None:
@@ -170,6 +205,11 @@ _ACTIONABLE = {
     "button", "text_field", "text_area", "link", "checkbox", "radio",
     "menu_item", "tab", "combo_box", "slider",
 }
+
+# Roles that carry readable content rather than an action: the text of a
+# result or message, the rows of a list. Gathered into the observation's text
+# so an outcome can be read, not just an interface operated.
+_READABLE = {"text", "list_item"}
 
 _MAX_NODES = 4000
 _MAX_DEPTH = 20
@@ -218,15 +258,57 @@ def _current_value(node, uia) -> str:
         return ""
 
 
+# ── ScrollPattern ──────────────────────────────────────────
+# The documented, element-scoped way to scroll a container, and the reason
+# scroll is supported here at all. A synthesized mouse wheel goes to whatever
+# window sits under the cursor and cannot be checked afterwards; ScrollPattern
+# names the container it moves and exposes VerticalScrollPercent, so the scroll
+# can be verified the same way every other action here is. Amounts are the
+# UI Automation ScrollAmount enum; -1 is the "do not scroll this axis"
+# sentinel (UIA_ScrollPatternNoScroll). Values confirmed against Settings,
+# File Explorer and Notepad on this machine — all three moved.
+_SCROLL_LARGE_DECREMENT = 0
+_SCROLL_SMALL_DECREMENT = 1
+_SCROLL_NO_AMOUNT = 2
+_SCROLL_LARGE_INCREMENT = 3
+_SCROLL_SMALL_INCREMENT = 4
+_SCROLL_NO_MOVE = -1.0
+
+
+def _scroll_pattern(node, uia):
+    try:
+        pattern = node.GetCurrentPattern(uia.UIA_ScrollPatternId)
+        return pattern.QueryInterface(uia.IUIAutomationScrollPattern) if pattern else None
+    except Exception:
+        return None
+
+
+def _vertical_percent(pattern):
+    """Current vertical scroll position, or None if the container will not say.
+
+    None is meaningful: it is what turns a verified scroll into an honest
+    'asked it to scroll but could not confirm', rather than a claimed success.
+    """
+    try:
+        pct = pattern.CurrentVerticalScrollPercent
+        return None if pct is None or pct < 0 else float(pct)
+    except Exception:
+        return None
+
+
 def _automation():
     """One IUIAutomation instance for the process. Created lazily so a
     machine where UI Automation itself cannot initialise fails at the first
     real call, not at import time."""
     global _AUTOMATION
     if _AUTOMATION is None:
-        import comtypes.gen.UIAutomationClient as uia_module
+        # Through _uia() (GetModule), not a bare import of the generated
+        # bindings: when Windows updates UIAutomationCore.dll, importing
+        # bindings made from the old one raises "Typelib different than
+        # module" (seen after a Windows update on this machine), while
+        # GetModule regenerates them.
         _AUTOMATION = _cc.CreateObject(
-            "{ff48dba4-60ef-4201-aa87-54103eef594e}", interface=uia_module.IUIAutomation
+            "{ff48dba4-60ef-4201-aa87-54103eef594e}", interface=_uia().IUIAutomation
         )
     return _AUTOMATION
 
@@ -261,6 +343,44 @@ def _process_name(pid: int) -> str:
         return ""
 
 
+def _cloaked(hwnd: int) -> bool:
+    """Hidden by the window manager though 'visible': a Store app's inner
+    window while it isn't shown, or a window on another desktop. Alt+Tab
+    leaves these out, and Windows won't bring them forward."""
+    value = ctypes.c_int(0)
+    try:
+        ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd), 14, ctypes.byref(value), ctypes.sizeof(value))   # DWMWA_CLOAKED
+    except Exception:
+        return False
+    return value.value != 0
+
+
+def _window_app(hwnd: int, pid: int) -> str:
+    """The app a window belongs to, as its process name. A Microsoft Store app
+    (Calculator, Settings, Photos) is drawn inside a frame owned by
+    ApplicationFrameHost; the app is the process behind the frame's content.
+    Measured: asked for "CalculatorApp", Mike found only the app's hidden inner
+    window, Windows refused to bring it forward, and the turn spiralled."""
+    name = _process_name(pid)
+    if name.lower() != "applicationframehost":
+        return name
+    hosted: list[int] = []
+
+    def child(ch, _):
+        _, child_pid = win32process.GetWindowThreadProcessId(ch)
+        if child_pid != pid:
+            hosted.append(child_pid)
+            return False
+        return True
+
+    try:
+        win32gui.EnumChildWindows(hwnd, child, None)
+    except Exception:
+        pass           # EnumChildWindows reports the early stop as an error
+    return (_process_name(hosted[0]) if hosted else "") or name
+
+
 class WindowsController(ComputerController):
     name = "windows"
 
@@ -278,7 +398,7 @@ class WindowsController(ComputerController):
         if not hwnd:
             return None
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        return _process_name(pid) or win32gui.GetWindowText(hwnd) or None
+        return _window_app(hwnd, pid) or win32gui.GetWindowText(hwnd) or None
 
     def _enum_windows(self) -> list[tuple[int, str, int, tuple[int, int, int, int]]]:
         found: list[tuple[int, str, int, tuple[int, int, int, int]]] = []
@@ -293,6 +413,16 @@ class WindowsController(ComputerController):
             width, height = rect[2] - rect[0], rect[3] - rect[1]
             if width * height < 4000:      # tray icons, tooltips, not "windows"
                 return True
+            # Popups and tool palettes are not windows a person works in --
+            # the same rule Alt+Tab uses. Measured: Windows 11 Notepad keeps
+            # fifteen visible "PopupHost" windows (owned, no-activate), and
+            # see_ui(app="Notepad") read one of those instead of the document,
+            # found nothing, and the model spent 170s looking elsewhere.
+            ex_style = win32gui.GetWindowLong(hwnd, win32con.GWL_EXSTYLE)
+            if ex_style & (_WS_EX_NOACTIVATE | win32con.WS_EX_TOOLWINDOW):
+                return True
+            if _cloaked(hwnd):
+                return True
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             found.append((hwnd, title, pid, rect))
             return True
@@ -305,7 +435,7 @@ class WindowsController(ComputerController):
         windows = []
         for hwnd, title, pid, rect in self._enum_windows():
             windows.append(WindowInfo(
-                app=_process_name(pid) or title,
+                app=_window_app(hwnd, pid) or title,
                 title=title,
                 bounds=Bounds(rect[0], rect[1], rect[2] - rect[0], rect[3] - rect[1]),
                 window_id=hwnd,
@@ -316,20 +446,55 @@ class WindowsController(ComputerController):
         return windows
 
     def running_apps(self) -> list[str]:
-        return sorted({_process_name(pid) or title
-                       for _, title, pid, _ in self._enum_windows()} - {""})
+        return sorted({_window_app(hwnd, pid) or title
+                       for hwnd, title, pid, _ in self._enum_windows()} - {""})
 
     def _hwnd_by_name(self, name: str) -> int | None:
+        """Resolve a name to a window, precise matches first.
+
+        The order matters for safety, not just for hit rate. A loose "is the
+        word anywhere in the title" match sends clicks and keystrokes to the
+        wrong window: asking for "Settings" matched a Notepad editing a file
+        named logUploaderSettings.ini, because "settings" is a substring of the
+        filename. So exact process-name and exact title win first; a
+        whole-word title match comes next; and the bare substring fallback is
+        last, reached only when nothing more specific exists.
+        """
         wanted = (name or "").strip().lower()
         if not wanted:
             return None
-        candidates = self._enum_windows()
+        # An app's own main window before anything it owns (a dialog, a
+        # palette), frontmost first within each -- EnumWindows is already in
+        # z-order and the sort is stable.
+        candidates = sorted(
+            self._enum_windows(),
+            key=lambda c: win32gui.GetWindow(c[0], win32con.GW_OWNER) != 0,
+        )
+
+        # 1. Exact process name — "chrome", "notepad".
+        apps = {hwnd: (_window_app(hwnd, pid) or "").lower() for hwnd, _t, pid, _r in candidates}
         for hwnd, title, pid, _ in candidates:
-            if (_process_name(pid) or "").lower() == wanted:
+            if apps[hwnd] == wanted:
                 return hwnd
+        # 2. Exact window title — "Settings", "Calculator" (UWP apps whose
+        #    process is ApplicationFrameHost, so only the title identifies them).
         for hwnd, title, pid, _ in candidates:
-            app = (_process_name(pid) or "").lower()
-            if wanted in app or app in wanted or wanted in title.lower():
+            if title.strip().lower() == wanted:
+                return hwnd
+        # 3. Process-name substring, either direction.
+        for hwnd, title, pid, _ in candidates:
+            app = apps[hwnd]
+            if app and (wanted in app or app in wanted):
+                return hwnd
+        # 4. The name as a whole word in the title — matches "Settings" in
+        #    "Bluetooth Settings" but not inside "logUploaderSettings.ini".
+        boundary = re.compile(r"(?<![a-z0-9])" + re.escape(wanted) + r"(?![a-z0-9])")
+        for hwnd, title, pid, _ in candidates:
+            if boundary.search(title.lower()):
+                return hwnd
+        # 5. Bare substring, last resort.
+        for hwnd, title, pid, _ in candidates:
+            if wanted in title.lower():
                 return hwnd
         return None
 
@@ -341,7 +506,7 @@ class WindowsController(ComputerController):
             ))
         title = win32gui.GetWindowText(hwnd)
         _, pid = win32process.GetWindowThreadProcessId(hwnd)
-        app_name = _process_name(pid) or title
+        app_name = _window_app(hwnd, pid) or title
 
         automation = _automation()
         uia = _uia()
@@ -362,9 +527,21 @@ class WindowsController(ComputerController):
 
         elements: list[UIElement] = []
         counter = [0]
+        # Readable, non-actionable text — a calculator's result, a status line,
+        # a page's body. Without this observe() could act but never read the
+        # outcome, so "what does it say now" fell to a slow screenshot even
+        # when the answer was sitting in the accessibility tree as plain text.
+        # Deduped against control labels so button captions are not repeated,
+        # and capped so a long list cannot flood the observation.
+        texts: list[str] = []
+        seen: set[str] = set()
+        text_budget = [0]
+        _TEXT_CAP = 1800
 
         def walk(node, depth=0):
-            if depth > _MAX_DEPTH or counter[0] >= _MAX_NODES or len(elements) >= limit:
+            if depth > _MAX_DEPTH or counter[0] >= _MAX_NODES:
+                return
+            if len(elements) >= limit and text_budget[0] >= _TEXT_CAP:
                 return
             try:
                 name = node.CurrentName or ""
@@ -389,6 +566,14 @@ class WindowsController(ComputerController):
                     bounds=bounds, enabled=enabled, focused=focused,
                     native_role=str(control_type),
                 ))
+                seen.add(name.strip().casefold())
+            elif role in _READABLE and text_budget[0] < _TEXT_CAP:
+                stripped = name.strip()
+                key = stripped.casefold()
+                if stripped and key not in seen:
+                    seen.add(key)
+                    texts.append(stripped)
+                    text_budget[0] += len(stripped) + 1
             walker = automation.ControlViewWalker
             child = walker.GetFirstChildElement(node)
             while child is not None:
@@ -408,9 +593,13 @@ class WindowsController(ComputerController):
                 "Automation tree without accessibility support turned on in "
                 "the app itself — a known gap, not a failed read."
             )
+        visible = "\n".join(texts)
+        # Text alone is still a real observation: a read-only screen (a result,
+        # a message, a document) has something worth reporting even with no
+        # controls to act on, so source is "accessibility" when either is found.
+        source = "accessibility" if (elements or visible) else "none"
         return Observation(app=app_name, window=title, elements=elements,
-                            source="accessibility" if elements else "none",
-                            note=note)
+                            text=visible, source=source, note=note)
 
     def focused_element(self) -> UIElement | None:
         try:
@@ -449,21 +638,150 @@ class WindowsController(ComputerController):
         label = {1: "click", 2: "double-click", 3: "triple-click"}.get(count, f"{count}x click")
         return ActionResult(True, f"{button} {label} at ({x}, {y})")
 
+    def _find_scrollable(self, hwnd: int, at_point: tuple[int, int] | None):
+        """The best vertically-scrollable container in this window.
+
+        Returns (pattern, bounds) or (None, None). With a point — the centre of
+        the element a ref pointed at — the *smallest* container enclosing that
+        point wins, so scrolling a list inside a page moves the list and not
+        the page. Without one, the *tallest* container wins, which is the main
+        content region in every app checked (Settings' page, Explorer's file
+        view, Notepad's editor).
+        """
+        automation = _automation()
+        uia = _uia()
+        try:
+            root = automation.ElementFromHandle(hwnd)
+        except Exception:
+            return None, None
+
+        found: list[tuple[object, Bounds, int]] = []
+        counter = [0]
+
+        def walk(node, depth=0):
+            if depth > _MAX_DEPTH or counter[0] >= _MAX_NODES or len(found) >= 40:
+                return
+            counter[0] += 1
+            pattern = _scroll_pattern(node, uia)
+            if pattern is not None:
+                try:
+                    scrollable = bool(pattern.CurrentVerticallyScrollable)
+                except Exception:
+                    scrollable = False
+                if scrollable:
+                    try:
+                        rect = node.CurrentBoundingRectangle
+                        w, h = rect.right - rect.left, rect.bottom - rect.top
+                        if w > 0 and h > 40:
+                            bounds = Bounds(rect.left, rect.top, w, h)
+                            found.append((pattern, bounds, w * h))
+                    except Exception:
+                        pass
+            walker = automation.ControlViewWalker
+            try:
+                child = walker.GetFirstChildElement(node)
+            except Exception:
+                return
+            while child is not None:
+                walk(child, depth + 1)
+                try:
+                    child = walker.GetNextSiblingElement(child)
+                except Exception:
+                    break
+
+        walk(root)
+        if not found:
+            return None, None
+
+        if at_point is not None:
+            px, py = at_point
+            enclosing = [f for f in found
+                         if f[1].x <= px <= f[1].x + f[1].width
+                         and f[1].y <= py <= f[1].y + f[1].height]
+            if enclosing:
+                pattern, bounds, _ = min(enclosing, key=lambda f: f[2])
+                return pattern, bounds
+
+        pattern, bounds, _ = max(found, key=lambda f: f[2])
+        return pattern, bounds
+
+    def _wheel(self, bounds: Bounds, dy: int) -> None:
+        """Synthesized wheel at a container's centre. Fallback only: it goes to
+        whatever window is under the cursor, so it is used after the semantic
+        path, not before, and never without something to verify it against."""
+        cx, cy = bounds.center
+        win32api.SetCursorPos((int(cx), int(cy)))
+        time.sleep(0.03)
+        notches = max(1, min(abs(dy) // 120, 10))
+        delta = 120 if dy > 0 else -120        # wheel: +up, -down (matches dy)
+        for _ in range(notches):
+            _send_input(_mouse_input(_MOUSEEVENTF_WHEEL, delta))
+            time.sleep(0.02)
+
     def scroll(self, dx: int, dy: int, x: int | None = None, y: int | None = None) -> ActionResult:
-        # Tried and pulled back, not left unattempted: SendInput's
-        # MOUSEEVENTF_WHEEL, cursor positioned first via SetCursorPos, is the
-        # textbook approach and click/type_text/press_keys all work through
-        # the same SendInput path. But measured against Notepad's editor and
-        # a File Explorer listing, both confirmed genuinely scrollable via
-        # their own UIA ScrollPattern, the wheel event produced no observed
-        # position change in either — repeatedly, in both directions. Rather
-        # than ship a plausible-looking implementation nobody watched
-        # actually work, this stays an honest gap.
-        raise NotSupportedError(
-            "Scroll is not currently supported on Windows. A SendInput-based "
-            "implementation was tried and did not produce a verified effect "
-            "against real scrollable content — not yet safe to claim."
-        )
+        """Scroll the container under (x, y), or the main scrollable region.
+
+        Per the tool contract, negative dy scrolls down (further into the
+        content). Tries UI Automation's ScrollPattern first — it names the
+        container and lets the move be verified — and falls back to a
+        synthesized wheel only when the pattern does not shift, reporting
+        honestly when nothing could be confirmed.
+        """
+        hwnd = win32gui.GetForegroundWindow()
+        if not hwnd:
+            return ActionResult(False, error="No foreground window to scroll.")
+        at_point = (x, y) if x is not None and y is not None else None
+        pattern, bounds = self._find_scrollable(hwnd, at_point)
+
+        if pattern is None:
+            return ActionResult(False, error=(
+                "Nothing on this window exposes a scrollable region to the "
+                "accessibility layer, so there is no reliable way to scroll it. "
+                "If it is a custom-drawn view, try clicking into it and using "
+                "Page Down, or see_screen to read it as an image."
+            ))
+
+        before = _vertical_percent(pattern)
+        # Vertical: negative dy -> further down -> increment. |dy| in pixels
+        # maps to whole pages, since ScrollPattern's unit is a page/line, not a
+        # pixel; ~400px per page keeps a plain "scroll down" to roughly a
+        # screenful.
+        vertical = _SCROLL_LARGE_INCREMENT if dy < 0 else (
+            _SCROLL_LARGE_DECREMENT if dy > 0 else _SCROLL_NO_AMOUNT)
+        horizontal = _SCROLL_LARGE_INCREMENT if dx < 0 else (
+            _SCROLL_LARGE_DECREMENT if dx > 0 else _SCROLL_NO_AMOUNT)
+        pages = max(1, min(abs(dy) // 400 or 1, 8)) if dy else 1
+
+        moved_by_pattern = False
+        if dy or dx:
+            for _ in range(pages):
+                try:
+                    pattern.Scroll(horizontal, vertical)
+                except Exception:
+                    break
+                time.sleep(0.05)
+            after = _vertical_percent(pattern)
+            moved_by_pattern = (before is not None and after is not None
+                                and abs(after - before) > 0.5)
+
+        if moved_by_pattern:
+            after = _vertical_percent(pattern)
+            where = "down" if dy < 0 else "up" if dy > 0 else "sideways"
+            return ActionResult(True, f"scrolled {where} ({before:.0f}% -> {after:.0f}%)")
+
+        # ScrollPattern reported no movement (already at the end, or a container
+        # that exposes the pattern but ignores Scroll). Try the wheel, then
+        # check the same percent to see whether *that* did anything.
+        self._wheel(bounds, dy)
+        time.sleep(0.15)
+        after = _vertical_percent(pattern)
+        if before is not None and after is not None:
+            if abs(after - before) > 0.5:
+                where = "down" if dy < 0 else "up"
+                return ActionResult(True, f"scrolled {where} ({before:.0f}% -> {after:.0f}%)")
+            edge = "bottom" if dy < 0 else "top"
+            return ActionResult(True, f"already at the {edge} — nothing more to scroll")
+        return ActionResult(True, "sent a scroll; could not confirm how far it moved")
 
     def drag(self, from_x: int, from_y: int, to_x: int, to_y: int) -> ActionResult:
         raise NotSupportedError(
@@ -475,10 +793,33 @@ class WindowsController(ComputerController):
     def type_text(self, text: str) -> ActionResult:
         if not text:
             return ActionResult(False, error="No text given to type.")
+        shift_held = False
+
+        def shift(down: bool) -> None:
+            # Notepad reads Shift's *live* state when it gets to a key, not
+            # the state when the key was sent, so Shift must still be down
+            # then -- and pressed once for a run of capitals, as a person
+            # would, not toggled per letter. Measured: sent in one batch,
+            # "XYZ ! ( #" arrived as "xyz 1 9 3"; toggled per letter, the key
+            # after the run was intermittently lost.
+            nonlocal shift_held
+            if shift_held != down:
+                _send_input(_key_input(0x10, down=down))
+                shift_held = down
+                time.sleep(_KEY_PACE * (1 if down else 2))
+
+        try:
+            self._type_chars(text, shift)
+        finally:
+            shift(False)
+        return ActionResult(True, f"typed {len(text)} characters")
+
+    def _type_chars(self, text: str, shift) -> None:
         for ch in text:
             if ch == "\r":
                 continue    # \r\n: the \n below sends the actual newline
             if ch == "\n":
+                shift(False)
                 # Verified directly: a raw LF sent via KEYEVENTF_UNICODE is
                 # silently dropped by Windows edit controls — Notepad typed
                 # "line 0line 1line 2..." with every newline vanishing, not
@@ -494,9 +835,27 @@ class WindowsController(ComputerController):
                 # 16 bits, so this would need a surrogate pair to send
                 # correctly. Not yet handled — skipped rather than mojibake.
                 continue
-            _send_input(_key_input(code, down=True, unicode=True))
-            _send_input(_key_input(code, down=False, unicode=True))
-        return ActionResult(True, f"typed {len(text)} characters")
+            # Anything the keyboard layout can produce goes as a real key
+            # press. Unicode "packets" (VK_PACKET) are turned into characters
+            # only when the app gets round to them, from the *latest* packet
+            # -- so an app that falls behind types the last character over
+            # and over. Measured on Windows 11 Notepad: "probe text abc xyz
+            # hello" came out "probe text abc ooooooooo". A real key press
+            # carries its own key code and cannot be rewritten that way.
+            key = _key_for(ch)
+            if key is not None:
+                vk, needs_shift = key
+                shift(needs_shift)
+                _send_input(_key_input(vk, down=True), _key_input(vk, down=False))
+                time.sleep(_KEY_PACE)
+                continue
+            # Accents, other scripts: only a packet can send them. Down and up
+            # together, then give the app a moment to consume it before the
+            # next one can overwrite it.
+            shift(False)
+            _send_input(_key_input(code, down=True, unicode=True),
+                        _key_input(code, down=False, unicode=True))
+            time.sleep(0.02)
 
     def press_keys(self, key: str, modifiers: list[str] | None = None) -> ActionResult:
         name = (key or "").strip().lower()
@@ -537,31 +896,10 @@ class WindowsController(ComputerController):
                 f"No running application named {name!r}. Check list_windows "
                 "for what is running."
             ))
-        # SetForegroundWindow refuses to steal focus from a process Windows
-        # does not consider to have "input permission" — verified on this
-        # machine: a bare call silently failed to raise a background window.
-        # Attaching this thread's input queue to the target window's thread
-        # is the documented workaround.
-        if win32gui.IsIconic(hwnd):
-            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        target_thread, _ = win32process.GetWindowThreadProcessId(hwnd)
-        current_thread = win32api.GetCurrentThreadId()
-        attached = False
-        try:
-            if target_thread != current_thread:
-                attached = bool(ctypes.windll.user32.AttachThreadInput(
-                    current_thread, target_thread, True))
-            win32gui.SetForegroundWindow(hwnd)
-        except Exception as exc:
-            return ActionResult(False, error=f"Could not activate: {exc}")
-        finally:
-            if attached:
-                ctypes.windll.user32.AttachThreadInput(current_thread, target_thread, False)
-        time.sleep(0.2)
-        ok = win32gui.GetForegroundWindow() == hwnd
-        if not ok:
+        if not bring_to_front(hwnd):
             return ActionResult(False, error=(
                 f"Asked Windows to bring {name!r} to the front, but it did "
                 "not become the foreground window."
             ))
         return ActionResult(True, f"activated {name}")
+

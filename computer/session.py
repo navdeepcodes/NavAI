@@ -16,8 +16,10 @@ there now.
 from __future__ import annotations
 
 import logging
+import os
 import time
 
+from computer import attention
 from computer.base import (
     ComputerError,
     Observation,
@@ -225,6 +227,17 @@ class ComputerSession:
         found = self._observation.find(ref)
         return found.describe() if found else ref
 
+    def element_label(self, ref: str | None) -> str:
+        """The visible name of a referenced element, or "" if it has none.
+
+        For telling a person what Mike is about to click ("Clicking “Save”")
+        instead of an internal reference like "el7".
+        """
+        if self._observation is None or not ref:
+            return ""
+        found = self._observation.find(ref)
+        return (found.label or "").strip() if found else ""
+
     def irreversible_target(self, ref: str) -> str | None:
         """The phrase that makes this element a point of no return, if any."""
         if self._observation is None:
@@ -233,6 +246,18 @@ class ComputerSession:
         return looks_irreversible(found.label) if found else None
 
     # -- actions ------------------------------------------------------
+    def _own_window_in_front(self) -> list[str] | None:
+        """None unless this process's own window is the one in front; then
+        the other apps that are open, for the model to pick from."""
+        try:
+            windows = self.controller().list_windows()
+        except Exception:
+            return None
+        me = os.getpid()
+        if not any(w.frontmost and w.pid == me for w in windows):
+            return None
+        return sorted({w.app for w in windows if w.pid != me and w.app})[:8]
+
     def _ensure_front(self) -> str:
         """Bring the observed application forward before acting on it.
 
@@ -318,6 +343,7 @@ class ComputerSession:
                 "preferred: it is checked against a real element."
             )}
 
+        self._attend("click", _click_label(element if ref else None, button, count), x=x, y=y)
         try:
             result = self.controller().click(int(x), int(y), button=button, count=count)
         except ComputerError as exc:
@@ -353,14 +379,39 @@ class ComputerSession:
     # keystrokes are going somewhere the caller probably did not intend.
     _TEXT_ROLES = frozenset({"text_field", "text_area", "combo_box"})
 
-    def type_text(self, text: str) -> dict:
+    def type_text(self, text: str, app: str | None = None) -> dict:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
+        # "Type X in Notepad" is one request, not two. Switching here saves a
+        # whole model round-trip (measured ~8-20s on the target laptop) over a
+        # separate focus_app call, and if the switch fails nothing is typed --
+        # keystrokes never go to whatever else happens to be in front.
+        if app:
+            switched = self.focus_app(app)
+            if switched.get("status") != "success":
+                return {
+                    "status": "error",
+                    "error": f"Did not type: could not switch to {app}: "
+                             f"{switched.get('error') or switched.get('result') or 'unknown error'}",
+                }
         # Keystrokes go to whatever is frontmost, so the same precondition
         # applies: type into the application that was observed, not whatever
         # happens to be in front now.
         note = self._ensure_front()
+        # While the user talks to Mike in its own window, that window is in
+        # front, and keystrokes with no app named would land in Mike's own
+        # composer. Measured in the installed app: "type hello from mike in
+        # notepad" called with no app typed into whatever was in front while
+        # Mike reported Notepad. Nothing is typed; the model is told what is
+        # open so it can name the app.
+        mine = self._own_window_in_front()
+        if mine is not None:
+            return {"status": "error", "error": (
+                "Nothing was typed: Mike's own window is in front, so the text "
+                "would have gone into Mike. Give the app to type into"
+                + (f" (open now: {', '.join(mine)})." if mine else ".")
+            )}
 
         # Where the text is about to go. Typing is aimed by focus, not by the
         # last click, and the two are not always the same control -- measured:
@@ -369,6 +420,7 @@ class ComputerSession:
         # control had focus. Reading it costs one accessibility call.
         before = self._focused()
 
+        self._attend("type", "Typing", element=before)
         try:
             result = self.controller().type_text(text).as_dict()
         except ComputerError as exc:
@@ -376,7 +428,20 @@ class ComputerSession:
         if result.get("status") != "success":
             return result
 
+        # Keystrokes are queued, not applied, when the call returns. Measured
+        # on Notepad: typing "probe text" and reading straight back gave
+        # "now reads 'p'", and the model -- told its text was wrong -- spent
+        # extra turns "fixing" a field that was fine. Wait for the text to
+        # land (bounded), then report what is really there.
         after = self._focused()
+        deadline = time.time() + 1.5
+        while (
+            text.strip()
+            and time.time() < deadline
+            and not (after and text.strip() in (after.value or ""))
+        ):
+            time.sleep(0.05)
+            after = self._focused() or after
         landed = after or before
 
         if landed is None:
@@ -388,16 +453,36 @@ class ComputerSession:
             return result
 
         where = f"{landed.role} {landed.label!r}" if landed.label else landed.role
+        value = landed.value or ""
+        typed = text.strip()
+        # Read back, not assumed: the text is in a text control's contents.
+        verified = bool(typed and landed.role in self._TEXT_ROLES and typed in value)
         detail = f" into {where}"
-        if landed.value:
-            detail += f", which now reads {landed.value[:120]!r}"
-        if landed.role not in self._TEXT_ROLES:
+        if verified:
+            # Show the text where it landed, not the start of the document --
+            # in a long document the first 120 characters may not include it.
+            at = value.find(typed)
+            start = max(0, at - 40)
+            excerpt = ("…" if start else "") + value[start:at + len(typed) + 40]
+            detail += f"; read back, it is there: {excerpt!r}"
+        elif landed.role in self._TEXT_ROLES:
+            detail += (
+                f" — but reading the field back, the text is NOT in it (it reads "
+                f"{value[:120]!r}), so it did not go in as intended. Do not say "
+                "it was typed; check with see_ui or try again"
+            )
+        else:
+            if value:
+                detail += f", which now reads {value[:120]!r}"
             detail += (
                 f" — note that {landed.role} is not a text field, so the "
-                "keystrokes may not have gone where you intended"
+                "keystrokes may not have gone where you intended. Unless this "
+                "app takes keystrokes without a field (a calculator, a game), "
+                "do not tell the user it was typed: check with see_ui first"
             )
         result["result"] = result.get("result", "") + detail + note
         result["focused"] = where
+        result["verified"] = verified
         return result
 
     def _focused(self):
@@ -411,7 +496,15 @@ class ComputerSession:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
+        # "ctrl+a" as one key is how shortcuts are written; measured, the model
+        # sent exactly that, got "Unknown key 'ctrl+a'", and spent a whole
+        # extra call (~12s) working around it.
+        if "+" in key.strip("+") and len(key) > 1:
+            *mods, key = [part.strip() for part in key.split("+") if part.strip()]
+            modifiers = [*(modifiers or []), *mods]
         note = self._ensure_front()
+        self._attend("key", "Pressing " + "+".join([*(modifiers or []), key]),
+                     element=self._focused())
         try:
             result = self.controller().press_keys(key, modifiers).as_dict()
         except ComputerError as exc:
@@ -424,16 +517,49 @@ class ComputerSession:
         ok, why = self.availability()
         if not ok:
             return {"status": "error", "error": why}
+        # Scroll goes to the foreground window, so the same precondition that
+        # click and type_text enforce applies here: scroll the application that
+        # was observed, not whatever happens to be in front now.
+        note = self._ensure_front()
         x = y = None
         if ref:
             element, problem = self.element(ref)
             if problem:
                 return {"status": "error", "error": problem, "retry_safe": True}
             x, y = element.bounds.center
+        self._attend("scroll", "Scrolling", x=x, y=y)
         try:
-            return self.controller().scroll(dx, dy, x, y).as_dict()
+            result = self.controller().scroll(dx, dy, x, y).as_dict()
         except ComputerError as exc:
             return {"status": "error", "error": str(exc)}
+        if note and result.get("status") == "success":
+            result["result"] = result.get("result", "") + note
+        return result
+
+    def _attend(self, kind: str, label: str, *, element=None, x=None, y=None) -> None:
+        """Say where Mike is about to act, so the nib can go there first. At a
+        control's centre when he has one; else the front window's. Never
+        raises and never holds the action up for long (see attention)."""
+        if not attention.active():
+            return
+        try:
+            if x is None or y is None:
+                bounds = None
+                if element is not None and element.bounds.width >= 2 and element.bounds.height >= 2:
+                    bounds = element.bounds
+                else:
+                    front = next((w for w in self.controller().list_windows() if w.frontmost), None)
+                    bounds = front.bounds if front is not None else None
+                if bounds is None:
+                    x = y = None
+                elif kind == "window":
+                    attention.window(bounds, label)
+                    return
+                else:
+                    x, y = bounds.center
+            attention.point(kind, x, y, label)
+        except Exception:
+            logger.debug("Couldn't say where Mike is working.", exc_info=True)
 
     def list_windows(self) -> dict:
         ok, why = self.availability()
@@ -463,7 +589,14 @@ class ComputerSession:
             # The previous observation belongs to the previous app.
             self._observation = None
             self._app = name
+            self._attend("window", f"Switching to {name}")
         return result.as_dict()
+
+
+def _click_label(element, button: str, count: int) -> str:
+    what = "Right-clicking" if button == "right" else "Double-clicking" if count == 2 else "Clicking"
+    name = (getattr(element, "label", "") or "").strip()
+    return f"{what} {name[:28]}" if name else what
 
 
 # One session per process. The observation it holds is short-lived state about

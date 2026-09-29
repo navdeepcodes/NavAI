@@ -175,6 +175,12 @@ class QwenVoice(VoiceProvider):
     # ── availability ──────────────────────────────────────
 
     def available(self) -> tuple[bool, str]:
+        # A misconfigured speaker is reported first, on every platform, so the
+        # message can name the voices that do exist rather than only saying
+        # the runtime is missing.
+        if self._voice not in VOICES:
+            return False, (f"unknown voice {self._voice!r}; this model has: "
+                           + ", ".join(sorted(VOICES)))
         if not self._python.exists():
             return False, (
                 f"the neural voice is not installed (no interpreter at "
@@ -186,9 +192,6 @@ class QwenVoice(VoiceProvider):
                 f"the voice model is not downloaded ({self._model}). "
                 "See docs/voice-setup.md."
             )
-        if self._voice not in VOICES:
-            return False, (f"unknown voice {self._voice!r}; this model has: "
-                           + ", ".join(sorted(VOICES)))
         return True, f"Qwen3-TTS 4-bit ({self._voice})"
 
     # ── the worker ────────────────────────────────────────

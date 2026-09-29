@@ -79,7 +79,7 @@ _ENDPOINTS: dict[str, dict] = {
 def available_providers() -> list[str]:
     """Providers Mike can construct today. Grows as rows are added above; the
     rest of Mike does not change when it does."""
-    return ["ollama", *sorted(_ENDPOINTS)]
+    return ["engine", "ollama", *sorted(_ENDPOINTS)]
 
 
 def get_provider(
@@ -88,31 +88,50 @@ def get_provider(
     model: str | None = None,
     vision_model: str | None = None,
     refresh: bool = False,
+    fast_mode: bool = True,
 ) -> BrainProvider:
     """The brain for this session.
 
     Defaults come from config so existing behaviour is unchanged, but every
     part is overridable — which is what makes runtime model switching a
-    configuration change rather than a code change.
+    configuration change rather than a code change. `fast_mode=False`: the
+    local brain alone, without Cloudflare in front of it.
     """
     from config import ollama as ollama_config
 
     provider = (provider or getattr(ollama_config, "BRAIN_PROVIDER", "ollama")).lower()
+    same_model = {model or ollama_config.OLLAMA_CHAT_MODEL, vision_model or ollama_config.OLLAMA_CHAT_MODEL}
+    if provider == "engine" and same_model != {ollama_config.OLLAMA_CHAT_MODEL}:
+        # A different model: Ollama serves those. The same one stays on the
+        # engine -- measured, the conversation summariser named it explicitly,
+        # went to Ollama, and loaded a second 9GB copy beside the engine's.
+        provider = "ollama"
+    if provider == "engine":
+        from brain import engine as _engine
+
+        if not _engine.available():
+            provider = "ollama"
     if provider == "ollama":
         model = model or ollama_config.OLLAMA_CHAT_MODEL
         vision_model = vision_model or ollama_config.OLLAMA_VISION_MODEL
 
-    key = f"{provider}:{model}:{vision_model}"
+    key = f"{provider}:{model}:{vision_model}:{'fast' if fast_mode else 'local'}"
     if not refresh and key in _CACHE:
         return _CACHE[key]
 
-    if provider == "ollama":
+    if provider == "engine":
+        from brain import engine as _engine
+        from brain.providers.engine_provider import EngineProvider
+
+        instance: BrainProvider = EngineProvider(_engine.engine())
+    elif provider == "ollama":
         from brain.providers.ollama_provider import OllamaProvider
 
-        instance: BrainProvider = OllamaProvider(
+        instance = OllamaProvider(
             model=model,
             host=ollama_config.OLLAMA_HOST,
             num_ctx=getattr(ollama_config, "NUM_CTX", 8192),
+            keep_alive=getattr(ollama_config, "KEEP_ALIVE", "5m"),
             vision_model=vision_model,
         )
     elif provider in _ENDPOINTS:
@@ -134,6 +153,18 @@ def get_provider(
             f"Unknown brain provider {provider!r}. Available: "
             f"{', '.join(available_providers())}."
         )
+
+    if fast_mode and provider in ("engine", "ollama") and (model or ollama_config.OLLAMA_CHAT_MODEL) \
+            == ollama_config.OLLAMA_CHAT_MODEL:
+        # Mike's chat brain, with Fast mode in front: the student's own
+        # Cloudflare account answers when it's connected and switched on, and
+        # this is the local brain, untouched, whenever it isn't.
+        from config import settings
+
+        if getattr(settings, "CLOUDFLARE_CLIENT_ID", ""):
+            from brain.providers.workers_ai_provider import WorkersAIProvider
+
+            instance = WorkersAIProvider(instance, settings.CLOUDFLARE_MODEL)
 
     _CACHE[key] = instance
     return instance

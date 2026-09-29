@@ -32,7 +32,13 @@ DEFAULTS: dict[str, Any] = {
     # not listed in this dict — deliberately, so a stale file cannot smuggle
     # in settings — which meant the voice choice could be read but never
     # saved, and every attempt to configure it looked like it had worked.
-    "voice_provider": "native",
+    # "piper" is Mike's local neural voice on Windows (chosen by benchmark over
+    # Kokoro for latency/resource/reliability on modest hardware). It is the
+    # default everywhere and self-corrects: where the Piper runtime isn't
+    # bundled (macOS), its availability check fails and Mike falls back to the
+    # native system voice, so this one default is correct on every platform.
+    "voice_provider": "piper",
+    "voice_piper_voice": "en_US-amy-medium",
     "voice_qwen_speaker": "Ryan",
 
     # How Mike should sound, in plain English, handed to the model as its
@@ -43,9 +49,67 @@ DEFAULTS: dict[str, Any] = {
     # characters destabilised generation and truncated sentences mid-word.
     "voice_qwen_instruct": "Picking up a conversation. Calm, grounded, matter-of-fact.",
     "wake_word_enabled": True,
+    # After answering something said aloud, keep listening a few seconds for
+    # a reply, without "Hey Mike" again.
+    "voice_follow_up": True,
+    # Where the corner companion was dragged to: "x,y" of its bottom-right
+    # corner, "" for the screen's bottom-right.
+    "corner_anchor": "",
     "edge_enabled": True,
     "reduced_motion": False,
+    # While Mike works in other apps: his window steps aside to the corner,
+    # and the nib shows where he's working. Either can be turned off.
+    "guide_collapse": True,
+    "guide_nib": True,
     "onboarding_complete": False,
+
+    # These were read and written all over the app but never declared here, so
+    # set_value() dropped every write silently: the first-run tour reappeared on
+    # every launch because "shown" could never be saved, and a chosen accent or
+    # theme never survived a restart. Declared now so they actually persist.
+    "welcome_tour_shown": False,     # the one-time install tour has run
+    "accent": "",                    # the user's chosen accent, or "" for default
+    "theme": "system",               # "system" | "light" | "dark"
+
+    # The workspace window remembers where it was and how big it was, so Mike
+    # reopens as the desktop application the user last shaped rather than
+    # snapping back to a default rectangle every launch. -1 means "not set yet,
+    # centre me"; the size is clamped to the screen on load so a saved geometry
+    # from a larger monitor can't strand the window off-screen.
+    "window_w": -1,
+    "window_h": -1,
+    "window_x": -1,
+    "window_y": -1,
+    "window_maximised": False,
+    # The conversation rail folded away (Ctrl+B / its toggle), remembered so
+    # the workspace reopens the way it was left.
+    "sidebar_collapsed": False,
+
+    # Launch readiness. Abilities the user switched off (comma-separated keys
+    # from brain/permissions.py); whether Mike opens at sign-in and how; tray
+    # notifications; which version of the Terms/Privacy Policy was accepted.
+    "abilities_off": "",
+    # Abilities that start off (coding) and the user switched on. Undeclared,
+    # the Settings switch for "Work with code" was dropped on every save.
+    "abilities_on": "",
+    # Fast mode: the connected Cloudflare account answers first, the local
+    # model behind it. Only matters once connected; False pauses it.
+    "fast_mode": True,
+    # The one-time offer to connect Fast mode (after the first-run tour).
+    "fast_mode_offered": False,
+    # Mike's VS Code extension was installed once; if the student removes it,
+    # it isn't put back. Undeclared, this never saved.
+    "vscode_extension_offered": False,
+    "launch_at_login": False,
+    "notifications_enabled": True,
+    "terms_accepted_version": "",
+    # The one-time offer to create a Mike account (after the first-run tour).
+    "account_offered": False,
+
+    # Who Mike is talking to. A real profile surface edits these; they're used
+    # for a warmer greeting and nothing is sent anywhere.
+    "profile_name": "",
+    "profile_about": "",
 }
 
 _lock = threading.Lock()

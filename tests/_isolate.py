@@ -21,3 +21,7 @@ if "MIKE_DATA_DIR" not in os.environ:
     os.environ["MIKE_DATA_DIR"] = tempfile.mkdtemp(prefix="mike-test-")
 
 DATA_DIR = os.environ["MIKE_DATA_DIR"]
+
+# Never the real accounts project from a test (see tests/conftest.py).
+os.environ.setdefault("MIKE_SUPABASE_URL", "")
+os.environ.setdefault("MIKE_SUPABASE_ANON_KEY", "")

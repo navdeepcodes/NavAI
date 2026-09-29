@@ -94,24 +94,39 @@ class IDETool(BaseTool):
     def _get_context(self, **kwargs) -> tuple[str, bool]:
 
         if not manager.is_connected():
-            return (
-                "No editor is connected. The user may not have VS Code open, "
-                "or the Mike extension isn't running.",
-                False,
-            )
+            # Was a guess ("may not have VS Code open, or the extension isn't
+            # running") that left the user nothing to act on. manager knows
+            # which of the three real causes applies -- no VS Code, no
+            # extension, or Restricted Mode -- and only the last one looks
+            # like nothing is wrong, so it has to be said out loud.
+            return (manager.connection_hint() or "No editor is connected.", False)
 
-        described = manager.describe()
+        # Everything, the terminal's recent commands and their output too:
+        # asked for, unlike the brief snapshot that comes with every turn.
+        described = manager.get_context().describe(terminal="full")
         return (described or "An editor is connected but nothing is open in it.", True)
 
     def _open_file(self, path: str, line: int | None = None, **kwargs) -> tuple[str, bool]:
 
-        result = manager.open_file(path, line)
+        try:
+            line = int(line) if line not in (None, "") else None
+        except (TypeError, ValueError):
+            line = None
+        result = manager.open_in_editor(path, line)
 
         if not result.get("ok"):
-            return (result.get("error") or "Could not open that in the editor.", False)
+            return (result.get("error") or "Could not open that in VS Code.", False)
 
-        where = f"{path}:{line}" if line else path
-        return (f"Opened {where} in the editor.", True)
+        if result.get("kind") == "folder":
+            if result.get("connected"):
+                return (f"Opened the folder {result['path']} in VS Code, and its window is "
+                        "connected: files you write and servers you start there show in it.", True)
+            return (f"Opened the folder {result['path']} in VS Code, but its window hasn't connected "
+                    "to me yet. A new folder usually shows VS Code's \"Do you trust the authors?\" "
+                    "prompt, and until they click \"Yes, I trust\" my extension stays off. Tell "
+                    "them that; files you write are still saved to disk.", True)
+        where = f"{result['path']}:{line}" if line else result["path"]
+        return (f"Opened {where} in VS Code and brought it to the front.", True)
 
     def _reveal_location(self, path: str, line: int = 1, **kwargs) -> tuple[str, bool]:
 

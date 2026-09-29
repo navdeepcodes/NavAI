@@ -775,6 +775,42 @@ def test_typing_into_something_that_is_not_a_text_field_says_so(monkeypatch):
     assert "not a text field" in result["result"]
 
 
+def test_typing_into_a_named_app_switches_first_in_one_call(monkeypatch):
+    """'Type X in Notepad' used to cost focus_app + type_text: two model
+    round-trips. Naming the app switches and types in one call."""
+    from computer.session import ComputerSession
+
+    session = ComputerSession()
+    stub = _FocusStub(_field(), _field(value="hello"))
+    stub._frontmost = "chrome"
+    monkeypatch.setattr(session, "controller", lambda: stub)
+
+    result = session.type_text("hello", app="notepad")
+
+    assert result["status"] == "success"
+    assert stub._frontmost == "notepad"
+    assert "hello" in result["result"]
+
+
+def test_typing_into_an_app_that_cannot_be_reached_types_nothing(monkeypatch):
+    """If the switch fails the keystrokes must not go to whatever is in front."""
+    from computer.base import ActionResult
+    from computer.session import ComputerSession
+
+    session = ComputerSession()
+    stub = _FocusStub(_field())
+    typed = []
+    monkeypatch.setattr(stub, "activate_app", lambda name: ActionResult(False, "", error="not running"))
+    monkeypatch.setattr(stub, "type_text", lambda text: typed.append(text))
+    monkeypatch.setattr(session, "controller", lambda: stub)
+
+    result = session.type_text("hello", app="notepad")
+
+    assert result["status"] == "error"
+    assert "Did not type" in result["error"]
+    assert typed == []
+
+
 def test_unreadable_focus_is_admitted_rather_than_assumed(monkeypatch):
     from computer.session import ComputerSession
 

@@ -4,45 +4,155 @@ One ground, one ink, one accent, a handful of tones between them, and two
 type sizes that matter. Everything Mike shows is built from these, so the
 product reads as one considered thing rather than an assembly of components.
 
-The break from the old instrument is in the *material*, not just the hue: a
-warm-dark system surface that floats over your desktop like a command
-palette, not a cream page set into a metal housing. The accent is the one
-warm, living colour — and it is the thing a user personalises, so it lives in
-exactly one place here and is read, never hard-coded, everywhere else.
+The palette itself is read from huddlecode.com's own stylesheet (paper/ink/
+graphite/mist), not a separate app-side guess at what "matches the website"
+means — the app and the site are one product, and this is the actual source
+of truth for what that product looks like. The accent stays the one
+exception: the site is deliberately monochrome ("No accent color" — its own
+words), but a personal accent Mike's users can choose is a real product
+feature of the *app*, not the marketing page, so it lives on outside this
+alignment, in exactly one place, read rather than hard-coded everywhere else.
 """
 from __future__ import annotations
+
+import platform
 
 from PySide6.QtGui import QColor, QFont
 
 from ui.instrument import tokens as _tokens
 
-# ── Ground: a warm-dark surface, faintly translucent so it reads as a
-#    system layer over whatever you were doing, not an opaque app window. ──
-GROUND = "#15161A"          # the panel body
-GROUND_RAISED = "#1C1E23"   # inset surfaces (input, confirmation)
-GROUND_SUNK = "#101114"     # the deepest recesses
-HAIRLINE = "#26282E"        # the only borders that exist, and only where earned
+# ── Two grounds, one language. Light is the site's own "paper" system
+#    (huddlecode.com/styles.css --paper/--mist/--ink), read directly. Dark is
+#    its inverse in the same warm key — a dim-lit room, not cold black, so the
+#    product still reads as paper-and-ink after dark rather than as a different
+#    app. The module-level tokens below are set from whichever is active; every
+#    widget reads style.GROUND / style.INK etc. at paint or build time, so
+#    apply_theme() before the UI is built is all it takes to dress the whole
+#    surface either way.
+_LIGHT = {
+    "GROUND": "#F7F7F8", "GROUND_RAISED": "#EEEEF0", "GROUND_SUNK": "#E6E6E9",
+    "HAIRLINE": "#DCDCE0",
+    "INK": "#0E0E10", "INK_SOFT": "#525459", "INK_MUTE": "#787A80",
+    "INK_FAINT": "#CACBCF",
+    # the lifted surface a hand rests on: the composer, the corner card
+    "SURFACE": "#FFFFFF",
+}
+_DARK = {
+    # Black and grey, no warm cast: deep near-black grounds, cool graphite
+    # surfaces, silver ink -- so the words carry the page.
+    "GROUND": "#0F0F10", "GROUND_RAISED": "#18181A", "GROUND_SUNK": "#09090A",
+    "HAIRLINE": "#28282B",
+    "INK": "#F3F3F4", "INK_SOFT": "#B9BAC0", "INK_MUTE": "#84858B",
+    "INK_FAINT": "#38383C",
+    "SURFACE": "#1B1B1D",
+}
 
-# ── Ink: warm near-white, so the surface feels humane rather than clinical.
-INK = "#EDEAE3"             # what Mike says; what you type
-INK_SOFT = "#B7B3AA"        # secondary text
-INK_MUTE = "#7C7871"        # labels, timestamps, the quiet layer
-INK_FAINT = "#4E4B46"       # the faintest structural marks
+# Set at import to light, replaced by apply_theme() at startup. Declared here so
+# every `style.GROUND` reference has something to bind to before apply runs.
+GROUND = _LIGHT["GROUND"]
+GROUND_RAISED = _LIGHT["GROUND_RAISED"]
+GROUND_SUNK = _LIGHT["GROUND_SUNK"]
+HAIRLINE = _LIGHT["HAIRLINE"]
+INK = _LIGHT["INK"]
+INK_SOFT = _LIGHT["INK_SOFT"]
+INK_MUTE = _LIGHT["INK_MUTE"]
+INK_FAINT = _LIGHT["INK_FAINT"]
+SURFACE = _LIGHT["SURFACE"]
+
+_ACTIVE_THEME = "light"
+
+
+def _os_theme() -> str:
+    """'dark' or 'light' from the operating system, best-effort.
+
+    Qt 6.5+ exposes the OS setting directly; older Qt (or a headless read)
+    falls back to the Windows registry, then to light. Never raises — a theme
+    guess must not be able to stop the app from starting.
+    """
+    try:
+        from PySide6.QtGui import QGuiApplication
+        from PySide6.QtCore import Qt as _Qt
+
+        hints = QGuiApplication.styleHints()
+        scheme = getattr(hints, "colorScheme", None)
+        if scheme is not None:
+            value = scheme()
+            if value == _Qt.ColorScheme.Dark:
+                return "dark"
+            if value == _Qt.ColorScheme.Light:
+                return "light"
+    except Exception:
+        pass
+    if platform.system() == "Windows":
+        try:
+            import winreg
+
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+            winreg.CloseKey(key)
+            return "light" if value else "dark"
+        except Exception:
+            pass
+    return "light"
+
+
+def resolve_theme() -> str:
+    """The theme to use: the user's explicit choice, or else the OS setting."""
+    try:
+        from config import preferences
+
+        pref = str(preferences.get("theme", "system") or "system").strip().lower()
+        if pref in ("light", "dark"):
+            return pref
+    except Exception:
+        pass
+    return _os_theme()
+
+
+def apply_theme(name: str | None = None) -> str:
+    """Dress the whole surface light or dark. Returns the theme applied.
+
+    Reassigns the module-level tokens, so any widget built or repainted after
+    this reads the active palette. Call it once before the UI is built, and
+    again (followed by a repaint) if the OS theme changes while Mike is open.
+    """
+    global _ACTIVE_THEME
+    name = (name or resolve_theme())
+    palette = _DARK if name == "dark" else _LIGHT
+    globals().update(palette)
+    _ACTIVE_THEME = name
+    return name
+
+
+def active_theme() -> str:
+    return _ACTIVE_THEME
+
+
+def is_dark() -> bool:
+    return _ACTIVE_THEME == "dark"
 
 # ── The accent: warm, living, personal. Read from preferences everywhere so
 #    a user's chosen colour flows through the whole surface from one setting.
-_DEFAULT_ACCENT = "#E7A54F"   # a warm amber-gold — presence, not decoration
+# The grounds are black and grey; the accent is the one warm thing on them: a
+# muted copper, quieter than the old amber, so it gives the page life without
+# shouting. "copper" is the default and follows the theme (brighter on dark,
+# deeper on light); "silver" is the all-grey option; the rest are optional.
+_COPPER = {"dark": "#C98B56", "light": "#AE6534"}
+_SILVER = {"dark": "#C7C9CF", "light": "#3B3E45"}
 _ACCENT_PRESETS = {
-    "amber":  "#E7A54F",
-    "coral":  "#E8795B",
-    "sky":    "#5AA6E0",
-    "sage":   "#8DB87A",
-    "orchid": "#B98AD6",
+    "copper":   "#C98B56",
+    "silver":   "#C7C9CF",
+    "graphite": "#8A8D95",
+    "sky":      "#5AA6E0",
+    "sage":     "#8DB87A",
+    "orchid":   "#B98AD6",
 }
 
 # Semantic signal — separate from the accent, never used decoratively.
 GOOD = "#7FB37A"            # a step finished, and it worked
-WARN = "#E7A54F"            # needs you (shares the accent's warmth on purpose)
+WARN = "#D9A05A"            # needs you (shares the accent's warmth on purpose)
 STOP = "#E06A54"            # a real failure, or a destructive confirmation
 
 
@@ -52,13 +162,23 @@ def accent() -> str:
         from config import preferences
 
         chosen = str(preferences.get("accent", "") or "").strip().lower()
-        if chosen in _ACCENT_PRESETS:
+        if chosen == "silver":
+            return _SILVER["dark" if is_dark() else "light"]
+        if chosen in _ACCENT_PRESETS and chosen != "copper":
             return _ACCENT_PRESETS[chosen]
         if chosen.startswith("#") and len(chosen) in (4, 7):
             return chosen
     except Exception:
         pass
-    return _DEFAULT_ACCENT
+    return _COPPER["dark" if is_dark() else "light"]
+
+
+def on_accent() -> str:
+    """The text colour that reads on the accent: near-black on a light
+    accent (copper on dark, silver), near-white on a deep one."""
+    c = QColor(accent())
+    luma = (0.2126 * c.redF() + 0.7152 * c.greenF() + 0.0722 * c.blueF())
+    return "#0F0F10" if luma > 0.5 else "#F5F5F6"
 
 
 def accent_presets() -> dict[str, str]:
@@ -69,32 +189,139 @@ def qaccent() -> QColor:
     return QColor(accent())
 
 
-# ── Type. System sans throughout — this is a desktop app, not a web page.
-#    Mike's voice a touch larger; labels small and quietly spaced. Mono only
-#    for genuinely technical detail (a path, a command) shown on demand.
-#
-#    Resolved once per platform by ui.instrument.tokens, which already knows
-#    how to pick a real installed font on Windows/Linux and how to hand back
-#    Qt's private San Francisco alias on macOS without probing for it (the
-#    probe would wrongly reject it — it isn't a real QFontDatabase entry).
+# ── Type. Mike speaks in one face: Source Serif 4 (Adobe, SIL Open Font
+#    License), bundled in ui/fonts and registered at startup by load_fonts(),
+#    so it looks the same on every machine rather than depending on what a
+#    user happens to have installed. A calm, bookish serif reads like
+#    something written for you — the register of a thoughtful assistant, not
+#    a control panel. The platform's own UI face stays as the fallback, used
+#    only if the bundled files can't be loaded: Segoe UI on Windows (never
+#    ".AppleSystemUIFont", which Windows doesn't have and silently replaced),
+#    the system face on macOS. Mono only for genuinely technical detail.
+BRAND_FAMILY = "Source Serif 4"
+# Resolved per platform by ui.instrument.tokens (Segoe UI on Windows, Qt's San
+# Francisco alias on macOS, a probed pick on Linux); safe before a QApplication.
+_SYSTEM_UI = _tokens.ui_sans_family()
+_UI = _SYSTEM_UI
+_FONTS_LOADED = False
+_MONO = (
+    "Consolas, 'Cascadia Mono', monospace" if platform.system() == "Windows"
+    else "SF Mono, Menlo, monospace" if platform.system() == "Darwin"
+    else "monospace"
+)
 
 
 def voice(size: int = 15) -> QFont:
     """What Mike says, and what you type — the reading size."""
-    f = QFont(_tokens.ui_sans_family(), size)
+    f = QFont(_UI, size)
     f.setWeight(QFont.Weight.Normal)
     return f
 
 
 def label(size: int = 11, weight: QFont.Weight = QFont.Weight.DemiBold) -> QFont:
-    f = QFont(_tokens.ui_sans_family(), size)
+    f = QFont(_UI, size)
     f.setWeight(weight)
     return f
 
 
 def mono_family() -> str:
-    return _tokens.mono_family()
+    return _MONO
+
+
+def _fonts_dir():
+    """Where the bundled font files live: beside the frozen app, or in the
+    source tree."""
+    import os
+    import sys
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    for base in (os.path.join(getattr(sys, "_MEIPASS", ""), "ui"), here):
+        path = os.path.join(base, "fonts")
+        if base and os.path.isdir(path):
+            return path
+    return None
+
+
+def load_fonts() -> bool:
+    """Register the bundled Source Serif 4 files and make it Mike's face.
+
+    Needs a QApplication. Safe to call more than once. If the files are
+    missing or refused, Mike keeps the platform's UI font — a fallback, never
+    a crash and never a blank label.
+    """
+    global _UI, _FONTS_LOADED
+    if _FONTS_LOADED:
+        return True
+    try:
+        import os
+        from PySide6.QtGui import QFontDatabase
+
+        folder = _fonts_dir()
+        if folder is None:
+            return False
+        families: set[str] = set()
+        for name in sorted(os.listdir(folder)):
+            if name.lower().endswith((".ttf", ".otf")):
+                fid = QFontDatabase.addApplicationFont(os.path.join(folder, name))
+                if fid >= 0:
+                    families.update(QFontDatabase.applicationFontFamilies(fid))
+        if BRAND_FAMILY in families:
+            _UI = BRAND_FAMILY
+            _FONTS_LOADED = True
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def ui_face() -> str:
+    """The family every widget is drawn in right now."""
+    return _UI
+
+
+# ── The type scale. Pixel sizes, not points: Mike's rich text (replies, code,
+#    maths) is HTML and speaks px, so widgets sized in px sit on exactly the
+#    same scale as the text beside them. Every surface of the workspace takes
+#    its sizes from here, so hierarchy is a property of the product rather
+#    than of whichever file a label happens to live in.
+DISPLAY = 28      # page titles, the greeting on an empty chat
+TITLE = 20        # a section heading, a dialog title
+READ = 16         # what Mike says, what you said — the reading size
+BODY = 14         # controls, list rows, settings copy
+SMALL = 13        # secondary copy
+CAPTION = 12      # meta: times, counts, hints
+MICRO = 11        # section labels
+
+
+def font(px: int, weight: QFont.Weight = QFont.Weight.Normal) -> QFont:
+    """The UI face at a pixel size from the scale above."""
+    f = QFont(_UI)
+    f.setPixelSize(int(px))
+    f.setWeight(weight)
+    return f
+
+
+def reduced_motion() -> bool:
+    """Calm the interface: the user's own switch in Settings, or the OS's.
+
+    One answer for every animated surface, so the Settings switch is a real
+    control rather than a preference that is saved and then read by nothing.
+    """
+    try:
+        from config import preferences
+        if bool(preferences.get("reduced_motion", False)):
+            return True
+    except Exception:
+        pass
+    try:
+        from hostplatform.desktop import reduced_motion as _os_reduced
+        return bool(_os_reduced())
+    except Exception:
+        return False
 
 
 def ui_family() -> str:
-    return _tokens.label_family()
+    """The same face for rich text (Mike's rendered replies), as CSS."""
+    system = _tokens.label_family()
+    if _FONTS_LOADED:
+        return f"'{BRAND_FAMILY}', Georgia, {system}"
+    return system

@@ -27,6 +27,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests import _isolate  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _coding_on(monkeypatch):
+    """These exercise the coding tools, which are off until the user turns
+    them on (brain/permissions.py, "Work with code")."""
+    monkeypatch.setattr("brain.permissions.DEFAULT_OFF", frozenset())
+
+
 def _declared():
     from brain.core_tools import OLLAMA_TOOLS
     return [t["function"] for t in OLLAMA_TOOLS]
@@ -197,15 +204,26 @@ def test_search_files_finds_by_name_quickly():
     print(f"PASS: search_files finds by name in {elapsed:.2f}s")
 
 
-def test_search_files_points_content_searches_at_search_code():
-    """Two tools doing the same job badly is worse than one doing it well."""
+def test_search_files_points_content_searches_at_search_code_only_when_it_exists(monkeypatch):
+    """Two tools doing the same job badly is worse than one doing it well --
+    but search_code is a coding tool, off by default, and a pointer to a tool
+    the model doesn't have sent it there anyway (measured on "find the essay
+    I wrote last week"). The declaration says what search_files does; the
+    pointer comes with its results, and only while search_code is available."""
+    from brain import permissions
     from brain.core_tools import OLLAMA_TOOLS
 
     declaration = next(t for t in OLLAMA_TOOLS
                        if t["function"]["name"] == "search_files")
     description = declaration["function"]["description"].lower()
-    assert "search_code" in description, "it must name the right tool for content"
-    assert "name" in description
+    assert "name" in description and "search_code" not in description
+
+    empty = tempfile.mkdtemp()
+    runtime = _runtime()
+    on = runtime._execute_tool("search_files", {"query": "zzz_nothing_zzz", "path": empty})
+    monkeypatch.setattr(permissions, "is_enabled", lambda ability: ability != "coding")
+    off = runtime._execute_tool("search_files", {"query": "zzz_nothing_zzz", "path": empty})
+    assert "search_code" in on["result"] and "search_code" not in off["result"]
     print("PASS: search_files and search_code have distinct jobs")
 
 
@@ -231,12 +249,15 @@ def test_ide_tools_report_honestly_when_no_editor_is_connected():
     """An integration that is simply not connected must say so, rather than
     failing in a way that looks like the request was wrong."""
     runtime = _runtime()
-    for name, args in (("ide_context", {}),
-                       ("ide_open_file", {"path": "/tmp/nope.txt"})):
-        result = runtime._execute_tool(name, args)
-        if result["status"] == "success":
-            pytest.skip("an editor is connected on this machine")
-        assert "editor" in result["error"].lower(), result["error"]
+    result = runtime._execute_tool("ide_context", {})
+    if result["status"] == "success":
+        pytest.skip("an editor is connected on this machine")
+    assert "editor" in result["error"].lower(), result["error"]
+    # Opening needs no connection -- VS Code's own program opens things --
+    # so what it has to be honest about is the path.
+    result = runtime._execute_tool("ide_open_file", {"path": "/tmp/nope.txt"})
+    assert result["status"] == "error"
+    assert "nope.txt" in result["error"], result["error"]
     print("PASS: IDE tools report a missing editor plainly")
 
 

@@ -26,6 +26,7 @@ worse than an honest gap.
 """
 from __future__ import annotations
 
+import json
 import platform
 import subprocess
 from urllib.parse import urlparse
@@ -43,6 +44,62 @@ def _run_checked(command: list[str]) -> None:
     subprocess.run(command, check=True)
 
 
+_BROWSER_EXE_NAMES = {
+    "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe", "vivaldi.exe",
+}
+
+
+def _bring_browser_forward() -> None:
+    """Best-effort: raise whichever browser just received an open request.
+
+    os.startfile hands a URL to the OS shell, which -- when a browser is
+    already running -- typically opens it as a new background tab without
+    giving that window focus. Verified directly: asking Mike to open a URL
+    left the browser exactly where it was, with nothing on screen suggesting
+    anything had happened, even though the tab genuinely opened. A real
+    action that produces no visible sign of having happened reads as a
+    failure regardless of what actually occurred underneath.
+
+    Windows refuses a bare SetForegroundWindow from a thread it doesn't
+    consider to have "input permission"; hostplatform.foreground handles that.
+    """
+    try:
+        import win32api
+        import win32gui
+        import win32process
+
+        def _proc_name(pid: int) -> str:
+            try:
+                handle = win32api.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+                try:
+                    path = win32process.GetModuleFileNameEx(handle, 0)
+                finally:
+                    win32api.CloseHandle(handle)
+                return path.rsplit("\\", 1)[-1].lower()
+            except Exception:
+                return ""
+
+        found: list[int] = []
+
+        def _visit(hwnd, _):
+            if not win32gui.IsWindowVisible(hwnd) or not win32gui.GetWindowText(hwnd):
+                return True
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            if _proc_name(pid) in _BROWSER_EXE_NAMES:
+                found.append(hwnd)
+                return False
+            return True
+
+        win32gui.EnumWindows(_visit, None)
+        if not found:
+            return
+
+        from hostplatform.foreground import bring_to_front
+        bring_to_front(found[0])
+    except Exception:
+        pass
+
+
 def normalize_url(url: str) -> str:
     url = url.strip()
     if not urlparse(url).scheme:
@@ -52,9 +109,10 @@ def normalize_url(url: str) -> str:
 
 # ── opening things ─────────────────────────────────────────
 
-def open_application(name: str, path: str | None = None) -> None:
+def open_application(name: str, path: str | None = None) -> bool:
     """Launch or focus an application by name, optionally with a file/folder
-    to open in it."""
+    to open in it. False when the app opened but `path` couldn't be handed to
+    it, so the caller can say so instead of claiming the file is open."""
     system = _system()
     if system == "Darwin":
         command = ["open", "-a", name]
@@ -64,17 +122,138 @@ def open_application(name: str, path: str | None = None) -> None:
         if result.returncode != 0:
             message = (result.stderr or "").strip()
             raise ShellError(message or f"Could not open {name!r}. Is it installed?")
-        return
+        return True
     if system == "Windows":
-        raise NotImplementedError(
-            "Opening an application by name is not implemented on Windows "
-            "yet. Windows has no single mechanism equivalent to macOS "
-            "LaunchServices for resolving a friendly app name to an "
-            "executable; a real implementation needs one of the Start Menu "
-            "shortcut index or the registry's App Paths, verified on the "
-            "physical machine — not shipped as a guess."
-        )
+        import os
+        # Two mechanisms, tried in order, because neither alone is general.
+        #
+        # os.startfile resolves a bare name through the App Paths registry and
+        # PATH the way Explorer's Run box does, so it opens things with a
+        # registered executable -- "notepad", "calc", "mspaint", "chrome",
+        # "code" -- and is the only path that can also open `path` *in* the app.
+        # But it does NOT resolve friendly display names ("Calculator" raises
+        # FileNotFoundError, verified) and cannot reach Store/UWP apps at all,
+        # which have no executable on disk to point at.
+        #
+        # So on FileNotFoundError, fall back to how the Start menu itself
+        # launches everything: Get-StartApps lists every installed app, Win32
+        # and UWP, by display name with a launchable AppID, and
+        # shell:AppsFolder\<AppID> starts it. That is what makes "open
+        # Calculator" / "open Spotify" work without this file knowing a single
+        # app by name.
+        try:
+            if path:
+                os.startfile(name, arguments=f'"{path}"')  # type: ignore[call-arg]
+            else:
+                os.startfile(name)  # type: ignore[attr-defined]
+            return True
+        except FileNotFoundError:
+            # shell:AppsFolder can't be handed a file, so with one to open,
+            # the program behind the app's Start-menu shortcut is started
+            # with it instead -- "open my project in Visual Studio Code" used
+            # to open VS Code and silently drop the project.
+            program = _start_menu_program(name) if path else None
+            if program:
+                try:
+                    subprocess.Popen([program, path])
+                    return True
+                except OSError:
+                    pass
+            app_id = _resolve_start_app(name)
+            if app_id:
+                try:
+                    subprocess.Popen(["explorer.exe", f"shell:AppsFolder\\{app_id}"])
+                    return not path
+                except Exception as exc:
+                    raise ShellError(f"Found {name!r} but could not launch it: {exc}")
+            raise ShellError(
+                f"Could not find an application named {name!r}. Check the "
+                "spelling, or that it's installed."
+            )
     raise NotImplementedError(f"Opening applications is not implemented for {system}.")
+
+
+def _start_menu_program(name: str) -> str | None:
+    """The program a Start-menu shortcut named like `name` starts (a Win32
+    app's .exe), matched the way _resolve_start_app matches: exact, then
+    starts-with, then contains. None for Store apps, which have no program to
+    hand a file to."""
+    import os
+    from pathlib import Path
+
+    wanted = (name or "").strip().casefold()
+    if not wanted:
+        return None
+    roots = [Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+             Path(os.environ.get("ProgramData", "C:/ProgramData")) / "Microsoft/Windows/Start Menu/Programs"]
+    links = [link for root in roots if root.is_dir() for link in root.rglob("*.lnk")]
+
+    def pick(matches):
+        return next((link for link in links if matches(link.stem.casefold())), None)
+
+    link = pick(lambda s: s == wanted) or pick(lambda s: s.startswith(wanted)) or pick(lambda s: wanted in s)
+    if link is None:
+        return None
+    try:
+        import pythoncom
+        import win32com.client
+        pythoncom.CoInitialize()        # tools run on worker threads
+        try:
+            target = win32com.client.Dispatch("WScript.Shell").CreateShortcut(str(link)).TargetPath
+        finally:
+            pythoncom.CoUninitialize()
+    except Exception:
+        return None
+    if target and target.lower().endswith(".exe") and os.path.isfile(target):
+        return target
+    return None
+
+
+def _resolve_start_app(name: str) -> str | None:
+    """The AppID of the installed app whose Start-menu name best matches `name`,
+    or None. Covers Win32 and Store apps alike -- this is the same catalogue the
+    Start menu searches, so nothing here is hard-coded to a particular app.
+
+    Match precedence: exact display name, then starts-with, then contains, then
+    a substring of the AppID (so "calc" still finds Calculator's AUMID). The
+    first, most specific hit wins, which keeps "Calculator" off "Calculator
+    Plus" when the real one is present.
+    """
+    wanted = (name or "").strip().casefold()
+    if not wanted:
+        return None
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "Get-StartApps | Select-Object Name,AppID | ConvertTo-Json -Compress"],
+            capture_output=True, text=True, timeout=12,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        return None
+    if proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    try:
+        data = json.loads(proc.stdout)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    if isinstance(data, dict):
+        data = [data]
+    apps = [(str(a.get("Name", "")), str(a.get("AppID", "")))
+            for a in data if a.get("AppID")]
+
+    def pick(predicate):
+        for disp, app_id in apps:
+            if predicate(disp.casefold(), app_id.casefold()):
+                return app_id
+        return None
+
+    return (
+        pick(lambda d, i: d == wanted)
+        or pick(lambda d, i: d.startswith(wanted))
+        or pick(lambda d, i: wanted in d)
+        or pick(lambda d, i: wanted in i)
+    )
 
 
 def open_url(url: str) -> None:
@@ -89,6 +268,7 @@ def open_url(url: str) -> None:
     if system == "Windows":
         import os
         os.startfile(url)  # type: ignore[attr-defined]
+        _bring_browser_forward()
         return
     _run_checked(["xdg-open", url])
 
@@ -123,6 +303,7 @@ def open_browser() -> None:
         # on DEFAULT_BROWSER (whose "Opera" default most machines don't
         # have installed) or any specific browser being present.
         os.startfile("about:blank")  # type: ignore[attr-defined]
+        _bring_browser_forward()
         return
     from config.settings import DEFAULT_BROWSER
     _run_checked([DEFAULT_BROWSER])
@@ -145,6 +326,13 @@ def sleep_now() -> None:
     system = _system()
     if system == "Darwin":
         _run_checked(["pmset", "sleepnow"])
+        return
+    if system == "Windows":
+        # SetSuspendState's second argument (Force) is 0 here on purpose --
+        # forcing would skip apps that refuse the suspend (unsaved work in
+        # another app), which is not a call Mike gets to make on the user's
+        # behalf.
+        _run_checked(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"])
         return
     raise NotImplementedError(f"Sleep is not implemented for {system}.")
 

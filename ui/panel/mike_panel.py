@@ -17,14 +17,20 @@ from __future__ import annotations
 import platform
 from html import escape
 
-from PySide6.QtCore import Qt, QObject, QTimer, Signal
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QKeyEvent
+from PySide6.QtCore import (
+    Qt, QEasingCurve, QObject, QPointF, QPropertyAnimation, QTimer, Signal,
+)
+from PySide6.QtGui import (
+    QBrush, QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen,
+    QKeyEvent,
+)
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QApplication, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel,
+    QLineEdit, QPushButton, QScrollArea, QTextBrowser, QVBoxLayout, QWidget,
 )
 
 from ui.panel import style
+from ui.panel import richtext
 from ui.panel.mark import PresenceMark
 
 def _hotkey_hint() -> str:
@@ -40,7 +46,7 @@ def _hotkey_hint() -> str:
 
 def _this_machine() -> str:
     """What to call the machine Mike runs on, in first-person copy."""
-    return "this PC" if platform.system() == "Windows" else "this Mac"
+    return {"Windows": "this PC", "Darwin": "this Mac"}.get(platform.system(), "this computer")
 
 
 STATE_WORD = {
@@ -98,8 +104,33 @@ class _Field(QLineEdit):
         super().keyPressEvent(e)
 
 
+class _AttachChip(QFrame):
+    """A queued file, shown above the input until the turn is sent."""
+
+    removed = Signal(str)
+
+    def __init__(self, name: str, path: str, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("chip")
+        self._path = path
+        row = QHBoxLayout(self)
+        row.setContentsMargins(10, 3, 5, 3)
+        row.setSpacing(6)
+        label = QLabel(f"\U0001F4CE  {name}")
+        label.setFont(style.label(11, QFont.Weight.Normal))
+        label.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
+        row.addWidget(label)
+        close = QPushButton("✕")
+        close.setObjectName("chipx")
+        close.setCursor(Qt.PointingHandCursor)
+        close.setFixedSize(16, 16)
+        close.clicked.connect(lambda: self.removed.emit(self._path))
+        row.addWidget(close)
+
+
 class _InputBar(QFrame):
     submitted = Signal(str)
+    attach_requested = Signal(list)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -110,6 +141,16 @@ class _InputBar(QFrame):
 
         self.voice = _Voice()
         row.addWidget(self.voice, 0, Qt.AlignVCenter)
+
+        # Attach a file — a document or an image — for Mike to read. A quiet
+        # plus, not a loud button; the drop target is the whole panel too.
+        self._attach = QPushButton("+")
+        self._attach.setObjectName("attach")
+        self._attach.setCursor(Qt.PointingHandCursor)
+        self._attach.setFixedSize(24, 24)
+        self._attach.setToolTip("Attach a PDF, document or image")
+        self._attach.clicked.connect(self._pick_files)
+        row.addWidget(self._attach, 0, Qt.AlignVCenter)
 
         self._field = _Field(self._emit)
         self._field.setPlaceholderText("Ask Mike, or hold to talk")
@@ -127,11 +168,70 @@ class _InputBar(QFrame):
         self._hint.setStyleSheet(f"color:{style.INK_FAINT};background:transparent;")
         row.addWidget(self._hint, 0, Qt.AlignVCenter)
 
+        # A breathing line of light along the bottom edge — the panel's one
+        # calm, always-there sign of life. It rests as a slow, faint breath;
+        # brightens and quickens while listening (you're being heard); and
+        # flows left-to-right while Mike is answering (something is arriving).
+        # One element carries both sides of the exchange so input and output
+        # feel like the same living surface rather than two states bolted on.
+        # A still, faint accent hairline under the field, shown only while Mike
+        # is actually listening or answering. It eases in and out and then holds
+        # -- no breathing, no travelling light. When it's idle the line is gone
+        # and the timer is stopped, so the input is simply a clean field at rest.
+        self._state = "idle"        # idle | listening | responding
+        self._opacity = 0.0
+        self._target = 0.0
+        self._ease_timer = QTimer(self)
+        self._ease_timer.setInterval(16)
+        self._ease_timer.timeout.connect(self._ease)
+
+    def _set_target(self, value: float) -> None:
+        self._target = value
+        if not self._ease_timer.isActive():
+            self._ease_timer.start()
+
+    def _ease(self) -> None:
+        self._opacity += (self._target - self._opacity) * 0.16
+        if abs(self._opacity - self._target) < 0.004:
+            self._opacity = self._target
+            if self._target == 0.0:
+                self._ease_timer.stop()   # at rest: no more repaints
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if self._opacity <= 0.003:
+            return
+        w = self.width()
+        y = self.height() - 3.0
+        accent = QColor(style.accent())
+        edge = QColor(accent); edge.setAlphaF(0.0)
+        mid = QColor(accent); mid.setAlphaF(self._opacity)
+        grad = QLinearGradient(16.0, 0.0, float(w - 16), 0.0)
+        grad.setColorAt(0.0, edge)
+        grad.setColorAt(0.5, mid)
+        grad.setColorAt(1.0, edge)
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setPen(QPen(QBrush(grad), 1.3))
+        p.drawLine(QPointF(16.0, y), QPointF(float(w - 16), y))
+
+    def _pick_files(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        paths, _ = QFileDialog.getOpenFileNames(
+            self, "Attach files for Mike", "",
+            "Documents & images (*.pdf *.docx *.pptx *.txt *.md *.csv *.json "
+            "*.py *.js *.png *.jpg *.jpeg *.gif *.webp);;All files (*)")
+        if paths:
+            self.attach_requested.emit(list(paths))
+
     def _emit(self) -> None:
-        text = self._field.text().strip()
-        if text:
-            self._field.clear()
-            self.submitted.emit(text)
+        # Submit even with no text if the field is empty but files are queued;
+        # the panel owns the queue, so it also decides whether there's anything
+        # to send. Here we just forward the words (possibly "").
+        self.submitted.emit(self._field.text().strip())
+        self._field.clear()
 
     def set_enabled(self, enabled: bool) -> None:
         self._field.setEnabled(enabled)
@@ -141,8 +241,26 @@ class _InputBar(QFrame):
     def focus(self) -> None:
         self._field.setFocus()
 
+    _LISTEN_OPACITY = 0.26
+    _RESPOND_OPACITY = 0.16
+
     def set_listening(self, on: bool) -> None:
         self._field.setPlaceholderText("Listening…" if on else "Ask Mike, or hold to talk")
+        if on:
+            self._state = "listening"
+            self._set_target(self._LISTEN_OPACITY)
+        elif self._state == "listening":
+            self._state = "idle"
+            self._set_target(0.0)
+
+    def set_responding(self, on: bool) -> None:
+        """Mike is answering: the line holds, faint, until he's done."""
+        if on:
+            self._state = "responding"
+            self._set_target(self._RESPOND_OPACITY)
+        elif self._state == "responding":
+            self._state = "idle"
+            self._set_target(0.0)
 
 
 # ══ streamed reply ═════════════════════════════════════════
@@ -178,6 +296,323 @@ class _Turn(QLabel):
     def append_text(self, chunk: str) -> None:
         self._raw += chunk
         self._render()
+
+
+class _RichTurn(QTextBrowser):
+    """Mike's message, rendered rather than escaped.
+
+    A QTextBrowser (Qt's own rich-text engine, no web view) showing the
+    Markdown Mike actually writes -- headings, lists, tables, and
+    syntax-highlighted code with a one-click copy link. Sizes itself to its
+    content so it sits in the conversation column like any other block, with no
+    inner scrollbar of its own.
+    """
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self._raw = text
+        self._codes: list[str] = []
+        # A finished reply (not one still streaming) carries a quiet "Copy"
+        # for the whole answer — the thing a student most often wants to do
+        # with it after reading.
+        self._final = bool(text)
+        self._copied = False
+        # True while tokens are arriving — the pen that writes the reply
+        # follows the text only while this is set.
+        self._streaming = False
+        self.setOpenLinks(False)
+        self.setOpenExternalLinks(False)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setTextInteractionFlags(
+            Qt.TextSelectableByMouse | Qt.LinksAccessibleByMouse)
+        self.setStyleSheet("QTextBrowser{background:transparent;border:none;}")
+        self.document().setDocumentMargin(0)
+        self.anchorClicked.connect(self._on_anchor)
+        # A short coalescing timer so a burst of tokens is one repaint, not one
+        # per character; the trailing render always lands.
+        self._pending = QTimer(self)
+        self._pending.setSingleShot(True)
+        self._pending.setInterval(70)
+        self._pending.timeout.connect(lambda: self._render(do_highlight=False))
+        self._render()
+
+    def _render(self, do_highlight: bool = True) -> None:
+        html, self._codes = richtext.render(self._raw, do_highlight=do_highlight)
+        if self._final and self._raw.strip():
+            label = "✓ Copied" if self._copied else "Copy"
+            html += (
+                f'<p style="margin-top:2px; margin-bottom:0;">'
+                f'<a href="copyall://reply" style="color:{style.INK_MUTE}; '
+                f'font-family:{style.ui_family()}; font-size:12px; '
+                f'text-decoration:none;">{label}</a></p>')
+        self.setHtml(html)
+        self._fit_height()
+
+    def _fit_height(self) -> None:
+        doc = self.document()
+        # Before the first layout the viewport has no real width; a fallback
+        # near the column's own width keeps the initial height estimate sane so
+        # the panel doesn't jump from a one-pixel-wide, very tall guess.
+        width = self.viewport().width()
+        if width < 50:
+            width = 560
+        doc.setTextWidth(width)
+        self.setFixedHeight(int(doc.size().height()) + 2)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def append_text(self, chunk: str) -> None:
+        # Streaming: coalesce, and skip highlighting until the reply settles.
+        self._streaming = True
+        self._raw += chunk
+        if not self._pending.isActive():
+            self._pending.start()
+
+    def set_text(self, text: str, final: bool = True) -> None:
+        # The final word: stop any pending stream render and do the full,
+        # syntax-highlighted pass. `final=False` for a sentence Mike said on
+        # the way to doing something — rendered, but not offered for copying.
+        self._raw = text
+        self._final = final
+        self._streaming = False
+        self._pending.stop()
+        self._render(do_highlight=True)
+
+    def text(self) -> str:
+        return self._raw
+
+    def _on_anchor(self, url) -> None:
+        scheme = url.scheme()
+        if scheme == "copyall":
+            QApplication.clipboard().setText(self._raw)
+            self._copied = True
+            self._render(do_highlight=True)
+
+            def _reset() -> None:
+                self._copied = False
+                self._render(do_highlight=True)
+            QTimer.singleShot(1600, self, _reset)
+            return
+        if scheme == "copy":
+            try:
+                index = int(url.toString().split("copy://", 1)[1])
+            except (ValueError, IndexError):
+                return
+            if 0 <= index < len(self._codes):
+                QApplication.clipboard().setText(self._codes[index])
+        elif scheme in ("http", "https"):
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(url)
+
+
+# ══ the wait ═══════════════════════════════════════════════
+
+#: What Mike says he's doing while you wait.
+#:
+#: A local model on a laptop takes real seconds to answer, and a single
+#: frozen "Thinking…" for all of them reads as a hang -- the user cannot
+#: tell a model that is working from one that has died. Rotating the word
+#: is the cheapest honest signal that something is still happening: it
+#: changes because time is passing, which is exactly what it claims.
+#:
+#: Chosen to sound like Mike rather than like a loading bar -- the register
+#: is a person half-answering you from the next room, not a system reporting
+#: status. Deliberately no ironic or cutesy entries: this shows up when
+#: somebody is waiting, and a joke wears out on the fourth reading.
+THINKING_WORDS = (
+    "Thinking",
+    "Pondering",
+    "Percolating",
+    "Triangulating",
+    "Noodling",
+    "Untangling",
+    "Ruminating",
+    "Mulling it over",
+    "Piecing it together",
+    "Following the thread",
+    "Turning it over",
+    "Chewing on it",
+    "Puzzling it out",
+    "Marinating",
+    "Cogitating",
+    "Wrangling",
+    "Tinkering",
+    "Simmering",
+    # The tail: held back for waits long enough that novelty stops helping
+    # and reassurance starts. Kept last on purpose -- see _next_word.
+    "Getting there",
+    "Nearly there",
+)
+
+#: How many of the above are the reassuring tail rather than the playful body.
+_REASSURING_TAIL = 2
+
+
+class _Thinking(QWidget):
+    """The gap between asking and answering, made to feel inhabited.
+
+    Three things move, on purpose, at three different rates:
+
+    - the word, every few seconds, so a long wait visibly progresses rather
+      than repeating;
+    - the ellipsis, about twice a second, the small constant tick that says
+      the process is alive between word changes;
+    - the accent dot, breathing on a slow sine, which is the same living
+      mark the ledger already uses for a step in flight.
+
+    The last two words of THINKING_WORDS ("Getting there", "Nearly there")
+    are held back for waits long enough to need reassurance rather than
+    novelty, so the copy tracks the actual situation instead of cycling
+    forever through synonyms.
+    """
+
+    _WORD_MS = 2800
+    _FRAME_MS = 16          # ~60fps, so nothing about this reads as stepping
+    _LONG_WAIT_MS = 11_000
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self._index = 0
+        self._hint = ""        # what Mike is doing, once known -- shown instead of the words
+        self._t = 0.0          # seconds, continuous — every motion derives from this
+        self._elapsed = 0
+        self.setFixedHeight(30)
+
+        self._frame = QTimer(self)
+        self._frame.timeout.connect(self._on_frame)
+        self._frame.start(self._FRAME_MS)
+
+        self._rotate = QTimer(self)
+        self._rotate.timeout.connect(self._next_word)
+        self._rotate.start(self._WORD_MS)
+
+    def stop(self) -> None:
+        """Animations hold a timer against a widget the panel is about to
+        delete; stopping them explicitly keeps a timeout from firing into a
+        half-torn-down widget."""
+        self._frame.stop()
+        self._rotate.stop()
+
+    def set_hint(self, text: str) -> None:
+        """What Mike is doing ("Writing style.css"), in place of the rotating
+        words: it's true, and it changes when what he's doing does."""
+        self._hint = " ".join((text or "").split())
+        if self._hint:
+            self._rotate.stop()
+
+    def _on_frame(self) -> None:
+        self._t += self._FRAME_MS / 1000.0
+        self._elapsed += self._FRAME_MS
+        self.update()
+
+    def _next_word(self) -> None:
+        body = len(THINKING_WORDS) - _REASSURING_TAIL
+        if self._elapsed >= self._LONG_WAIT_MS:
+            # Past the point where novelty stops helping: stay on the
+            # reassuring tail rather than implying fresh activity.
+            self._index = body + ((self._index + 1) % _REASSURING_TAIL)
+        else:
+            # Shuffled rather than sequential, so two waits in a row don't
+            # read as the same canned loop -- but never repeating the word
+            # currently on screen, which would look like it had frozen.
+            import random
+
+            choice = self._index
+            while choice == self._index and body > 1:
+                choice = random.randrange(body)
+            self._index = choice
+        # word swap is not a paint trigger on its own -- the frame timer already
+        # repaints ~60x/s, so there is nothing to force here.
+
+    def paintEvent(self, _e) -> None:
+        import math
+
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+
+        cx, cy = 6.0, self.height() / 2.0
+        accent = style.qaccent()
+
+        # One quiet dot, breathing gently. No ring, no pulse -- the restraint is
+        # the point; a single mark that's alive reads as premium where a sonar
+        # ping reads as a toy.
+        breath = 0.5 + 0.32 * (0.5 + 0.5 * math.sin(self._t * 1.7))
+        core = QColor(accent)
+        core.setAlphaF(breath)
+        p.setPen(Qt.NoPen)
+        p.setBrush(core)
+        p.drawEllipse(QPointF(cx, cy), 2.6, 2.6)
+
+        # The word, with a soft highlight passing through it -- subtle enough to
+        # be a sign of life, not a spinner.
+        word = self._hint or THINKING_WORDS[self._index]
+        font = style.voice(15)
+        p.setFont(font)
+        fm = p.fontMetrics()
+        tx = cx + 3.2 + 12.0
+        if self._hint:                           # a file name can be long; the panel isn't
+            word = fm.elidedText(word, Qt.ElideMiddle, int(self.width() - tx - 28))
+        tw = max(1.0, float(fm.horizontalAdvance(word)))
+        baseline = cy + (fm.ascent() - fm.descent()) / 2.0
+
+        base = QColor(style.INK_MUTE)
+        bright = QColor(style.INK_SOFT)          # a whisper of lift, not a flash
+        sweep = (self._t * 0.5) % 1.9            # slower, with a longer pause
+        grad = QLinearGradient(tx, 0.0, tx + tw, 0.0)
+        grad.setColorAt(0.0, base)
+        if 0.0 <= sweep <= 1.0:
+            half = 0.16
+            lo = max(0.001, sweep - half)
+            hi = min(0.999, sweep + half)
+            mid = min(max(sweep, lo + 0.001), hi - 0.001)
+            grad.setColorAt(lo, base)
+            grad.setColorAt(mid, bright)
+            grad.setColorAt(hi, base)
+        grad.setColorAt(1.0, base)
+
+        # Filled as a path, not drawn with a pen: text drawn through a gradient
+        # pen is silently flat on some Qt builds, but a filled glyph path takes
+        # the gradient reliably.
+        path = QPainterPath()
+        path.addText(QPointF(tx, baseline), font, word)
+        p.fillPath(path, QBrush(grad))
+
+
+def _animate_entry(widget: QWidget) -> None:
+    """Fade a new line in instead of having it appear between frames.
+
+    The panel grows to fit its content, so without this every message is a
+    hard cut: the window jumps taller and fully-formed text is simply
+    present. A short fade (and a few pixels of rise) makes it read as
+    arriving, which is the same reason MikeWindow animates the panel itself
+    in rather than showing it. Kept under 200ms -- this is meant to soften a
+    transition, never to make anyone wait for it.
+
+    The effect and animation are parented to the widget so they live exactly
+    as long as it does.
+    """
+    try:
+        effect = QGraphicsOpacityEffect(widget)
+        widget.setGraphicsEffect(effect)
+        fade = QPropertyAnimation(effect, b"opacity", widget)
+        fade.setDuration(180)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.OutCubic)
+        # Parented to the widget, so the widget owns it and it dies with it.
+        # Deliberately NOT DeleteWhenStopped: combining the two gives the
+        # animation two owners, and the second delete is an access violation
+        # with no Python traceback -- which is exactly how this first
+        # shipped, crashing the moment a test pumped the event loop while a
+        # panel was being torn down.
+        fade.start()
+    except Exception:
+        # A missing animation must never cost the message itself.
+        pass
 
 
 # ══ activity ledger ════════════════════════════════════════
@@ -219,6 +654,14 @@ class _Ledger(QFrame):
         if 0 <= index < len(self._rows):
             self._rows[index] = (self._rows[index][0], status)
             self._sync_timer()
+            self._render()
+
+    def set_text(self, index: int, text: str) -> None:
+        """Updates a row's own label in place — for a step whose duration
+        is real and worth narrating (a multi-minute model download) rather
+        than one whose name is decided once at the start and never changes."""
+        if 0 <= index < len(self._rows):
+            self._rows[index] = (text, self._rows[index][1])
             self._render()
 
     def _sync_timer(self) -> None:
@@ -277,6 +720,10 @@ class _ActionHandle:
     def mark_done(self, success: bool = True) -> None:
         self._ledger.set_status(self._index, "done" if success else "failed")
 
+    def update_text(self, text: str) -> None:
+        self._label = _PlainText(text)
+        self._ledger.set_text(self._index, text)
+
 
 class _PlainText:
     def __init__(self, text: str) -> None:
@@ -291,6 +738,9 @@ class _PlainText:
 class _Confirm(QFrame):
     approved = Signal()
     denied = Signal()
+    #: Yes, and for the rest of the session ("Allow edits in NavAI this
+    #: session") -- offered only where brain/grants.py can make it narrow.
+    always = Signal()
     visibility_changed = Signal()
 
     def __init__(self, parent=None) -> None:
@@ -335,6 +785,12 @@ class _Confirm(QFrame):
         self._deny.setCursor(Qt.PointingHandCursor)
         self._deny.clicked.connect(self.denied.emit)
         buttons.addWidget(self._deny)
+        self._always = QPushButton()
+        self._always.setObjectName("deny")        # the quiet style: not the default
+        self._always.setCursor(Qt.PointingHandCursor)
+        self._always.clicked.connect(self.always.emit)
+        self._always.hide()
+        buttons.addWidget(self._always)
         self._allow = QPushButton("Go ahead")
         self._allow.setObjectName("allow")
         self._allow.setCursor(Qt.PointingHandCursor)
@@ -351,9 +807,14 @@ class _Confirm(QFrame):
     _VERB = {"delete": "Delete", "remove": "Remove", "send": "Send",
              "email": "Send", "overwrite": "Overwrite", "move": "Move"}
 
-    def ask(self, description: str) -> None:
+    def ask(self, description: str, offer: str = "") -> None:
         lower = description.lower()
         destructive = any(k in lower for k in self._DESTRUCTIVE)
+        # A session-long yes is offered for edits in one project and for one
+        # exact command -- never for something that can't be undone.
+        self._always.setText(offer)
+        self._always.setToolTip("Yes to this, and to the same again until Mike restarts")
+        self._always.setVisible(bool(offer) and not destructive)
 
         verb = "Go ahead"
         for key, label in self._VERB.items():
@@ -394,6 +855,84 @@ class _Confirm(QFrame):
     def hide(self) -> None:  # noqa: A003 - matches the controller contract
         super().hide()
         self.visibility_changed.emit()
+
+
+# ══ first run: something to actually try ═══════════════════
+
+#: Four things a new user can click on their first launch.
+#:
+#: Chosen against one rule: every one of these has been verified working
+#: end-to-end on Windows. A starter suggestion that fails is worse than no
+#: suggestion at all -- it is the first thing the user ever asks Mike to do,
+#: and it decides whether they believe the rest of the claims. So no wake
+#: word (not implemented on Windows), no scrolling or dragging (honestly
+#: unsupported), nothing destructive, and nothing that opens a paid app.
+#:
+#: They are also deliberately a spread rather than four of the same thing:
+#: something visible happens on screen, something shows he can see, something
+#: shows he writes real code, something shows he remembers. Between them
+#: they answer "what is this?" far better than a paragraph of prose does.
+STARTERS = (
+    ("Open YouTube", "open youtube.com"),
+    ("Look at my screen", "what's on my screen right now?"),
+    ("Write me something", "write me a short study plan for this week and "
+                           "save it on my desktop"),
+    ("Remember this", "remember that I'm learning Python this term"),
+)
+
+
+class _Starters(QWidget):
+    """Clickable openers, shown once, on the first launch only.
+
+    The panel already had a `suggestion_clicked` signal wired all the way
+    through to the controller's process_message -- and nothing that ever
+    emitted it. This is the missing half: the wiring was built for a feature
+    that was never given a face.
+
+    They disappear the moment one is used or anything is typed, because
+    their whole job is to get the first message sent. After that they would
+    just be clutter in a surface whose entire design is "exactly as large as
+    the moment needs".
+    """
+
+    picked = Signal(str)
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        row = QVBoxLayout(self)
+        row.setContentsMargins(0, 12, 0, 2)
+        row.setSpacing(7)
+
+        # Without this the chips read as buttons whose purpose is unclear.
+        # Naming them as an invitation is what turns "what is this app?" into
+        # a first message being sent.
+        prompt = QLabel("Try one —")
+        prompt.setFont(style.label(10))
+        prompt.setStyleSheet(
+            f"color:{style.INK_MUTE};background:transparent;padding-bottom:2px;")
+        row.addWidget(prompt)
+
+        line = QHBoxLayout()
+        line.setSpacing(7)
+        line.setContentsMargins(0, 0, 0, 0)
+        for index, (label, prompt) in enumerate(STARTERS):
+            chip = QPushButton(label)
+            chip.setObjectName("starter")
+            chip.setCursor(Qt.PointingHandCursor)
+            chip.setFont(style.label(11))
+            chip.clicked.connect(lambda _=False, p=prompt: self.picked.emit(p))
+            line.addWidget(chip, 0, Qt.AlignLeft)
+            # Two per line: four chips in a row would each be too narrow to
+            # read at this panel's width.
+            if index % 2 == 1:
+                line.addStretch(1)
+                row.addLayout(line)
+                line = QHBoxLayout()
+                line.setSpacing(7)
+                line.setContentsMargins(0, 0, 0, 0)
+        if line.count():
+            line.addStretch(1)
+            row.addLayout(line)
 
 
 # ══ thin façades the controller connects signals to ═══════
@@ -503,8 +1042,8 @@ class _SettingsView(QScrollArea):
         self._col.addSpacing(14)
         self._section("MEMORY", self._memory_line(), action=("Forget all", self._forget_all))
         self._col.addSpacing(14)
-        self._section("PRIVACY", f"Everything Mike does stays on {_this_machine()}. "
-                      "No account, no cloud, nothing sent anywhere.")
+        self._section("PRIVACY", f"Mike thinks on {_this_machine()} — or, with Fast mode on, on "
+                      "your own Cloudflare account. No analytics; screenshots never leave here.")
         self._col.addStretch(1)
 
     def _section(self, label: str, detail: str, action=None) -> None:
@@ -531,9 +1070,9 @@ class _SettingsView(QScrollArea):
     def _current_accent_name(self) -> str:
         try:
             from config import preferences
-            return str(preferences.get("accent", "amber") or "amber").lower()
+            return str(preferences.get("accent", "copper") or "copper").lower()
         except Exception:
-            return "amber"
+            return "copper"
 
     def _pick_accent(self, name: str) -> None:
         try:
@@ -554,12 +1093,26 @@ class _SettingsView(QScrollArea):
                 return f"{speaker} — a natural neural voice, running locally."
         except Exception:
             pass
-        return "Samantha — the built-in system voice. Always available."
+        # "Samantha" is macOS's own native voice; naming it unconditionally
+        # here on Windows told a real user their voice was still "Samantha"
+        # when it was actually SAPI5 -- a name that means nothing on this
+        # platform and reads as broken, not just wrong. voice.providers
+        # already knows which native backend this machine actually has and
+        # can describe it (name and all); ask it rather than hardcode
+        # either platform's answer here.
+        try:
+            from voice.providers import native_provider_class
+            ok, why = native_provider_class()().available()
+            if ok:
+                return f"{why}. Always available."
+        except Exception:
+            pass
+        return "The built-in system voice. Always available."
 
     def _model_line(self) -> str:
         try:
             from config.ollama import OLLAMA_CHAT_MODEL
-            return f"Recommended for this Mac. Running {OLLAMA_CHAT_MODEL}, entirely on-device."
+            return f"Recommended for {_this_machine()}. Running {OLLAMA_CHAT_MODEL}, entirely on-device."
         except Exception:
             return "Running a local model, entirely on-device."
 
@@ -589,6 +1142,20 @@ class MikePanel(QWidget):
     #: ambient signal (a menu-bar notification) when something happens while
     #: the panel is hidden.
     state_changed = Signal(str)
+
+    #: Emitted when the user clicks the close button in the header. The
+    #: panel itself has no title bar (it's frameless -- see
+    #: MikeWindow._configure_window) and, before this button existed, the
+    #: only way to put it away was the global hotkey or Escape-cancelling
+    #: active work -- neither discoverable to someone who just summoned Mike
+    #: by typing. MikeWindow owns what "close" actually does (the same fade
+    #: -out used when the hotkey dismisses it), so this only asks.
+    dismiss_requested = Signal()
+    #: The window (MikeWindow) owns what these do; the panel only asks, so the
+    #: frameless surface gets the same minimise / maximise the OS chrome would
+    #: give a normal window.
+    minimise_requested = Signal()
+    maximise_requested = Signal()
 
     def __init__(self, settings_hooks: dict | None = None) -> None:
         super().__init__()
@@ -642,6 +1209,38 @@ class MikePanel(QWidget):
         self._menu_btn.setFixedSize(28, 24)
         self._menu_btn.clicked.connect(self._toggle_settings)
         hb.addWidget(self._menu_btn, 0, Qt.AlignVCenter)
+
+        # Minimise and maximise. The surface is frameless, so it carries its own
+        # window controls the way the OS chrome would -- a matched set with the
+        # close box, in the same quiet weight so they read as chrome, not action.
+        self._min_btn = QPushButton("–")     # en dash: a calm minus, not a hyphen
+        self._min_btn.setObjectName("winctl")
+        self._min_btn.setCursor(Qt.PointingHandCursor)
+        self._min_btn.setFixedSize(28, 24)
+        self._min_btn.setToolTip("Minimise")
+        self._min_btn.clicked.connect(self.minimise_requested.emit)
+        hb.addWidget(self._min_btn, 0, Qt.AlignVCenter)
+
+        self._max_btn = QPushButton("▢")     # a light square: maximise / restore
+        self._max_btn.setObjectName("winctl")
+        self._max_btn.setCursor(Qt.PointingHandCursor)
+        self._max_btn.setFixedSize(28, 24)
+        self._max_btn.setToolTip("Maximise")
+        self._max_btn.clicked.connect(self.maximise_requested.emit)
+        hb.addWidget(self._max_btn, 0, Qt.AlignVCenter)
+
+        # A real close button. The window is frameless (no OS title bar, no
+        # OS close box), and the only other way to put Mike away -- the
+        # global hotkey -- is invisible unless you already know it exists.
+        # Every other control on this surface is reached by clicking
+        # something; closing shouldn't be the one exception.
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setObjectName("close")
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setFixedSize(28, 24)
+        self._close_btn.setToolTip(f"Close ({_hotkey_hint()} to bring Mike back)")
+        self._close_btn.clicked.connect(self.dismiss_requested.emit)
+        hb.addWidget(self._close_btn, 0, Qt.AlignVCenter)
         outer.addWidget(header)
 
         # stage: the scrollable conversation + activity. Height follows content
@@ -683,12 +1282,27 @@ class MikePanel(QWidget):
         wrap.addWidget(self.confirm)
         outer.addLayout(wrap)
 
+        # attachment chips: a quiet row just above the input, present only when
+        # something is queued to send.
+        self._attachments: list[str] = []
+        self._chips = QWidget()
+        self._chips_row = QHBoxLayout(self._chips)
+        self._chips_row.setContentsMargins(16, 0, 16, 6)
+        self._chips_row.setSpacing(6)
+        self._chips_row.addStretch(1)
+        self._chips.hide()
+        outer.addWidget(self._chips)
+
         # input: the anchor, always present
         self.input = _InputBar()
+        self.input.attach_requested.connect(self.add_attachments)
         pad = QVBoxLayout()
         pad.setContentsMargins(14, 4, 14, 14)
         pad.addWidget(self.input)
         outer.addLayout(pad)
+
+        # The whole panel is a drop target, not just the little plus.
+        self.setAcceptDrops(True)
 
         self.setStyleSheet(_build_stylesheet())
         self._show_resting()
@@ -702,14 +1316,35 @@ class MikePanel(QWidget):
 
     # ── resting composition ───────────────────────────────
     def _intro(self) -> str:
+        """The first thing anyone ever reads. Four questions, in order.
+
+        Rewritten after reading it as someone who knows nothing: the old
+        version was a four-line paragraph that answered "what can you do"
+        with "read and write files, run commands" — mechanisms, and
+        developer ones. Someone who has just installed this does not want a
+        command runner, and would not know they wanted one.
+
+        So: who he is, then what that means in things they'd actually ask
+        for, then how to reach him. Short enough to be read rather than
+        skimmed past, because the starter chips underneath are doing the
+        real explaining.
+        """
         return (
-            f"I'm Mike. I live on {_this_machine()} — not in a browser tab — and I "
-            "stay here in the background. I can read and write files, run commands, "
-            "use your browser and see your screen when you ask; anything that "
-            "changes something, I check with you first. Nothing leaves this "
-            "machine.\n\n"
-            f"Ask me anything below, or press {_hotkey_hint()} to talk from anywhere."
+            f"I'm Mike. I live on {_this_machine()} — and unlike a chat "
+            "window, I can actually use it.\n\n"
+            "Open things, find files, write something, fix code that won't "
+            "work. I check before changing anything, and your chats stay on "
+            "this machine."
         )
+
+    def _how_to_reach(self) -> str:
+        """Said separately and quietly, because it's reference, not welcome.
+
+        Three ways in, and the old intro mentioned two -- typing and the
+        hotkey -- while the mic sat in the input bar unexplained. "Hold to
+        talk" is not obvious if you have never seen it.
+        """
+        return f"Type below · hold the mic to talk · {_hotkey_hint()} anywhere"
 
     def _show_resting(self) -> None:
         from config import preferences
@@ -720,7 +1355,38 @@ class MikePanel(QWidget):
         self._resting.setStyleSheet("padding-top:2px;")
         self._insert(self._resting)
         if first_run:
+            # Telling someone what Mike can do is weaker than letting them
+            # find out in one click, so the first launch offers openers that
+            # actually run rather than a longer paragraph about capabilities.
+            self._starters = _Starters()
+            self._starters.picked.connect(self._on_starter)
+            self._insert(self._starters)
+
+            reach = QLabel(self._how_to_reach())
+            reach.setFont(style.label(10))
+            # Wraps rather than running under the scrollbar: without this the
+            # line was clipped mid-word on first run, which is a poor first
+            # impression from the one line that explains how to talk to him.
+            reach.setWordWrap(True)
+            reach.setStyleSheet(
+                f"color:{style.INK_MUTE};background:transparent;padding-top:4px;")
+            self._reach = reach
+            self._insert(reach)
+
             preferences.set_value("onboarding_complete", True)
+
+    def _on_starter(self, prompt: str) -> None:
+        self._drop_starters()
+        self.conversation.suggestion_clicked.emit(prompt)
+
+    def _drop_starters(self) -> None:
+        for name in ("_starters", "_reach"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widget.hide()
+                self._stage.removeWidget(widget)
+                widget.deleteLater()
+                setattr(self, name, None)
 
     def _greeting(self) -> str:
         from datetime import datetime
@@ -736,6 +1402,11 @@ class MikePanel(QWidget):
             self._stage.removeWidget(r)
             r.deleteLater()
             self._resting = None
+        # The starters exist only to get the first message sent. Once the
+        # user has typed or spoken one themselves they are answered, and
+        # leaving them on screen would be clutter in a panel whose whole
+        # design is being exactly as large as the moment needs.
+        self._drop_starters()
 
     # ── sizing: the panel is as tall as its content, up to a cap ──────
     CAP_HEIGHT = 520
@@ -788,33 +1459,104 @@ class MikePanel(QWidget):
                 + conf + self.INPUT_H)
 
     def _fit(self) -> None:
-        """Ask the top-level window to match the content height."""
+        """Keep the window sized to the content — until the user takes over.
+
+        Uses resize(), not setFixedHeight(), so the window stays draggable from
+        its edges; and backs off entirely once the user has resized or
+        maximised (the window flips its own auto_height off), so the fit never
+        yanks a height the user chose back to the content's.
+        """
         win = self.window()
-        if win is not None and win is not self:
-            h = self.desired_height()
-            win.setFixedHeight(h)
+        if win is None or win is self:
+            return
+        if not getattr(win, "_auto_height", True) or win.isMaximized():
+            return
+        h = self.desired_height()
+        if win.height() == h:
+            return
+        # Flag it as ours so the window doesn't mistake this for a user resize.
+        try:
+            win._programmatic_resize = True
+            win.resize(win.width(), h)
+        finally:
+            win._programmatic_resize = False
 
     # ── column helpers ────────────────────────────────────
     def _insert(self, widget: QWidget) -> None:
         self._stage.insertWidget(self._stage.count() - 1, widget)
+        _animate_entry(widget)
         self.conversation.scroll_to_bottom()
         QTimer.singleShot(0, self._fit)
 
     # ── controller contract ───────────────────────────────
-    def add_user_message(self, text: str) -> None:
+    def add_user_message(self, text: str, attachments: list[str] | None = None) -> None:
         self._drop_resting()
-        self._insert(_Turn(text, "you"))
+        import os
+
+        shown = text
+        if attachments:
+            names = ", ".join(os.path.basename(a) for a in attachments)
+            tag = f"\U0001F4CE {names}"
+            shown = f"{tag}\n{text}" if text else tag
+        self._insert(_Turn(shown, "you"))
         self._ledger = None
+
+    # ── attachments ───────────────────────────────────────
+    def add_attachments(self, paths: list[str]) -> None:
+        import os
+
+        for path in paths:
+            if path and os.path.exists(path) and path not in self._attachments:
+                self._attachments.append(path)
+        self._refresh_chips()
+
+    def take_attachments(self) -> list[str]:
+        """Hand the queued files to the caller and clear the row."""
+        pending = list(self._attachments)
+        self._attachments.clear()
+        self._refresh_chips()
+        return pending
+
+    def _refresh_chips(self) -> None:
+        import os
+
+        # Rebuild the chip row from the current queue.
+        while self._chips_row.count() > 1:      # keep the trailing stretch
+            item = self._chips_row.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        for path in self._attachments:
+            chip = _AttachChip(os.path.basename(path), path)
+            chip.removed.connect(self._remove_attachment)
+            self._chips_row.insertWidget(self._chips_row.count() - 1, chip)
+        self._chips.setVisible(bool(self._attachments))
+        QTimer.singleShot(0, self._fit)
+
+    def _remove_attachment(self, path: str) -> None:
+        if path in self._attachments:
+            self._attachments.remove(path)
+        self._refresh_chips()
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.add_attachments(paths)
+            event.acceptProposedAction()
 
     def begin_mike_stream(self):
         self._drop_resting()
-        self._stream = _Turn("", "mike")
+        self._stream = _RichTurn("")
         self._insert(self._stream)
         return self._stream
 
     def add_mike_message(self, text: str) -> None:
         self._drop_resting()
-        self._insert(_Turn(text, "mike"))
+        self._insert(_RichTurn(text))
 
     def add_action_card(self, text: str):
         self._drop_resting()
@@ -828,12 +1570,22 @@ class MikePanel(QWidget):
     def show_thinking(self) -> None:
         self.hide_thinking()
         self._drop_resting()
-        self._thinking = _Turn("Thinking…", "mike")
-        self._thinking.setStyleSheet(f"color:{style.INK_MUTE};")
+        self._thinking = _Thinking()
         self._insert(self._thinking)
+
+    def thinking_hint(self, text: str) -> None:
+        """What Mike is getting ready to do, while he writes it out."""
+        if self._thinking is None:
+            self.show_thinking()
+        self._thinking.set_hint(text)
 
     def hide_thinking(self) -> None:
         if self._thinking is not None:
+            # Stop its timers before the widget goes: a rotation firing into
+            # a widget mid-deleteLater is a crash with no useful traceback.
+            stop = getattr(self._thinking, "stop", None)
+            if stop is not None:
+                stop()
             self._thinking.hide()
             self._stage.removeWidget(self._thinking)
             self._thinking.deleteLater()
@@ -846,10 +1598,21 @@ class MikePanel(QWidget):
         self._state_lbl.setText(STATE_WORD.get(state, "").upper())
         self._stop.setVisible(state in ("thinking", "working", "responding", "speaking"))
         self.input.set_listening(state == "listening")
+        # The input's breathing line flows while Mike is producing anything —
+        # thinking, working a tool, or speaking — so output has its own calm
+        # sign of life, the same element that breathes for input.
+        self.input.set_responding(
+            state in ("thinking", "working", "responding", "speaking"))
         self.state_changed.emit(state)
 
     def state(self) -> str:
         return self._state
+
+    def set_maximised(self, on: bool) -> None:
+        """Reflect the window's maximise state on the button, so it reads as a
+        toggle: a single square to grow, an overlapped pair to bring back."""
+        self._max_btn.setText("❐" if on else "▢")
+        self._max_btn.setToolTip("Restore" if on else "Maximise")
 
     def window(self):  # noqa: A003
         return super().window()
@@ -868,8 +1631,16 @@ class MikePanel(QWidget):
         self.confirm.hide()
         self._settings_view.show()
         win = self.window()
-        if win is not None and win is not self:
-            win.setFixedHeight(self.CAP_HEIGHT)
+        # Grow to show the settings, but with resize() rather than a fixed
+        # height, so the window stays draggable and the user's own larger size
+        # is left alone.
+        if (win is not None and win is not self
+                and not win.isMaximized() and win.height() < self.CAP_HEIGHT):
+            try:
+                win._programmatic_resize = True
+                win.resize(win.width(), self.CAP_HEIGHT)
+            finally:
+                win._programmatic_resize = False
 
     def showing_overlay(self) -> bool:
         return getattr(self, "_overlay_open", False)
@@ -944,6 +1715,43 @@ QPushButton#menu {{
     border: none; font-size: 16px; padding: 0 2px;
 }}
 QPushButton#menu:hover {{ color: {style.INK}; }}
+QPushButton#winctl {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 13px; padding: 0 2px;
+}}
+QPushButton#winctl:hover {{ color: {style.INK}; }}
+QPushButton#attach {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 20px; padding: 0;
+}}
+QPushButton#attach:hover {{ color: {style.accent()}; }}
+QFrame#chip {{
+    background: {style.GROUND_SUNK};
+    border: 1px solid {style.HAIRLINE};
+    border-radius: 8px;
+}}
+QPushButton#chipx {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 10px;
+}}
+QPushButton#chipx:hover {{ color: {style.STOP}; }}
+QPushButton#close {{
+    background: transparent; color: {style.INK_MUTE};
+    border: none; font-size: 13px; padding: 0 2px;
+}}
+QPushButton#close:hover {{ color: {style.STOP}; }}
+QPushButton#starter {{
+    background: {style.GROUND_RAISED};
+    color: {style.INK_SOFT};
+    border: 1px solid {style.HAIRLINE};
+    border-radius: 13px;
+    padding: 6px 13px;
+    text-align: left;
+}}
+QPushButton#starter:hover {{
+    color: {style.INK};
+    border-color: {style.accent()};
+}}
 QScrollBar:vertical {{ background: transparent; width: 8px; margin: 4px 2px; }}
 QScrollBar::handle:vertical {{
     background: {style.INK_FAINT}; border-radius: 4px; min-height: 28px;
@@ -984,7 +1792,7 @@ QPushButton#stop {{
 }}
 QPushButton#stop:hover {{ color: {style.STOP}; border-color: {style.STOP}; }}
 QPushButton#allow {{
-    background: {style.accent()}; color: #17140F;
+    background: {style.accent()}; color: {style.on_accent()};
     border: none; border-radius: 8px; padding: 7px 18px;
     font-size: 13px; font-weight: 600;
 }}

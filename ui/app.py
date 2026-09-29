@@ -1,57 +1,66 @@
 from __future__ import annotations
 
 import os
+import platform
 import sys
 
-from PySide6.QtCore import Qt, QEvent, QPropertyAnimation, QEasingCurve, QPoint
+from PySide6.QtCore import Qt, QEvent, QTimer
 from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon
 
 from brain.core_runtime import CoreRuntime
+from computer import attention
 
 from ide import manager as ide_manager
 from logs.logger import logger
 from ui.controller.ui_controller import UIController
-from ui.instrument import tokens
-from ui.instrument.edge import EdgeStrip
 from ui.system.global_hotkey import GlobalHotkey
-from ui.panel.mike_panel import MikePanel
+from ui.workspace.workspace import MikeWorkspace
+from ui.workspace.corner import CornerPresence
+from ui.workspace.guide import Guide
 from ui.theme.stylesheet import GLOBAL_STYLESHEET
-from ui.instrument.invoke import InvokeLine
+
+
+def _app_icon() -> QIcon:
+    """Mike's real mark — the rounded-square glyph — for the taskbar entry,
+    Alt+Tab, and the window's own icon. The frozen build bakes
+    packaging/icon.ico into the .exe; this loads the same file for Qt's icon
+    calls, next to the frozen executable first, then the source tree."""
+    candidates = [
+        os.path.join(getattr(sys, "_MEIPASS", ""), "packaging", "icon.ico"),
+        os.path.join(os.path.dirname(sys.executable), "packaging", "icon.ico"),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "packaging", "icon.ico"),
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return QIcon(path)
+    return QIcon()
 
 
 def _tray_icon() -> QIcon:
-    """
-    A plain filled dot in Mike's own accent color — a menu-bar presence
-    needs an icon, not a logo. Drawn in code rather than shipping an asset
-    for one small dot.
-    """
-    size = 22
-    pixmap = QPixmap(size, size)
-    pixmap.fill(Qt.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.Antialiasing)
-    painter.setBrush(QColor(tokens.AMBER))
-    painter.setPen(Qt.NoPen)
-    margin = 4
-    painter.drawEllipse(margin, margin, size - 2 * margin, size - 2 * margin)
-    painter.end()
-    return QIcon(pixmap)
+    """The nib on its graphite tile — the same mark as the taskbar, drawn
+    at the tray's sizes rather than scaled down from the big icon."""
+    from PySide6.QtCore import QRectF
+    from ui.workspace import nib
+
+    icon = QIcon()
+    for size in (16, 20, 24, 32):
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#1E1F23"))
+        painter.drawRoundedRect(QRectF(0, 0, size, size), size * 0.22, size * 0.22)
+        nib.paint_centred(painter, QRectF(0, 0, size, size), QColor("#E3A46B"), scale=0.8)
+        painter.end()
+        icon.addPixmap(pixmap)
+    return icon
 
 
 def _optional(what: str, start) -> bool:
-    """Start a background service that Mike can live without.
-
-    These are conveniences: an editor bridge, a global hotkey, a tray icon.
-    Each already handles the failure it expects — the bridge returns False
-    when its port is taken — but an unexpected one propagated out of
-    __init__ and stopped the window from opening at all. Losing the hotkey
-    is an inconvenience; losing Mike because of the hotkey is not a trade
-    worth making, so anything unexpected is logged and stepped over.
-
-    Deliberately not used for the runtime, the controller or the page: those
-    are Mike, and a window without them would be a shell pretending to work.
-    """
+    """Start a background convenience Mike can live without, stepping over an
+    unexpected failure rather than letting it stop the window opening."""
     try:
         return bool(start())
     except Exception:
@@ -61,61 +70,84 @@ def _optional(what: str, start) -> bool:
 
 class MikeWindow(QMainWindow):
 
-    def __init__(self):
+    #: Opens as a real desktop application, not a tiny rectangle.
+    DEFAULT_W = 1180
+    DEFAULT_H = 760
+    MIN_WIDTH = 860
+    MIN_HEIGHT = 580
 
+    def __init__(self):
         super().__init__()
 
         self.runtime = CoreRuntime()
 
-        # The settings surface edits real engines, so it is handed the
+        # The settings surface edits real engines, so it's handed the
         # controller's own switches rather than its own copies of state.
         self._settings_hooks = {}
-        self.page = MikePanel(self._settings_hooks)
+        self.page = MikeWorkspace(self._settings_hooks)
 
-        self.floating = InvokeLine()
-
-        self.edge = EdgeStrip()
+        # CORNER MIKE — the companion that holds the corner while the workspace
+        # is away. It is the "floating" surface the controller already knows how
+        # to drive, so no new wiring is needed for status/reply to surface there.
+        self.corner = CornerPresence()
 
         self.controller = UIController(
             runtime=self.runtime,
             page=self.page,
-            floating=self.floating,
-            edge=self.edge,
+            floating=self.corner,
         )
 
+        # While Mike works in other apps this window steps aside and the nib
+        # shows where he is (computer/attention.py is where actions say so).
+        self.guide = Guide(home=self._guide_home)
+        self.controller.guide = self.guide
+        attention.set_listener(self.guide.request)
+        self.guide.outside_work.connect(self._collapse_for_task)
+
         self._settings_hooks["on_voice_toggle"] = self.controller.set_voice_enabled
-        self._settings_hooks["on_wake_toggle"] = self.controller.set_wake_word_enabled
+        self._settings_hooks["on_wake_toggle"] = self._set_wake
+        self._settings_hooks["on_voice_changed"] = self.controller.reload_voice
+        # Conversations: History opens/deletes them, the rail starts new ones.
+        self._settings_hooks["new_conversation"] = self.controller.new_conversation
+        self._settings_hooks["open_conversation"] = self.controller.open_conversation
+        self._settings_hooks["current_conversation"] = lambda: self.controller.conversation_id
+        self._settings_hooks["quit_app"] = self._request_quit
 
         self.setCentralWidget(self.page)
 
         self._configure_window()
-
         self._configure_shortcuts()
 
-        self.floating.expand_requested.connect(self._expand_from_floating)
-
-        self.edge.expand_requested.connect(self._summon)
+        self.corner.expand_requested.connect(self._show_full)
 
         # Reachable from any application, not just when Mike has focus.
         self.hotkey = GlobalHotkey(self._summon)
         _optional("the global hotkey", self.hotkey.register)
 
-        # Listen for an editor. Mike works exactly the same if none ever
-        # connects, or if the port is already taken.
         _optional("the IDE bridge", ide_manager.start)
+        _optional("the VS Code extension", self._offer_vscode_extension)
 
         self._build_tray()
         self._torn_down = False
         self._quitting = False
 
-        # Ambient signal: when something happens while the panel is hidden,
-        # the tray icon alone isn't enough. A native notification is the
-        # macOS-native, unmistakable way to say "Mike needs you" or "Mike
-        # finished" without stealing focus from what you were doing.
         self.page.state_changed.connect(self._ambient_signal)
+        self.page.dismiss_requested.connect(self._go_corner)
+        self.page.minimise_requested.connect(self._go_corner)
+        self.page.maximise_requested.connect(self._toggle_maximise)
+        self.corner.dismissed.connect(self._on_corner_dismissed)
 
         self.controller.startup()
+        self.page.set_wake_listening(self.controller.wake_listening)
+        # Is Mike's brain ready? Asked in the background once the window is up,
+        # so a stopped or missing Ollama is explained before the first question.
+        QTimer.singleShot(900, self.page.health.check)
 
+    def _set_wake(self, enabled: bool) -> None:
+        self.controller.set_wake_word_enabled(enabled)
+        self.page.set_wake_listening(self.controller.wake_listening)
+
+    # ── ambient tray notifications while Mike is away ──────
     _AMBIENT = {
         "needs_user": ("Mike needs you", "There's a decision waiting."),
         "error": ("Mike stopped", "Something needs a look."),
@@ -123,9 +155,10 @@ class MikeWindow(QMainWindow):
     }
 
     def _ambient_signal(self, state: str) -> None:
-        # Only when Mike is out of sight — if the panel is up, the state is
-        # already visible on it.
         if state not in self._AMBIENT:
+            return
+        from config import preferences
+        if not preferences.get("notifications_enabled", True):
             return
         if self.isVisible() and not self.isMinimized():
             return
@@ -136,82 +169,381 @@ class MikeWindow(QMainWindow):
             logger.debug("Could not post ambient notification.", exc_info=True)
 
     def _build_tray(self) -> None:
-        """
-        The one honest signal that Mike is still here after the window
-        closes — a menu-bar icon, not a promise in an onboarding sentence.
-        Two items, on purpose: bring the window back, or actually leave.
-        """
-        # Parented and held on self on purpose: a bare local QMenu is only
-        # referenced by the native status item, so Python is free to collect
-        # it out from under Qt.
         self._tray_menu = QMenu(self)
-        self._tray_menu.addAction("Show Mike", self._show_main_window)
+        self._tray_menu.addAction("Open Mike", self._show_full)
         self._tray_menu.addSeparator()
         self._tray_menu.addAction("Quit Mike", self._request_quit)
 
         self.tray = QSystemTrayIcon(_tray_icon(), self)
         self.tray.setToolTip("Mike")
         self.tray.setContextMenu(self._tray_menu)
+        self.tray.activated.connect(self._on_tray_activated)
         self.tray.show()
 
-    def _show_main_window(self) -> None:
-        self.show()
-        self.raise_()
-        self.activateWindow()
+    def _on_tray_activated(self, reason) -> None:
+        if reason == QSystemTrayIcon.Trigger:
+            self._show_full()
+
+    def _offer_vscode_extension(self) -> bool:
+        import threading
+
+        def _run() -> None:
+            try:
+                from ide.install import ensure_installed
+                changed, reason = ensure_installed()
+                if changed:
+                    logger.info("VS Code extension: %s", reason)
+            except Exception:
+                logger.debug("VS Code extension check failed.", exc_info=True)
+
+        threading.Thread(target=_run, name="vscode-extension", daemon=True).start()
+        return True
+
+    def _summon_after_tour(self) -> None:
+        self._tour = None
+        self._present()
+
+    # ── account ──────────────────────────────────────────
+    def _present(self, autostart: bool = False) -> None:
+        """Show Mike once startup (or the tour) is done — through the sign-in
+        card when this build requires an account, and otherwise with a
+        one-time offer to create one."""
+        from account import config as account_config
+        from account.manager import manager
+        account = manager()
+        if account_config.required() and not account.signed_in():
+            if not self._ask_account(required=True):
+                self._request_quit()
+                return
+        if not getattr(self, "_watching_account", False):
+            self._watching_account = True
+            account.changed.connect(self._on_account_changed)
+        if autostart:
+            # Launched at sign-in: be present, not in the way — Mike takes the
+            # corner and the taskbar, and the workspace waits to be opened.
+            self._go_corner()
+            # With the mission they left, if there is one -- once the event
+            # loop runs, so nothing in the window's first show can undo it.
+            QTimer.singleShot(0, self._show_mission_in_corner)
+            return
+        self._show_full()
+        from config import preferences
+        offers = []
+        if account_config.configured() and not account.signed_in():
+            if not preferences.get("account_offered", False):
+                preferences.set_value("account_offered", True)
+                offers.append(lambda: self._ask_account(first_run=True))
+        if self._fast_mode_to_offer():
+            preferences.set_value("fast_mode_offered", True)
+            offers.append(self._offer_fast_mode)
+        if offers:
+            # One after the other: each card is modal and waits for its answer.
+            QTimer.singleShot(450, lambda: [offer() for offer in offers])
+
+    def _show_mission_in_corner(self) -> None:
+        welcome = getattr(self.controller, "mission_welcome", "")
+        if welcome:
+            self.corner.set_response(welcome.replace("**", ""))
+
+    @staticmethod
+    def _fast_mode_to_offer() -> bool:
+        """Once, on the first launch after Fast mode exists, if it isn't
+        connected: most students would never find it in Settings."""
+        try:
+            from account import cloudflare
+            from config import preferences, settings
+            return bool(getattr(settings, "CLOUDFLARE_CLIENT_ID", "")
+                        and not preferences.get("fast_mode_offered", False)
+                        and not cloudflare.connected())
+        except Exception:
+            return False
+
+    def _offer_fast_mode(self) -> bool:
+        from ui.workspace import fast_mode_dialog
+        parent = self if self.isVisible() and not self.isMinimized() else None
+        return fast_mode_dialog.ask(parent)
+
+    def _ask_account(self, *, required: bool = False, first_run: bool = False) -> bool:
+        from ui.workspace import account_dialog
+        parent = self if self.isVisible() and not self.isMinimized() else None
+        return account_dialog.ask(parent, "create" if first_run else "sign_in",
+                                  first_run=first_run, required=required)
+
+    def _on_account_changed(self) -> None:
+        """Signed out while an account is required: back to the sign-in card."""
+        from account import config as account_config
+        from account.manager import manager
+        if (not account_config.required() or manager().signed_in()
+                or getattr(self, "_gating", False) or self._quitting):
+            return
+
+        def gate():
+            self._gating = True
+            try:
+                self.hide()
+                self.corner.dismiss()
+                if self._ask_account(required=True):
+                    self._show_full()
+                else:
+                    self._request_quit()
+            finally:
+                self._gating = False
+        QTimer.singleShot(0, gate)
 
     def _request_quit(self) -> None:
-        """
-        The only path that actually ends Mike — closing the window no
-        longer does this (see closeEvent). Routed through QApplication so
-        aboutToQuit fires exactly once regardless of what triggered it.
-
-        _quitting is set first and read by closeEvent: quitting asks every
-        top-level window to close, and a window that ignores that request
-        cancels the quit outright. Without this flag the close handler below
-        would refuse, and "Quit Mike" could never actually quit.
-        """
+        logger.info("Quit requested.")
         self._quitting = True
         QApplication.instance().quit()
 
-    PANEL_WIDTH = 620
-
+    # ── window geometry: opens large, remembers where it was ──────
     def _configure_window(self):
-        # A summoned presence, not a window you live in: frameless, floating,
-        # translucent so the panel's own rounded surface reads as a system
-        # layer over whatever you were doing. Tool-window so it stays out of
-        # the dock and app switcher -- Mike is reached by the hotkey, not by
-        # hunting for a window. Height follows the panel's content; width is
-        # fixed at a comfortable reading measure.
         self.setWindowTitle("Mike")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint)
+        # A real top-level window (Qt.Window), just without the OS title bar
+        # (FramelessWindowHint). Qt.Window keeps it a first-class window rather
+        # than a popup, which — together with _ensure_taskbar_button below —
+        # is what puts Mike in the taskbar like any other app.
+        self.setWindowFlags(Qt.Window | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setStyleSheet("QMainWindow { background: transparent; }")
+        self.setMinimumSize(self.MIN_WIDTH, self.MIN_HEIGHT)
+        self._taskbar_fixed = False
 
-        self.setFixedWidth(self.PANEL_WIDTH)
-        self.setFixedHeight(self.page.desired_height())
+        from config import preferences
 
         try:
-            screen = QApplication.primaryScreen().availableGeometry()
-            self.move(screen.center().x() - self.PANEL_WIDTH // 2, screen.top() + 130)
+            avail = QApplication.primaryScreen().availableGeometry()
         except Exception:
-            pass
+            avail = None
+
+        w = int(preferences.get("window_w", -1) or -1)
+        h = int(preferences.get("window_h", -1) or -1)
+        x = int(preferences.get("window_x", -1) or -1)
+        y = int(preferences.get("window_y", -1) or -1)
+
+        if w < self.MIN_WIDTH or h < self.MIN_HEIGHT:
+            w, h = self.DEFAULT_W, self.DEFAULT_H
+        if avail is not None:
+            # Never larger than the screen, never stranded off it.
+            w = min(w, avail.width())
+            h = min(h, avail.height())
+            if x < avail.left() or x + w > avail.right() or y < avail.top() or y + h > avail.bottom():
+                x = avail.center().x() - w // 2
+                y = avail.center().y() - h // 2
+        self.resize(w, h)
+        if x >= 0 and y >= 0:
+            self.move(x, y)
+
+        if bool(preferences.get("window_maximised", False)):
+            QTimer.singleShot(0, self._restore_maximised)
+
+    def _restore_maximised(self) -> None:
+        self.showMaximized()
+        self.page.set_maximised(True)
+
+    def _save_geometry(self) -> None:
+        from config import preferences
+        try:
+            maxed = self.isMaximized()
+            preferences.set_value("window_maximised", bool(maxed))
+            geo = self.normalGeometry() if maxed else self.geometry()
+            if geo.width() >= self.MIN_WIDTH and geo.height() >= self.MIN_HEIGHT:
+                preferences.set_value("window_w", int(geo.width()))
+                preferences.set_value("window_h", int(geo.height()))
+                preferences.set_value("window_x", int(geo.x()))
+                preferences.set_value("window_y", int(geo.y()))
+        except Exception:
+            logger.debug("Could not save window geometry.", exc_info=True)
+
+    # ── FULL ↔ CORNER ─────────────────────────────────────
+    def _show_full(self) -> None:
+        """Bring the workspace forward and put the corner companion away."""
+        self.corner.dismiss()
+        self.showNormal() if self.isMinimized() else None
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.page.input.focus()
+
+    def _go_corner(self) -> None:
+        """Send the workspace to the taskbar and leave Mike in the corner.
+
+        Minimised, not hidden: a minimised window keeps its taskbar button, so
+        Mike is still 'in the dock' and one click away, while the corner
+        companion handles quick interaction. (Hiding it removed the taskbar
+        entry entirely — the "no mike in the dock" report.)
+        """
+        self._save_geometry()
+        self.showMinimized()
+        try:
+            self.corner.show_presence()
+        except Exception:
+            logger.exception("Could not show the corner presence.")
+
+    def _guide_home(self) -> tuple[int, int]:
+        """Where the nib lives: the corner window's mark, in screen pixels."""
+        import ctypes
+        from ctypes import wintypes
+        rect = wintypes.RECT()
+        ctypes.windll.user32.GetWindowRect(wintypes.HWND(int(self.corner.winId())), ctypes.byref(rect))
+        scale = self.corner.devicePixelRatioF()
+        return int(rect.left + 34 * scale), int(rect.top + 34 * scale)
+
+    def _collapse_for_task(self, x: int, y: int) -> None:
+        """Mike has started working outside this window: step aside, leaving
+        only the corner Mike, once per task -- and not at all if the student
+        brought the window back meanwhile (a task collapses it once). An action
+        inside this very window doesn't count as outside."""
+        from config import preferences
+        if not preferences.get("guide_collapse", True):
+            return
+        if self.isMinimized() or not self.isVisible():
+            return
+        if x >= 0 and y >= 0 and self._own_window_holds(x, y):
+            return
+        self._go_corner()
+
+    def _own_window_holds(self, x: int, y: int) -> bool:
+        try:
+            import ctypes
+            from ctypes import wintypes
+            rect = wintypes.RECT()
+            ctypes.windll.user32.GetWindowRect(wintypes.HWND(int(self.winId())), ctypes.byref(rect))
+            return rect.left <= x < rect.right and rect.top <= y < rect.bottom
+        except Exception:
+            return False
+
+    def _on_corner_dismissed(self) -> None:
+        """The corner was closed by its ✕. Mike is not lost — the window stays
+        minimised in the taskbar, reachable by a click, the tray, or the
+        hotkey."""
+        if not self.isMinimized():
+            self.showMinimized()
+
+    def _ensure_taskbar_button(self) -> None:
+        """Force a taskbar button for the frameless window.
+
+        A frameless top-level on Windows is a WS_POPUP, which the shell may
+        leave *out* of the taskbar. Setting WS_EX_APPWINDOW (and clearing
+        WS_EX_TOOLWINDOW) tells the shell to give it a taskbar button like a
+        normal application — the concrete fix for "no mike in the dock".
+        """
+        if getattr(self, "_taskbar_fixed", False):
+            return
+        try:
+            import ctypes
+            GWL_EXSTYLE = -20
+            WS_EX_APPWINDOW = 0x00040000
+            WS_EX_TOOLWINDOW = 0x00000080
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+            ex = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+            ex = (ex | WS_EX_APPWINDOW) & ~WS_EX_TOOLWINDOW
+            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex)
+            # Nudge the shell to pick up the changed extended style, so the
+            # taskbar button appears without needing a hide/show flicker.
+            SWP_NOMOVE = 0x0002
+            SWP_NOSIZE = 0x0001
+            SWP_NOZORDER = 0x0004
+            SWP_FRAMECHANGED = 0x0020
+            user32.SetWindowPos(hwnd, 0, 0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED)
+            self._taskbar_fixed = True
+        except Exception:
+            logger.debug("Could not force a taskbar button.", exc_info=True)
+
+    def _summon(self) -> None:
+        """Global hotkey: toggle between the full workspace and the corner."""
+        if self.isVisible() and not self.isMinimized():
+            self._go_corner()
+        else:
+            self._show_full()
+
+    # ── window controls: maximise / native move+resize ────
+    def _toggle_maximise(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+            self.page.set_maximised(False)
+        else:
+            self.showMaximized()
+            self.page.set_maximised(True)
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() == QEvent.WindowStateChange:
+            self.page.set_maximised(self.isMaximized())
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._ensure_taskbar_button()
+        # The full window coming forward replaces the corner -- but a first
+        # show that is itself a minimise (starting at sign-in, straight to the
+        # corner) must not dismiss the corner it was sent there to show.
+        if not self.isMinimized():
+            self.corner.dismiss()
+
+    _RESIZE_MARGIN = 6      # logical px; scaled to the display below
+
+    def nativeEvent(self, event_type, message):
+        # Native move and resize for a frameless window via WM_NCHITTEST, in
+        # PHYSICAL pixels (the window's own GetWindowRect and a DPI-scaled
+        # margin), so it behaves like an OS window on a scaled display.
+        if event_type == "windows_generic_MSG":
+            try:
+                import ctypes
+                from ctypes import wintypes
+
+                msg = wintypes.MSG.from_address(int(message))
+                if msg.message == 0x0084:  # WM_NCHITTEST
+                    gx = ctypes.c_short(msg.lParam & 0xFFFF).value
+                    gy = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
+
+                    rect = wintypes.RECT()
+                    ctypes.windll.user32.GetWindowRect(
+                        int(self.winId()), ctypes.byref(rect))
+                    x = gx - rect.left
+                    y = gy - rect.top
+                    w = rect.right - rect.left
+                    h = rect.bottom - rect.top
+
+                    dpr = self.devicePixelRatioF() or 1.0
+                    m = max(4, int(self._RESIZE_MARGIN * dpr))
+
+                    on_left, on_right = x < m, x > w - m
+                    on_top, on_bottom = y < m, y > h - m
+
+                    if not self.isMaximized():
+                        if on_top and on_left:      return True, 13  # HTTOPLEFT
+                        if on_top and on_right:     return True, 14  # HTTOPRIGHT
+                        if on_bottom and on_left:   return True, 16  # HTBOTTOMLEFT
+                        if on_bottom and on_right:  return True, 17  # HTBOTTOMRIGHT
+                        if on_left:                 return True, 10  # HTLEFT
+                        if on_right:                return True, 11  # HTRIGHT
+                        if on_top:                  return True, 12  # HTTOP
+                        if on_bottom:               return True, 15  # HTBOTTOM
+
+                    # The titlebar's empty span is a drag handle (double-click to
+                    # maximise); its buttons — window controls, the sidebar
+                    # toggle, new chat — stay clickable.
+                    from PySide6.QtCore import QPoint
+                    local = QPoint(int(x / dpr), int(y / dpr))
+                    if self.page.hit_is_caption(local):
+                        return True, 2                              # HTCAPTION
+                    return True, 1                                  # HTCLIENT
+            except Exception:
+                pass
+        return super().nativeEvent(event_type, message)
 
     def _configure_shortcuts(self):
-
+        # A new chat really is new: Mike forgets the old one (it stays in
+        # History). Ctrl+L used to clear only the screen while Mike silently
+        # kept the whole conversation in context.
+        QShortcut(QKeySequence("Ctrl+N"), self, activated=self.controller.new_conversation)
+        QShortcut(QKeySequence("Ctrl+L"), self, activated=self.controller.new_conversation)
+        QShortcut(QKeySequence("Ctrl+B"), self, activated=self.page.toggle_sidebar)
+        QShortcut(QKeySequence("Ctrl+,"), self, activated=self.page.open_settings)
         QShortcut(
-            QKeySequence("Ctrl+L"),
-            self,
-            activated=self.page.clear,
-        )
-
-        # QKeySequence.Quit resolves to the platform's real quit shortcut
-        # (Cmd+Q on macOS). Bound explicitly rather than relying on Qt's
-        # implicit default app menu, so it's unambiguous which path a real
-        # quit takes.
-        QShortcut(
-            QKeySequence.Quit,
-            self,
-            activated=self._request_quit,
+            QKeySequence.Quit if platform.system() == "Darwin" else QKeySequence("Ctrl+Q"),
+            self, activated=self._request_quit,
         )
 
     def keyPressEvent(self, event):
@@ -219,215 +551,178 @@ class MikeWindow(QMainWindow):
             self.controller.voice_shortcut_pressed()
             return
         if event.key() == Qt.Key_Escape:
-            # Escape backs out of an overlay first; only cancels real work
-            # when the Home stage itself is what's showing.
-            if self.page.showing_overlay():
+            confirm = getattr(self.page, "confirm", None)
+            if confirm is not None and confirm.isVisible():
+                # "Don't do this (Esc)", as the card says: this action is
+                # declined and Mike carries on, rather than the whole turn
+                # being cancelled.
+                confirm.denied.emit()
+            elif self.page.showing_overlay():
                 self.page.close_overlays()
             else:
+                # Stops whatever Mike is doing — a running turn, or just the
+                # voice still reading a finished answer aloud.
                 self.controller.cancel_active()
             return
         super().keyPressEvent(event)
 
-    def showEvent(self, event):
-        # Mike is fully on screen; the ambient tick would be a duplicate.
-        super().showEvent(event)
-        self.edge.sleep()
-
-    def hideEvent(self, event):
-        super().hideEvent(event)
-        self.edge.wake()
-
-    def changeEvent(self, event):
-        super().changeEvent(event)
-        if event.type() == QEvent.WindowStateChange:
-            if self.isMinimized():
-                self.edge.wake()
-            else:
-                self.edge.sleep()
-
-    def _summon(self) -> None:
-        """Global invocation: bring Mike forward, or put him away again.
-
-        The panel *is* the summoned presence -- a compact floating surface that
-        the hotkey shows directly, rather than a separate quick-line that then
-        expands into a heavier window. One coherent surface, summoned and
-        dismissed by the same key, wherever the user is. The ambient edge
-        strip remains Mike's "still here" mark while he's away.
-        """
-        self.edge.dismiss()
-
-        if self.isVisible() and not self.isMinimized():
-            self._animate_out()
-            return
-
-        self._animate_in()
-
-    def _stop_summon_animations(self) -> None:
-        """Stop whatever summon/dismiss animation is still in flight.
-
-        _summon() toggles on every hotkey press, and nothing stops the user
-        from pressing it again before the ~150-180ms show/hide animation has
-        finished. Left alone, the old QPropertyAnimation is simply dropped in
-        favour of a new one *while still running* — two animations then drive
-        the same windowOpacity (and, for a show cut short by a hide, `pos`)
-        property at once, and the abandoned one's `finished` signal still
-        fires later and can act on a window that has since changed state
-        (e.g. a stale fadeout hiding a window a following animate_in just
-        showed). Stopping the previous animation before replacing it is the
-        same guard `_teardown` already applies at shutdown, just applied on
-        every toggle instead of only the last one.
-        """
-        for name in ("_fade", "_rise", "_fadeout"):
-            anim = getattr(self, name, None)
-            if anim is not None:
-                try:
-                    anim.stop()
-                except Exception:
-                    pass
-
-    def _animate_in(self) -> None:
-        """Mike appears — a fast fade and a small rise into place, so it reads
-        as a presence arriving rather than a window opening. Short enough
-        (~150ms) that it never feels like waiting."""
-        self._stop_summon_animations()
-
-        try:
-            screen = QApplication.primaryScreen().availableGeometry()
-            rest_x = screen.center().x() - self.PANEL_WIDTH // 2
-            rest_y = screen.top() + 130
-        except Exception:
-            rest_x, rest_y = self.x(), self.y()
-
-        self.setWindowOpacity(0.0)
-        self.move(rest_x, rest_y + 10)
-        self.show()
-        self.raise_()
-        self.activateWindow()
-        self.page.input.focus()
-
-        self._fade = QPropertyAnimation(self, b"windowOpacity", self)
-        self._fade.setDuration(150)
-        self._fade.setStartValue(0.0)
-        self._fade.setEndValue(1.0)
-        self._fade.setEasingCurve(QEasingCurve.OutCubic)
-
-        self._rise = QPropertyAnimation(self, b"pos", self)
-        self._rise.setDuration(180)
-        self._rise.setStartValue(QPoint(rest_x, rest_y + 10))
-        self._rise.setEndValue(QPoint(rest_x, rest_y))
-        self._rise.setEasingCurve(QEasingCurve.OutCubic)
-
-        self._fade.start()
-        self._rise.start()
-
-    def _animate_out(self) -> None:
-        """Mike steps back — a quick fade, then actually hidden."""
-        self._stop_summon_animations()
-
-        self._fadeout = QPropertyAnimation(self, b"windowOpacity", self)
-        self._fadeout.setDuration(110)
-        self._fadeout.setStartValue(self.windowOpacity())
-        self._fadeout.setEndValue(0.0)
-        self._fadeout.setEasingCurve(QEasingCurve.InCubic)
-        self._fadeout.finished.connect(self._finish_hide)
-        self._fadeout.start()
-
-    def _finish_hide(self) -> None:
-        self.hide()
-        self.setWindowOpacity(1.0)
-
-    def _expand_from_floating(self) -> None:
-        self.floating.dismiss()
-        self.show()
-        self.raise_()
-        self.activateWindow()
-
     def closeEvent(self, event):
-        """
-        Closing the window is not quitting Mike — it's putting the window
-        away. The hotkey, wake word, IDE bridge, and Edge ambient presence
-        all keep running, exactly as the onboarding text already promises.
-        Real shutdown only ever happens through _request_quit (the tray's
-        Quit item, or Cmd+Q), which sets _quitting first — during a genuine
-        quit this must accept, or refusing here would cancel the quit and
-        leave Mike running with no way to stop him.
-        """
+        """Closing the window is not quitting Mike — it's sending him to the
+        corner. Real shutdown only ever happens through _request_quit (the
+        tray's Quit item, or Ctrl+Q), which sets _quitting first."""
         if getattr(self, "_quitting", False):
+            self._save_geometry()
             event.accept()
             return
-
         event.ignore()
-        self.hide()
+        self._go_corner()
 
     def _teardown(self) -> None:
-        """
-        The one real shutdown path, reached only via a genuine quit
-        (QApplication.aboutToQuit) — never from closing the window. Guarded
-        so it only ever runs once regardless of how many quit signals fire.
-        """
         if getattr(self, "_torn_down", False):
             return
         self._torn_down = True
 
-        # Stop any in-flight summon/dismiss animations before the window goes,
-        # so a property animation can never fire a frame against a window that
-        # is being destroyed.
-        self._stop_summon_animations()
+        import time as _time
+        started = _time.monotonic()
+        logger.info("Quitting: shutting down.")
 
-        self.controller.shutdown()
+        def step(name, fn):
+            t = _time.monotonic()
+            try:
+                fn()
+            except Exception:
+                logger.exception("Shutdown step failed: %s", name)
+            spent = _time.monotonic() - t
+            if spent > 0.5:
+                logger.info("Shutdown step %s took %.1fs", name, spent)
 
-        # Background processes Mike started (dev servers, watchers) are
-        # detached and would outlive the app otherwise — quitting Mike should
-        # not leave his servers running with nothing left to manage them.
-        try:
+        step("geometry", self._save_geometry)
+        step("controller", self.controller.shutdown)
+
+        def _stop_processes():
             from tools.terminal.actions import shutdown_all
             shutdown_all()
-        except Exception:
-            logger.exception("Could not stop background processes.")
 
-        ide_manager.stop()
-        self.hotkey.unregister()
-        self.tray.hide()
-        self.edge.close()
-        self.floating.close()
+        step("background processes", _stop_processes)
+
+        def _stop_engine():
+            from brain import engine
+            engine.shutdown()
+
+        step("model engine", _stop_engine)
+        step("guide", lambda: attention.set_listener(None))
+        step("ide bridge", ide_manager.stop)
+        step("hotkey", self.hotkey.unregister)
+        step("tray", self.tray.hide)
+        step("corner", self.corner.close)
+        logger.info("Shut down in %.1fs.", _time.monotonic() - started)
+
+
+def _maybe_show_welcome(window) -> None:
+    """The first-install tour (once per machine), ending with agreeing to the
+    Terms and Privacy Policy — and just that agreement, on its own, if the
+    documents have changed since it was last accepted."""
+    from brain import legal
+    from config import preferences
+
+    first_time = not preferences.get("welcome_tour_shown", False)
+    if not first_time and legal.accepted():
+        return
+    try:
+        from ui.welcome import WelcomeWindow
+
+        preferences.set_value("welcome_tour_shown", True)
+        tour = WelcomeWindow(consent_only=not first_time)
+        tour.declined.connect(window._request_quit)
+        window._tour = tour
+
+        screen = QApplication.primaryScreen().availableGeometry()
+        tour.move(screen.center().x() - tour.width() // 2,
+                  screen.center().y() - tour.height() // 2 - 30)
+        tour.finished.connect(window._summon_after_tour)
+        tour.show()
+        tour.raise_()
+        tour.activateWindow()
+    except Exception:
+        logger.exception("The welcome tour could not open; Mike continues without it.")
 
 
 def run():
-
     app = QApplication(sys.argv)
-
     app.setApplicationName("Mike")
 
+    # No crash goes unrecorded (crash.log + the log), and only one Mike runs:
+    # a second launch brings the running one forward and exits.
+    from ui.system.lifecycle import SingleInstance, install_crash_handlers
+    install_crash_handlers()
+    instance = SingleInstance()
+    if not instance.claim():
+        logger.info("Mike is already running; asked it to come forward.")
+        os._exit(0)
+    app._single_instance = instance
+
+    # Garbage-collect only on the GUI thread. Mike's busy background threads
+    # (wake word, Piper, speech-to-text, workers) would otherwise trigger
+    # collections that finalise Qt objects on the wrong thread and crash.
+    from ui.system.main_thread_gc import MainThreadGC
+    app._main_thread_gc = MainThreadGC(app)
+
+    from ui.panel import style
+    # Mike's typeface (Source Serif 4, bundled) — registered before anything
+    # is built, so every surface is drawn in it from the first frame.
+    style.load_fonts()
+    style.apply_theme()
+
+    app.setWindowIcon(_app_icon())
+    # The one place the base UI font is set: Mike's face at the body size,
+    # which any widget without a size of its own inherits.
+    app.setFont(style.font(style.BODY))
     app.setStyleSheet(GLOBAL_STYLESHEET)
 
-    # Mike's whole premise is that he's still there after the window closes
-    # (hotkey, wake word, IDE bridge, Edge). Without this, Qt quits the
-    # entire app the moment the last window closes — which is exactly the
-    # contradiction being fixed here. The tray's "Quit Mike" and Cmd+Q are
-    # the only real quit paths now (see MikeWindow._request_quit).
+    # Mike stays present after the window closes (hotkey, wake word, corner,
+    # tray), so Qt must not quit when the last window closes.
     app.setQuitOnLastWindowClosed(False)
+
+    # Pick the saved sign-in back up before anything is drawn, so the profile
+    # row shows who's signed in from the first frame (refreshed in the
+    # background; offline is fine).
+    from account.manager import manager as account_manager
+    account_manager().restore()
 
     window = MikeWindow()
 
-    # The one real shutdown path — fires on every genuine quit (tray Quit,
-    # Cmd+Q, or any other route to QApplication.quit()) regardless of which
-    # one triggered it, and never fires from just closing the window.
-    app.aboutToQuit.connect(window._teardown)
+    _maybe_show_welcome(window)
 
-    window.show()
+    app.aboutToQuit.connect(window._teardown)
+    instance.activated.connect(window._show_full)
+
+    if getattr(window, "_tour", None) is None:
+        window._present(autostart="--autostart" in sys.argv)
 
     code = app.exec()
 
     window._teardown()
+    instance.release()
 
-    # A worker parked in a blocking model request can't be interrupted, so Qt
-    # would abort destroying its thread. We're exiting anyway — leave without
-    # running C++ destructors rather than crashing on the way out.
-    sys.stdout.flush()
-    sys.stderr.flush()
+    _flush_std_streams()
     os._exit(code)
 
 
-if __name__ == "__main__":
+def _flush_std_streams() -> None:
+    """Flush stdout/stderr before the hard exit -- when there are any.
 
+    The packaged app is windowed, so it has no console and sys.stdout and
+    sys.stderr are None. Flushing them unguarded raised on every quit, and the
+    frozen app turned that into an "Unhandled exception in script" dialog that
+    held the process open until someone clicked Close.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if stream is not None:
+                stream.flush()
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
     run()

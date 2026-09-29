@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import platform
 import pathlib
+import re
 import threading
+import time
 from datetime import datetime
 from typing import Callable
 
@@ -17,8 +20,9 @@ from brain.core_tools import (
     describe_action,
     friendly_tool_name,
     needs_confirmation,
+    preparing_label,
 )
-from brain import environment, memory_store
+from brain import environment, memory_store, permissions
 from brain.mike_core import MikeCore
 from config.ollama import (
     OLLAMA_CHAT_MODEL,
@@ -45,6 +49,8 @@ _DIRECT_TOOLS = frozenset({
     "process_output",
     "kill_process",
     "read_lines",
+    "read_files",
+    "write_files",
     "edit_file",
     "multi_edit",
     "project_overview",
@@ -75,11 +81,19 @@ _DIRECT_TOOLS = frozenset({
 # drifts the moment a tool is added.
 _SPECIAL_TOOLS = frozenset({
     "calculate",
+    "think",
     "see_screen",
     "read_document",
     "read_spreadsheet",
     "edit_spreadsheet",
     "search_files",
+    "mission",
+    "write_document_section",
+    "document_info",
+    "search_document",
+    "create_document",
+    "create_presentation",
+    "pdf_edit",
 })
 
 # Context size and generation limits are provider concerns and live at the
@@ -116,24 +130,33 @@ MAX_STREAM_RETRIES = 2
 # model the runtime never actually ran.
 OLLAMA_MODEL = OLLAMA_CHAT_MODEL
 
+# What kind of machine Mike is actually running on. This was the literal
+# string "Mac" for every user on every platform, so Mike opened his own
+# system prompt by telling a Windows user he lived on their Mac -- wrong in
+# the one sentence that establishes who he is, and wrong in a way that
+# primes every answer after it. Part of the same family as the "Samantha"
+# voice name and the Cmd-key hint: copy written on one platform, shipped to
+# another. Kept as a plain noun because it appears mid-sentence in prose the
+# model reads, not as a label.
+_MACHINE = "PC" if platform.system() == "Windows" else "Mac"
+
 SYSTEM_PROMPT = f"""\
-You are Mike, a helpful AI assistant that lives on the user's Mac desktop.
+You are Mike, a sharp, easygoing friend who lives on the user's {_MACHINE} \
+desktop and can actually operate it. You're not a chatbot or a support line, so \
+don't act like one.
 
 You can have normal conversations AND control the computer using tools \
 (opening websites, managing files, running terminal commands, reading documents, \
 searching through files, and working with code).
 
 How to behave:
-- Talk like a friendly, smart person. Be warm, concise, and natural.
-- For casual messages ("hey", "how are you", "what's up"), just chat naturally. \
-You're not a command processor — you're a person to talk to.
-- When the user wants something done on their computer, use the right tool. \
-After it works, confirm briefly ("Done — opened YouTube" or "Created the folder").
+- Warm, concise, natural. Not every message is a job: plenty of them are just \
+talking, and talking back is the right answer.
+- When they want something done on their computer, call the right tool: saying it's \
+done is not doing it. After it works, confirm briefly, once; don't narrate each step.
 - If something fails, say what happened plainly.
-- Never make up that you did something you didn't. This applies especially to memory: \
-only say something is remembered, saved, or noted for later if the remember tool actually \
-ran and succeeded. A casual acknowledgment of something the user said is not the same as \
-saving it — don't phrase the two the same way.
+- Never claim you did something you didn't. Acknowledging what someone said \
+is not the same as acting on it — don't phrase the two alike.
 - Never expose internal tool names, function names, or system details.
 - If you're not confident what the user means, say so and ask a short clarifying question, \
 or explain what's missing. Never send back an empty or blank reply — always say something, \
@@ -143,13 +166,23 @@ thing", "there". Work out what they mean from the conversation above; usually it
 thing most recently discussed. If two things genuinely fit and picking wrong would matter, \
 ask which one instead of guessing. A one-line question is much better than confidently \
 acting on the wrong thing.
-- Keep responses short. Don't over-explain. One or two sentences is usually enough \
-for conversation. A bit more is fine when the user asks a real question.
-- Your responses are spoken aloud, so write naturally. \
-Avoid emojis, bullet lists, Markdown formatting, and giant code blocks in conversational replies. \
-Use plain sentences. For code, put it in a code block but keep your explanation conversational.
+- Keep it short: a sentence or two is usually enough, a bit more only when they \
+asked a real question.
+- You're spoken aloud: no lists, headings, bold, emojis or Markdown in \
+conversation — a bullet list read out sounds like a form being recited, so say \
+it as one plain sentence. Real code still goes in a code block.
+- Don't re-introduce yourself unless asked.
+- Work out what they actually want, which often isn't the literal request, and \
+answer it the way a sharp friend beside them would — the same person in every \
+situation, not a script you pick per mood. Skip the tells that sound like \
+software: filler openers, performed sympathy, offering a tidy menu of ways to \
+feel better. Read the room for a beat, say the one true, useful thing, and \
+stop. Prefer doing over describing.
+- Use contractions. Vary how you start sentences. A few words is fine when \
+that's the honest answer. Ask one question, not three; when they want an \
+opinion, give one.
 
-Documents & Code:
+Documents:
 - You can read PDF, DOCX, PPTX, CSV, JSON, and all text files. \
 Use read_document for document files. Use read_file for quick text file reads.
 - For spreadsheets (.xlsx, .csv), use read_spreadsheet rather than read_document when \
@@ -158,48 +191,24 @@ You cannot calculate formulas. If you write =SUM(...), the file holds the formul
 no number, and read_spreadsheet will tell you the value is not calculated — never state \
 a total you have not worked out yourself. When the user needs the number, do the \
 arithmetic and write the value, and add the formula as well if they asked for one.
-- To change an existing file, use edit_file (or multi_edit for several related changes \
-at once). Read the file first with read_lines so you can match the text exactly. \
-Reserve write_file for creating a new file or deliberately replacing an entire one — \
-it overwrites everything, so anything you don't re-emit is lost.
-- If an edit reports that the text wasn't found or matched several places, nothing was \
-changed. Read that part of the file again and retry with more surrounding context.
-- To understand a project you haven't seen, start with project_overview, then \
-project_tree or search_code. Don't read the whole repository.
-- search_code searches inside files and gives you file:line:text. search_files only \
-finds filenames.
-- A tool call succeeding is not the same as the task succeeding. After editing \
-code, check_syntax tells you whether the file still parses. After starting a \
-server, check_port and check_url tell you whether it is actually serving. \
-Verify before you say something is done.
-- You are not reliable at arithmetic done in your head — this includes small, \
-simple-looking sums like "3 + 3", not only large totals. A wrong answer looks \
-exactly like a right one, at any size. Use calculate for any arithmetic you \
-are about to state as a fact, however trivial it looks: a quick sum, a single \
-addition, a percentage, a difference. If the number in your answer came from \
-you computing something rather than from something you were told, get it \
-from calculate first.
+- You are not reliable at arithmetic in your head, even for sums as small as \
+"3 + 3", and a wrong answer looks exactly like a right one. Any number you \
+worked out rather than were told (a sum, a percentage, a difference) comes \
+from calculate first, however trivial.
 - run_command gives you the exit code, stdout, and stderr. A non-zero exit code is \
-information, not a dead end — read the output and decide what to do. Use run_background \
-for anything that stays running, like a dev server, then list_processes or \
-process_output to check on it.
+information, not a dead end — read the output and decide what to do.
 - When explaining code, focus on what matters: purpose, key logic, potential issues. \
 Don't just repeat the code back.
 
 Memory:
 - You have persistent memory across restarts. You can remember facts the user tells you.
-- When the user says "remember that...", "don't forget...", "save this...", or "keep in mind...", \
-use the remember tool to save it. Only after that tool call actually succeeds, confirm with \
-something like "Got it, I'll remember that." If you didn't call the tool, don't say that phrase — \
-just acknowledge normally ("Got it.") without implying it was saved anywhere permanent.
-- When the user asks about something you might know from memory (preferences, projects, locations), \
-use recall_memory to check. Answer naturally using what you find.
-- When the user says "forget...", "delete...", or "clear my memories", use forget_memory.
-- For "what do you remember?" or "what do you know about me?", use recall_memory with no query \
-to list everything, then summarize naturally.
-- NEVER use remember for normal conversation or tool requests. Only for explicit "remember" requests. \
-This also means: don't casually say "I'll remember that" while chatting about something the user \
-mentioned in passing — that phrase is reserved for when you actually called the remember tool.
+- Use remember whenever they're asking you to keep something, however they \
+phrase it — judge intent, not wording. Only once that call succeeds may you \
+say "I'll remember that"; otherwise just "Got it."
+- Check recall_memory when the answer may depend on something they told you \
+before; with no query to summarise everything. forget_memory removes.
+- NEVER use remember for normal conversation or tool requests, and don't casually say \
+"I'll remember that" about something mentioned in passing.
 
 Working toward a goal:
 - When the user gives you something to accomplish rather than a single command, work through it: \
@@ -215,11 +224,69 @@ middle of a larger task — working toward a goal never skips that.
 - Stop and report clearly once the goal is met, once you're stuck, or once you run out of steps — \
 never say something is finished when it isn't.
 
-The user's home directory is {pathlib.Path.home()}.
-Paths like "Desktop/folder" or "Documents/file.txt" are relative to home.
+Missions:
+- When someone wants help getting a piece of work done (an assignment, a report), start a \
+mission first: a goal, the steps in order (for coursework, the sections its brief asks for), \
+their files, the brief and the deadline.
+- It's their work: help the way they ask, and put text in their document only when they ask.
+- Mark a step no file can show once they say they've done it.
 
-Today's date is {{date}}. Use this for any time-sensitive answers.\
+The user's home directory is {pathlib.Path.home()}.
+Paths like "Desktop/folder" or "Documents/file.txt" are relative to home.\
 """
+
+
+# Offered with the coding tools only (brain/permissions.py, "Work with code"):
+# instructions for tools the model isn't given are prompt it reads for nothing,
+# and an invitation to call a tool that isn't there.
+CODE_GUIDANCE = """\
+
+Code -- you're their coding partner:
+- Take in what a task touches before changing it: project_overview for a project you \
+haven't seen, read_files for the files involved (several at once), search_code for where \
+something is defined or used. Don't read the whole repository.
+- Work with several steps -- building something, a bug that isn't obvious, a plan: \
+use think first, for the approach, the likely causes, the order.
+- New files: write_files, all of them in one step. Changing an existing file: edit_file \
+(multi_edit for related changes in one file), matching text you've just read exactly. \
+write_file replaces a whole file; anything you don't re-emit is lost.
+- If an edit says the text wasn't found or matched several places, nothing changed: \
+read that part again and retry with more context.
+- Prove it works before saying it does: run the script or the tests with run_command and \
+read the real output; start a server with run_background, then check_url its address; \
+after an edit, read the problems the editor reports, or check_syntax a file it doesn't \
+have open. A tool succeeding isn't the task succeeding.
+- Debugging: reproduce it first (run it, see the error), follow the traceback to the line, \
+find the cause, fix that, run again -- until it's gone, or you can say exactly what's left.
+- Once check_url says it's up, open_url shows them it running.
+- Their VS Code is where they work. A project you create, open there (ide_open_file with its folder) so they can follow along; a server you start shows in its terminal. Files you write in a project it has open come back with VS Code's own problems -- fix those before moving on. When something failed when they ran it, ide_context has their terminal's recent commands and what they printed.
+- Plans (a hackathon, a project, learning a stack): ask what you don't know -- the time, \
+the team, what they already know -- then think, and write the plan to a Markdown file in \
+their project so it lasts: something they can follow -- what to build first, who does what, \
+by when.
+- search_code searches inside files (file:line:text); search_files only finds names. \
+Anything that keeps running goes in run_background; process_output shows what it printed.\
+"""
+
+
+# Offered with the document tools only (brain/permissions.py, "Work with documents").
+DOCUMENT_GUIDANCE = """
+Documents -- you help with coursework files:
+- A long document (a chapter, a paper, a thesis): document_info first for its pages and outline, then read_document with just the pages you need, or search_document to find where something is said. Give page numbers, so it can be cited. Don't read a whole long file.
+- Photos of notes and scanned pages are read by OCR, which can misread numbers and handwriting: say so when accuracy matters.
+- To make a paper, report, resume or letter: create_document -- .docx to edit in Word, .pdf to hand in. If the course names a format (MLA, APA) use that style. Write the real content from what they gave you; never invent sources, quotes, data or citations -- if a source is needed, say so. Slides: create_presentation, one idea a slide in short lines, speaker notes for what would be said.
+- PDFs: pdf_edit merges, splits, extracts, rotates, fills forms, compresses, turns photos into a PDF and converts between formats. The original is never changed; the result is a new file beside it, and you say where.
+- After making a file, say where it is and what's in it -- from what the tool read back, not from what you meant to write."""
+
+
+def system_prompt() -> str:
+    """Mike's fixed instructions, with the coding and document guidance when those are on."""
+    text = SYSTEM_PROMPT
+    if permissions.is_enabled("coding"):
+        text += CODE_GUIDANCE
+    if permissions.is_enabled("documents"):
+        text += DOCUMENT_GUIDANCE
+    return text
 
 
 class CoreRuntime:
@@ -272,6 +339,31 @@ class CoreRuntime:
         return greeting
 
     # =====================================================
+    # Conversations
+    # =====================================================
+
+    def new_conversation(self) -> None:
+        """Forget the current conversation entirely — turns and summary — so a
+        new chat really starts clean. Call only when no turn is running."""
+        self._core.reset_conversation()
+        self._last_mission_block = ""      # a new chat is told the mission in full
+
+    def note_assistant(self, text: str) -> None:
+        """Something Mike said without a model turn (the welcome back to a
+        mission), recorded so the next turn knows it was said."""
+        if text:
+            self._core.history.append({"role": "assistant", "content": text})
+
+    def restore_conversation(self, turns: list[dict], summary: str = "") -> None:
+        """Continue a saved conversation with the context it had."""
+        self._core.restore_conversation(turns, summary)
+        self._last_mission_block = ""
+
+    @property
+    def situation_summary(self) -> str:
+        return self._core.situation_summary or ""
+
+    # =====================================================
     # Process
     # =====================================================
 
@@ -306,6 +398,99 @@ class CoreRuntime:
         logger.info("Response: %s", reply[:120])
 
         return reply
+
+    # =====================================================
+    # Warm-up
+    # =====================================================
+
+    #: Guards against warming more than once in a process.
+    #:
+    #: The cache this fills lives in the Ollama server, not in any one
+    #: CoreRuntime, so a second warm buys nothing and costs a full
+    #: 7,200-token inference. That is invisible in the app -- there is one
+    #: runtime -- and very visible anywhere that builds several: the test
+    #: suite creates a window per test and had eight concurrent warm
+    #: requests queued against a model that can serve one at a time, which
+    #: on a memory-tight machine was enough to take the whole process down.
+    _warmed = False
+
+    def warm(self) -> None:
+        """Pay the expensive prefix once, before the user has asked anything.
+
+        Ollama reuses its KV cache only for a request that strictly extends
+        the previous one, and Mike's prefix -- instructions plus 44 tool
+        schemas -- is ~7,200 tokens. _build_messages and _record_user_turn
+        are already built around keeping that prefix stable so it stays
+        cached across a conversation (see their own measurements: 2.9s for
+        the first turn, then 0.62s). What neither of them can do is make the
+        *first* turn cheap, because there is nothing before it to extend.
+
+        On a GPU that first turn costs ~3 seconds and nobody notices. On a
+        machine with no GPU offload path it is the difference between a
+        usable assistant and an unusable one: measured here, a two-word
+        first reply took 114 seconds, essentially all of it prefill of a
+        prefix that never changes.
+
+        So this sends one throwaway request carrying exactly that prefix, at
+        startup, while the user is still reading the greeting. It asks for a
+        single token because the reply is discarded -- the point is the
+        cache, not the answer. The user's real first question then extends a
+        warm prefix instead of building it from cold.
+
+        Deliberately silent and best-effort: nothing above this depends on
+        it, a failure costs only the speed-up, and it must never be the
+        reason Mike doesn't start. It also never touches self._core.history,
+        so the conversation the user sees is unaffected.
+        """
+        if CoreRuntime._warmed:
+            return
+        CoreRuntime._warmed = True
+        try:
+            # Before paying for a prefill, make sure it will be paid on the
+            # right hardware. See brain/accelerator.py: Ollama silently drops
+            # an integrated GPU unless told otherwise, and on the machine
+            # this was found on that single default was an 8.8x difference.
+            from brain.accelerator import describe_acceleration, enable_igpu_for_future_starts
+
+            enabled_now = enable_igpu_for_future_starts()
+            client = getattr(self._brain, "_client", None)
+            where = describe_acceleration(client) if client is not None else "unknown"
+            if where == "GPU":
+                # Already on the GPU: whether the variable was just written is
+                # irrelevant, and saying "restart to go faster" here would be
+                # advice to fix something that is not broken.
+                logger.info("The model is running on the GPU.")
+            elif where == "CPU":
+                logger.warning(
+                    "The model is running on the CPU%s.",
+                    "; restarting Ollama will let it use this machine's GPU"
+                    if enabled_now else "",
+                )
+
+            tools = permissions.allowed_tools(OLLAMA_TOOLS)
+            if hasattr(self._brain, "warm_prefix"):
+                # Mike's own engine: restore the saved reading of the prompt
+                # (a fraction of a second) or read it once and save it.
+                how = self._brain.warm_prefix(system_prompt(), tools)
+                logger.info("Model prefix ready (%s).", how)
+                return
+            messages = self._build_messages()
+            result = self._brain.complete(messages, tools, max_tokens=1)
+            # complete() reports a failed request by returning an error rather
+            # than raising, so a bare call here looked successful even when
+            # the server rejected it outright -- the first version of this
+            # logged "warmed" 40ms after a 400 Bad Request. An unchecked
+            # result is how a silent no-op gets mistaken for a working
+            # optimisation.
+            if result.error is not None:
+                logger.warning(
+                    "Prefix warm-up failed (%s); the first question will pay "
+                    "the cold prefill.", result.error.message,
+                )
+                return
+            logger.info("Model prefix warmed; the first question skips a cold prefill.")
+        except Exception:
+            logger.debug("Prefix warm-up did not complete.", exc_info=True)
 
     # =====================================================
     # Streaming Process
@@ -361,12 +546,16 @@ class CoreRuntime:
                 if hasattr(self._brain, "pull_model"):
                     yield (
                         "tool_start",
-                        "Downloading Mike's language model — first run only, "
+                        "Downloading Mike's language model - first run only, "
                         "may take a few minutes",
                     )
-                    pull_failed = self._brain.pull_model(
-                        on_progress=lambda msg: logger.info(msg)
-                    )
+                    pull_failed: BrainError | None = None
+                    for update in self._brain.pull_model():
+                        if isinstance(update, BrainError):
+                            pull_failed = update
+                        else:
+                            logger.info(update)
+                            yield ("tool_progress", update)
                     yield ("tool_end", "failed" if pull_failed else "done")
                     if pull_failed is not None:
                         note = pull_failed.human()
@@ -386,7 +575,7 @@ class CoreRuntime:
 
         # Fit the request to this brain before sending it. Tool schemas are
         # never truncated — a model holding half a definition calls it wrongly.
-        plan = plan_request(messages, OLLAMA_TOOLS, self._capabilities)
+        plan = plan_request(messages, permissions.allowed_tools(OLLAMA_TOOLS), self._capabilities)
         if not plan.fits:
             note = plan.error.human()
             self._core.history.append({"role": "assistant", "content": note})
@@ -412,10 +601,18 @@ class CoreRuntime:
             stream_failed = None
             truncated = False
 
+            preparing = ""
             for event in self._brain.stream(plan.messages, plan.tools, cancel=cancel_event):
                 if event.kind == "text":
                     collected_text += event.text
                     yield ("token", event.text)
+                elif event.kind == "preparing":
+                    # A tool call still being written -- several files take a
+                    # while: say which, as soon as there's something true to say.
+                    label = preparing_label(event.tool_call.name, event.tool_call.arguments)
+                    if label and label != preparing:
+                        preparing = label
+                        yield ("preparing", label)
                 elif event.kind == "tool_call":
                     tool_calls_raw.append(event.tool_call)
                 elif event.kind == "error":
@@ -485,6 +682,51 @@ class CoreRuntime:
 
         if not tool_calls_raw:
             self._core.history.append({"role": "assistant", "content": collected_text})
+            # Measured in the installed app: "open notepad" answered "Opening
+            # Notepad for you." and "type hello in notepad" answered "I'll
+            # switch back to Notepad and type it" -- and neither made a tool
+            # call, so nothing happened while the user was told it had. A
+            # reply that ends on a promise of an action is not an answer; the
+            # model gets one chance to actually do it (or say plainly that it
+            # won't). One extra call, only on the turns that would otherwise
+            # have been a false claim.
+            if (
+                depth < MAX_AGENT_STEPS
+                and _promises_unperformed_action(collected_text)
+                and not self._already_nudged_this_turn()
+                and not (cancel_event is not None and cancel_event.is_set())
+            ):
+                logger.info("Reply promised an action but made no tool call; asking the model to act.")
+                done = self._done_this_turn()
+                nudge = {"role": "user", "content": _unacted_nudge(done)}
+                self._core.history.append(nudge)
+                try:
+                    yield from self._second_chance(
+                        confirm_callback, cancel_event, depth,
+                        stands=any(d.endswith("(success)") for d in done))
+                finally:
+                    # The nudge is the runtime talking, not the user; it must
+                    # not be remembered as something they said -- nor the
+                    # empty reply that means "my last reply stands".
+                    try:
+                        self._core.history.remove(nudge)
+                    except ValueError:
+                        pass
+                    if self._core.history[-1:] == [{"role": "assistant", "content": ""}]:
+                        self._core.history.pop()
+            elif (_promises_unperformed_action(collected_text) and self._already_nudged_this_turn()
+                  and not any(d.endswith("(success)") for d in self._done_this_turn())):
+                # Given its chance, the model promised again and still did
+                # nothing. The user must not leave thinking it's under way.
+                # Measured: "I'll write the Discussion into your report now",
+                # twice, with no write -- the reply ended on a false claim.
+                # Only when nothing succeeded this turn: after a saved memory,
+                # "I'll keep that in mind" drew this note, and the note was
+                # the false claim.
+                logger.info("Reply still promised an action after its retry; saying it wasn't done.")
+                note = "\n\n(I haven't actually done that yet — say the word and I will.)"
+                self._core.history[-1]["content"] += note
+                yield ("token", note)
             return
 
         self._core.history.append({
@@ -517,7 +759,7 @@ class CoreRuntime:
                 # A caller of process_streaming that forgets to wire up
                 # confirmation must get "nothing happened", never "everything
                 # happened, unasked."
-                approved = confirm_callback(describe_action(name, args)) if confirm_callback else False
+                approved = self._approved(confirm_callback, name, args)
                 if not approved:
                     reason = (
                         "User denied this action." if confirm_callback else
@@ -530,13 +772,23 @@ class CoreRuntime:
                         "content": json.dumps({
                             "status": "cancelled",
                             "message": reason,
+                            # What a "no" means, so the model doesn't ask
+                            # again or wonder aloud whether it was denied.
+                            "note": "Nothing was done. Don't try it again unless they ask "
+                                    "for it; carry on with what they did ask.",
                         }),
                     })
                     self._core.add_tool_result(reason)
                     yield ("tool_end", reason)
                     continue
 
+            _t_tool = time.perf_counter()
             result = self._execute_tool(name, args)
+            logger.info(
+                "Tool %s ran in %.2fs -> %s: %s", name, time.perf_counter() - _t_tool,
+                result.get("status"),
+                " ".join(str(result.get("result", result.get("error", ""))).split())[:240],
+            )
 
             self._core.history.append({
                 "role": "tool",
@@ -558,18 +810,6 @@ class CoreRuntime:
             )
             return
 
-        if len(tool_calls_raw) == 1 and depth == 0:
-            last_tool = self._core.history[-1]
-            if last_tool.get("role") == "tool":
-                result = json.loads(last_tool["content"])
-                if result.get("status") == "success":
-                    tc = tool_calls_raw[0]
-                    summary = _quick_summary(tc.name, tc.arguments or {})
-                    if summary:
-                        self._core.history.append({"role": "assistant", "content": summary})
-                        yield ("token", summary)
-                        return
-
         try:
             yield from self._streaming_loop(confirm_callback, cancel_event, depth + 1)
         except Exception:
@@ -581,6 +821,124 @@ class CoreRuntime:
     # =====================================================
     # Honest wrap-up (used when the step limit is reached)
     # =====================================================
+
+    def _mission_context(self) -> str:
+        """The active mission, checked against its files as of this turn.
+
+        Given in full when it has changed since Mike last saw it, and as one
+        line otherwise -- this is recorded into history every turn, and the
+        same paragraph repeated turn after turn is prompt the model re-reads
+        for nothing.
+        """
+        try:
+            from brain import mission_store as ms
+            mission = ms.active()
+            if mission is None:
+                self._last_mission_block = ""
+                return ""
+            mission = ms.evaluate(mission["id"])["mission"]
+            if ms.complete_if_done(mission["id"]):
+                self._last_mission_block = ""
+                return (f"The user's mission “{mission['goal']}” just finished: every "
+                        "step is done, the sections as their file shows them.")
+            block = ms.context_line(mission)
+        except Exception:
+            logger.debug("Mission context unavailable.", exc_info=True)
+            return ""
+        if block == getattr(self, "_last_mission_block", ""):
+            nxt = ms.next_step(mission)
+            return (f"Active mission unchanged: {mission['goal']}"
+                    + (f"; next: {nxt['title']}." if nxt else "; all steps done."))
+        self._last_mission_block = block
+        return block
+
+    def _already_nudged_this_turn(self) -> bool:
+        """A nudge stays in history only while its retry runs, so finding one
+        means this turn has already had its second chance."""
+        return any(
+            m.get("role") == "user" and str(m.get("content") or "").startswith(_UNACTED_NUDGE_HEAD)
+            for m in self._core.history
+        )
+
+    def _second_chance(self, confirm_callback, cancel_event, depth: int, stands: bool):
+        """The nudged call. Its words are held until it acts: if it acts, they
+        are its preamble and go out with the action; if it only talks and an
+        action already succeeded this turn, the first reply stands and the
+        repeat is dropped -- measured: "Got it. I'll keep that in mind." twice
+        over, after the memory was saved."""
+        held: list[str] = []
+        acted = False
+        for kind, payload in self._streaming_loop(confirm_callback, cancel_event, depth + 1):
+            if not acted and kind == "token":
+                held.append(payload)
+                continue
+            if not acted and kind == "tool_start":
+                acted = True
+                yield ("token", " ")
+                yield from (("token", t) for t in held)
+                held = []
+            yield (kind, payload)
+        if not held:
+            return
+        if stands:
+            said = "".join(held)
+            if self._core.history and self._core.history[-1].get("content") == said:
+                self._core.history.pop()
+            logger.info("Second chance only repeated a reply that stands; not shown.")
+            return
+        yield ("token", " ")
+        yield from (("token", t) for t in held)
+
+    def _approved(self, confirm_callback, name: str, args: dict) -> bool:
+        """Ask the user -- unless they already allowed this for the session --
+        and offer, where it can be narrow, to allow its kind for the rest of
+        it: edits in one project, one exact command (brain/grants.py). The
+        offer travels on `pending_offer` so every existing confirm callback,
+        which takes just the description, keeps working; answering "always"
+        grants it, anything else is a plain yes or no."""
+        grants = getattr(self, "_grants", None)
+        if grants is None:
+            from brain.grants import SessionGrants
+            grants = self._grants = SessionGrants()
+        if grants.covers(name, args):
+            logger.info("Already allowed for this session: %s", name)
+            grants.note_approved(name, args)
+            return True
+        if confirm_callback is None:
+            return False
+        offer = grants.offer(name, args)
+        self.pending_offer = offer
+        try:
+            decision = confirm_callback(describe_action(name, args))
+        finally:
+            self.pending_offer = ""
+        if decision:
+            grants.note_approved(name, args)
+        if decision == "always" and offer:
+            grants.grant(name, args)
+            logger.info("The user allowed this for the session: %s", offer)
+            return True
+        return bool(decision)
+
+    def _done_this_turn(self) -> list[str]:
+        """The tools run since the user's message, with how each went, e.g.
+        ["remember (success)"] -- the facts the model needs to tell a promise
+        still owed from a confirmation of what it just did."""
+        done: list[str] = []
+        names: list[str] = []
+        for m in reversed(self._core.history):
+            role = m.get("role")
+            if role == "user" and not str(m.get("content") or "").startswith(_UNACTED_NUDGE_HEAD):
+                break
+            if role == "tool":
+                try:
+                    status = json.loads(m.get("content") or "{}").get("status", "done")
+                except (ValueError, AttributeError):
+                    status = "done"
+                done.append(status)
+            elif role == "assistant" and m.get("tool_calls"):
+                names.extend(c.get("function", c).get("name", "?") for c in reversed(m["tool_calls"]))
+        return [f"{n} ({s})" for n, s in zip(reversed(names), reversed(done))]
 
     def _wrap_up(self, instruction: str):
 
@@ -614,7 +972,7 @@ class CoreRuntime:
         ChatResult so this method is provider-independent like the rest."""
 
         messages = self._build_messages()
-        plan = plan_request(messages, OLLAMA_TOOLS, self._capabilities)
+        plan = plan_request(messages, permissions.allowed_tools(OLLAMA_TOOLS), self._capabilities)
         if not plan.fits:
             return ChatResult(text=plan.error.human(), error=plan.error)
         return self._brain.complete(plan.messages, plan.tools)
@@ -662,7 +1020,7 @@ class CoreRuntime:
             if needs_confirmation(name, args):
                 # Same fail-closed rule as the streaming path: no callback
                 # means no execution, not silent approval.
-                approved = confirm_callback(describe_action(name, args)) if confirm_callback else False
+                approved = self._approved(confirm_callback, name, args)
                 if not approved:
                     reason = (
                         "User denied this action." if confirm_callback else
@@ -709,6 +1067,13 @@ class CoreRuntime:
         args: dict,
     ) -> dict:
 
+        # The user's own Permissions come first: a tool they switched off never
+        # runs, whatever the model asked for.
+        refused = permissions.blocked(function_name)
+        if refused:
+            logger.info("Refused %s: turned off in Permissions.", function_name)
+            return {"status": "error", "error": refused}
+
         # Checked before anything runs, so a malformed call fails with a
         # message the model can act on instead of a bare "Validation failed."
         problem = check_arguments(function_name, args)
@@ -724,12 +1089,26 @@ class CoreRuntime:
                 from tools.compute.calculator import calculate
 
                 return calculate(str(args.get("expression", "")))
+            if function_name == "think":
+                # The thinking is the point, and it stays in the conversation
+                # for the steps that follow; there's nothing to do with it.
+                return {"status": "success", "result": "Noted. Now act on it."}
             if function_name == "see_screen":
                 return self._execute_vision(args)
             if function_name == "read_document":
                 return self._execute_read_document(args)
+            if function_name in ("document_info", "search_document", "create_document",
+                                 "create_presentation", "pdf_edit"):
+                from tools.documents.tool import TOOLS as document_tools
+                return document_tools[function_name](args)
             if function_name == "search_files":
                 return self._execute_search_files(args)
+            if function_name == "mission":
+                return _execute_mission(args)
+            if function_name == "write_document_section":
+                from tools.filesystem.document_writer import write_section
+                return write_section(str(args.get("path") or ""), str(args.get("heading") or ""),
+                                     str(args.get("text") or ""))
             return self._execute_spreadsheet(function_name, args)
 
         # These return structured evidence — exit codes, diffs, line numbers,
@@ -884,7 +1263,8 @@ class CoreRuntime:
                 count=int(args.get("count") or 1),
             )
         if function_name == "type_text":
-            return SESSION.type_text(str(args.get("text") or ""))
+            text = str(args.get("text") or "")
+            return SESSION.type_text(text, app=str(args.get("app") or "") or None)
         if function_name == "press_keys":
             return SESSION.press_keys(str(args.get("key") or ""), args.get("modifiers") or [])
         if function_name == "scroll_ui":
@@ -915,10 +1295,15 @@ class CoreRuntime:
             return self._execute_send_email(args)
 
         try:
+            if function_name in ("run_command", "run_background"):
+                cwd = _command_folder(args.get("cwd"))
+                if isinstance(cwd, dict):
+                    return cwd
+
             if function_name == "run_command":
                 result = terminal_actions.run(
                     command=args.get("command", ""),
-                    cwd=args.get("cwd"),
+                    cwd=cwd,
                     timeout=int(args.get("timeout") or terminal_actions.DEFAULT_TIMEOUT),
                 )
                 return self._shape_command_result(result)
@@ -926,13 +1311,14 @@ class CoreRuntime:
             if function_name == "run_background":
                 result = terminal_actions.run_background(
                     command=args.get("command", ""),
-                    cwd=args.get("cwd"),
+                    cwd=cwd,
                 )
                 if result.get("running"):
+                    where = f"{result['where']} " if result.get("where") else ""
                     return {
                         "status": "success",
                         "result": (
-                            f"Started (pid {result['pid']}) and still running. "
+                            f"Started (pid {result['pid']}) and still running. {where}"
                             "Use list_processes or process_output to check on it."
                         ),
                         **result,
@@ -981,6 +1367,12 @@ class CoreRuntime:
                     path=args.get("path", ""),
                     edits=args.get("edits") or [],
                 )
+
+            if function_name == "read_files":
+                return file_edits.read_files(args.get("paths") or [])
+
+            if function_name == "write_files":
+                return file_edits.write_files(args.get("files") or [])
 
             if function_name == "project_overview":
                 return project_inspect.project_overview(path=args.get("path") or ".")
@@ -1031,6 +1423,22 @@ class CoreRuntime:
         a grep finding nothing — these are informative results the model needs
         the detail of, and previously all of it was discarded.
         """
+        if result.get("still_running"):
+            ports = ", ".join(str(p) for p in result.get("listening_on") or [])
+            return {
+                "status": "success",
+                "result": (
+                    f"This is still running and listening on port {ports}, so it was kept "
+                    f"running in the background (pid {result.get('pid')}) rather than "
+                    "waited for. If it's a server, check_url it. If it was meant to "
+                    "finish (a test run, a build), it hasn't: read process_output and "
+                    "list_processes until it exits before saying how it went. "
+                    "kill_process stops it. Start servers with run_background -- with "
+                    "their VS Code connected, that runs them in its terminal."
+                ),
+                **result,
+            }
+
         if result.get("timed_out"):
             return {
                 "status": "error",
@@ -1069,30 +1477,15 @@ class CoreRuntime:
     # =====================================================
 
     def _execute_read_document(self, args: dict) -> dict:
-        try:
-            from tools.filesystem.document_reader import (
-                DocumentUnreadable,
-                read_document,
-            )
-            path = args.get("path", "")
-            if not path:
-                return {"status": "error", "error": "No file path provided."}
-            text = read_document(path)
-            logger.info("Document read: %s (%d chars)", path, len(text))
-            return {"status": "success", "result": text}
-        except FileNotFoundError as exc:
-            return {"status": "error", "error": str(exc), "retry_safe": True}
-        except DocumentUnreadable as exc:
-            # The file is there and the path is right; the format or the file
-            # itself is the problem, so retrying the same call cannot help.
-            return {"status": "error", "error": str(exc), "retry_safe": False}
-        except Exception as exc:
-            logger.exception("Document read failed: %s", exc)
-            return {
-                "status": "error",
-                "error": f"Could not read {args.get('path', 'the document')}: {exc}",
-                "retry_safe": False,
-            }
+        """Read a document a few pages at a time (tools/documents): PDF, Word,
+        slides, text, or a picture of text by OCR, with page numbers and what
+        comes next."""
+        from tools.documents.tool import read_document
+        result = read_document(args)
+        if result.get("status") == "success":
+            logger.info("Document read: %s (pages %s of %s)", args.get("path"),
+                        result.get("shown"), result.get("total"))
+        return result
 
     def _execute_search_files(self, args: dict) -> dict:
         """Find files by name.
@@ -1128,8 +1521,16 @@ class CoreRuntime:
             pattern = f"{pattern}.{file_type}" if not pattern.endswith(f".{file_type}") else pattern
 
         # Prune the directories that make a home-directory search hopeless.
+        # AppData on Windows: gigabytes of app caches and no documents --
+        # measured, "find the essay I wrote" spent its whole 20s in there
+        # and timed out.
         skip = ("Library", "node_modules", ".git", "venv", ".venv", "__pycache__",
-                ".Trash", "Applications", ".cache")
+                ".Trash", "Applications", ".cache", "AppData", "$Recycle.Bin",
+                ".npm", ".nuget", ".gradle", ".m2", ".cargo", ".rustup")
+        # Point at searching inside files only where that tool exists: with
+        # coding off, the model followed this advice to a tool it didn't have.
+        inside = (" To search the text inside files instead, use search_code."
+                  if permissions.is_enabled("coding") else "")
         cmd = ["find", str(root)]
         for name in skip:
             cmd += ["-name", name, "-prune", "-o"]
@@ -1145,18 +1546,18 @@ class CoreRuntime:
         argv, use_shell = processes.shell_invocation(shlex.join(cmd))
         try:
             proc = subprocess.run(argv, shell=use_shell, capture_output=True, text=True,
-                                  encoding="utf-8", errors="replace", timeout=20)
+                                  encoding="utf-8", errors="replace", timeout=20,
+                                  creationflags=processes.NO_WINDOW)
         except subprocess.TimeoutExpired:
             return {"status": "error", "error": (
                 f"Searching {root} for {pattern!r} took too long. Give a narrower "
-                "path, or use search_code if you are looking for text inside files."
+                "path, such as their Documents, Desktop or Downloads folder." + inside
             )}
 
         found = [line for line in (proc.stdout or "").splitlines() if line.strip()]
         if not found:
             return {"status": "success", "result": (
-                f"No file matching {pattern!r} under {root}. If you meant to "
-                "search inside files rather than for a filename, use search_code."
+                f"No file matching {pattern!r} under {root}." + inside
             )}
 
         shown = found[:50]
@@ -1276,12 +1677,10 @@ class CoreRuntime:
         # changing threw the whole prefix away and the entire prompt was
         # re-evaluated every turn. They are recorded into history as the turn
         # happens instead; see _record_user_turn for the measurements.
-        _now = datetime.now()
-        prompt = SYSTEM_PROMPT.replace(
-            "{date}", f"{_now:%A}, {_now:%B} {_now.day}, {_now:%Y}"
-        )
-
-        return [{"role": "system", "content": prompt}, *self._core.history]
+        # Today's date is not in it either: it made the fixed prompt change
+        # every midnight, and with it the model's saved reading of the prompt
+        # (brain/engine.py). The date travels with each turn's context.
+        return [{"role": "system", "content": system_prompt()}, *self._core.history]
 
     def _record_user_turn(self, message: str) -> None:
         """Append what the user said, with the context that was true when they
@@ -1313,6 +1712,8 @@ class CoreRuntime:
         what they asked."""
         parts: list[str] = []
 
+        _now = datetime.now()
+        parts.append(f"Today's date is {_now:%A}, {_now:%B} {_now.day}, {_now:%Y}.")
         env_line = environment.describe_environment()
         if env_line:
             parts.append(env_line)
@@ -1320,6 +1721,14 @@ class CoreRuntime:
         context_block = self._core.to_prompt_context()
         if context_block:
             parts.append(context_block)
+
+        mission_block = self._mission_context()
+        if mission_block:
+            parts.append(mission_block)
+
+        files_block = _files_mentioned(message)
+        if files_block:
+            parts.append(files_block)
 
         memories = (
             memory_store.auto_recall(message, project_id=self._core.project_id)
@@ -1463,47 +1872,167 @@ def _explain_error_text(message: str, args: dict, is_missing: bool | None = None
     )
 
 
-def _quick_summary(function_name: str, args: dict) -> str | None:
+_UNACTED_NUDGE_HEAD = (
+    "(Note from Mike's runtime, not the user: your last reply says you'll do "
+    "something, and it came with no tool call."
+)
+
+
+def _unacted_nudge(done: list[str]) -> str:
+    """The second chance, with the facts: what already ran this turn. Measured
+    without them: "Got it. I'll remember that." after the memory was saved
+    drew a second confirmation, "I've got it.", appended to the first."""
+    ran = f" Already done this turn: {', '.join(done)}." if done else ""
+    return (
+        _UNACTED_NUDGE_HEAD + ran + " If what you said still needs doing, call the "
+        "tool now. If it's already done, or needs no action, reply with nothing "
+        "at all: your last reply stands. Don't apologise and don't mention this "
+        "note — the user can't see it.)"
+    )
+
+# Mike committing himself to something, whatever the verb. It was a list of
+# verbs, and "I'll set up a mission for your lab report" slipped past it:
+# nothing was started while the user was told it was. A false alarm costs
+# one short extra call (the nudge says to just answer if no action is
+# needed); "let me know" is the user's move, not Mike's.
+_PROMISE = re.compile(
+    r"\b(?:I'll|I will|I'm going to|I am going to|let me|lemme)\b(?!\s+know\b)",
+    re.IGNORECASE,
+)
+_PROGRESSIVE = re.compile(
+    r"^(?:ok(?:ay)?|sure|alright|got it|on it)?[\s,!.]*"
+    r"(?:opening|launching|switching|typing|clicking|starting|searching|"
+    r"closing|navigating|bringing|focusing|playing)\b",
+    re.IGNORECASE,
+)
+
+
+_PATH = re.compile(r"(?:[A-Za-z]:\\|\\\\|~[\\/])[^\n\"<>|?*]*?\.(?:docx|pdf|pptx|md|txt|doc|odt|xlsx|csv)\b", re.I)
+
+
+def _files_mentioned(message: str) -> str:
+    """What is in the files the user just named, read from disk.
+
+    Facts for the model to think with, not a decision made for it: a brief's
+    own words, a document's sections and how much is written under each. With
+    them the model can plan from the brief without spending a turn reading it,
+    and see what's already done. Files already part of the active mission are
+    in its block and not repeated.
     """
-    Short spoken summary for simple, self-contained tool calls, skipping the
-    second LLM round. Returning None here forces a real follow-up turn instead —
-    required for create_folder/create_file/delete_path, since those are often
-    one step in a larger goal (create folder, write a file into it, verify) and
-    the model needs to see the result to decide whether to continue.
+    from brain import mission_checks as checks
+    from brain import mission_store as ms
+
+    try:
+        mission = ms.active()
+    except Exception:
+        mission = None
+    known = {f["path"].casefold() for f in (mission or {}).get("files", [])}
+    lines = []
+    for raw in dict.fromkeys(_PATH.findall(message or "")):
+        path = Path(raw.strip().strip("'\"")).expanduser()
+        if not path.is_file() or str(path).casefold() in known:
+            continue
+        try:
+            lines.append(checks.describe_file(path))
+        except Exception:
+            logger.debug("Could not describe %s", path, exc_info=True)
+    if not lines:
+        return ""
+    block = ("Files the user mentioned, read just now (no need to read them again):\n"
+             + "\n".join(lines))
+    if mission is None:
+        # What Mike could do with them, said where it's relevant; whether it
+        # fits what they want is the model's call. Measured: with the mission
+        # tool only listed among 46, the model planned the report out loud and
+        # never started one, so nothing was tracked.
+        block += ("\nIf this is work they're getting done, a mission (mission tool) keeps "
+                  "their plan and checks these files as they write, across restarts.")
+    return block
+
+
+def _command_folder(raw) -> str | None | dict:
+    """Where a command runs, read the way every file tool reads a path (a
+    relative one is under home). A folder that isn't there is said plainly --
+    handed to the OS as it was, a relative one crashed with "The directory
+    name is invalid" and the model had to guess why."""
+    if not raw or not str(raw).strip():
+        return None
+    from tools.filesystem.path_utils import resolve_path
+    folder = resolve_path(str(raw))
+    if not folder.is_dir():
+        return {"status": "error", "retry_safe": True,
+                "error": f"There's no folder at {folder} to run it in. Nothing was run."}
+    given = Path(str(raw).strip()).expanduser()
+    return str(given) if given.is_absolute() else str(folder)
+
+
+def _execute_mission(args: dict) -> dict:
+    """The mission tool: Mike's own record of what the user is getting done.
+
+    Every answer is the state as it now stands, read back from the store, so
+    the model reports what is true rather than what it asked for.
     """
-    if function_name == "open_browser":
-        return "Done, opened the browser."
-    if function_name == "open_url":
-        url = args.get("url", "")
-        if "youtube" in url.lower():
-            return "Done, opened YouTube."
-        if "google" in url.lower():
-            return "Done, opened Google."
-        if "github" in url.lower():
-            return "Done, opened GitHub."
-        if "reddit" in url.lower():
-            return "Done, opened Reddit."
-        if "twitter" in url.lower() or "x.com" in url.lower():
-            return "Done, opened X."
-        if "wikipedia" in url.lower():
-            return "Done, opened Wikipedia."
-        return "Done, opened the link."
-    if function_name == "search_web":
-        return None
-    if function_name == "create_folder":
-        return None
-    if function_name == "create_file":
-        return None
-    if function_name == "delete_path":
-        return None
-    if function_name == "remember":
-        return "Got it, I'll remember that."
-    if function_name == "forget_memory":
-        return None
-    if function_name == "recall_memory":
-        return None
-    if function_name == "list_directory":
-        return None
-    if function_name == "run_command":
-        return None
-    return None
+    from brain import mission_store as ms
+
+    action = str(args.get("action") or "").strip().lower()
+    try:
+        current = ms.active()
+        if action == "start" and current is not None:
+            # Already started (in an earlier turn, or before a restart): the
+            # model gets the state, not an error to recover from.
+            return {"status": "success",
+                    "result": "Already tracking this as a mission.\n" + ms.context_line(current)}
+        if action == "start":
+            steps = args.get("steps") or []
+            if isinstance(steps, str):
+                steps = [s for s in re.split(r"\n|;", steps) if s.strip()]
+            files = args.get("files") or []
+            if isinstance(files, str):
+                files = [files]
+            brief = args.get("brief") or []
+            if isinstance(brief, str):
+                brief = [brief]
+            mission = ms.start(str(args.get("goal") or ""), [str(s) for s in steps],
+                               files=[str(f) for f in files], brief=[str(b) for b in brief],
+                               deadline=str(args.get("deadline") or ""))
+            note = ("" if any(f["role"] == "brief" for f in mission["files"]) else
+                    "\n(No brief attached, so section lengths come from the steps or a "
+                    f"{ms.checks.DEFAULT_MIN_WORDS}-word minimum; action=file adds one.)")
+            return {"status": "success", "result": "Mission started.\n" + ms.context_line(mission) + note}
+
+        mission = ms.active()
+        if mission is None:
+            return {"status": "error", "error": "There is no active mission. Start one first."}
+        if action == "step":
+            said = ms.set_step(mission["id"], args.get("step"), str(args.get("status") or "done"),
+                               str(args.get("note") or ""))
+            return {"status": "success", "result": said + "\n" + ms.context_line(ms.get(mission["id"]))}
+        if action == "file":
+            updated = ms.add_file(mission["id"], str(args.get("path") or ""))
+            return {"status": "success", "result": "File added.\n" + ms.context_line(updated)}
+        if action == "finish":
+            said = ms.finish(mission["id"], str(args.get("status") or "done"))
+            return {"status": "success", "result": said}
+        if action in ("status", "check"):
+            return {"status": "success", "result": ms.context_line(ms.evaluate(mission["id"])["mission"])}
+        return {"status": "error", "error": "action is one of: start, step, file, finish."}
+    except ms.MissionError as exc:
+        return {"status": "error", "error": str(exc)}
+
+
+def _promises_unperformed_action(text: str) -> bool:
+    """True when a reply ends on a promise to act ("I'll switch to Notepad and
+    type it", "Opening Notepad for you.") -- which, with no tool call, means
+    the user was told something is happening that is not."""
+    sentences = [s.strip(" \t\n\"'*") for s in re.split(r"(?<=[.!?])\s+|\n+", text.strip())]
+    sentences = [s for s in sentences if s]
+    if not sentences:
+        return False
+    last = sentences[-1]
+    if last.endswith("?"):
+        return False           # asking the user something is a real answer
+    # "Let me explain: ..." goes on to say it -- the content is the answer.
+    promise = _PROMISE.search(last)
+    if promise and ":" in last[promise.end():]:
+        promise = None
+    return bool(promise or _PROGRESSIVE.match(last))

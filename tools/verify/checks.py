@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import ast
 import json
+import shutil
 import socket
 import subprocess
 import time
+from pathlib import Path
 from urllib.parse import urlparse
 
 from tools.filesystem.path_utils import resolve_path
@@ -119,7 +121,7 @@ def check_port(port: int, host: str = "127.0.0.1") -> dict:
 # Syntax checkers Mike can run without installing anything. Deliberately
 # limited to languages where a check is both cheap and trustworthy — a
 # half-right answer about whether code parses is worse than no answer.
-def check_syntax(path: str) -> dict:
+def _parse(path: str) -> dict:
     """
     Does this file still parse?
 
@@ -176,11 +178,14 @@ def check_syntax(path: str) -> dict:
     if suffix in (".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"):
         # Only if a checker is already present — Mike does not install things
         # to answer a question.
-        probe = subprocess.run(["which", "node"], capture_output=True, text=True)
-        if probe.returncode == 0 and suffix in (".js", ".mjs", ".cjs"):
+        # shutil.which, not `which`: Windows has no `which`, so the check
+        # never ran on a student's laptop.
+        node = shutil.which("node")
+        if node and suffix in (".js", ".mjs", ".cjs"):
             check = subprocess.run(
-                ["node", "--check", str(file)], capture_output=True, text=True,
+                [node, "--check", str(file)], capture_output=True, text=True,
                 encoding="utf-8", errors="replace", timeout=20,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
             valid = check.returncode == 0
             return {
@@ -211,3 +216,45 @@ def check_syntax(path: str) -> dict:
             "Checking is available for Python, JSON and JavaScript."
         ),
     }
+
+
+#: How long check_syntax waits for VS Code's checkers: asked for, so worth
+#: the few seconds a language server can take to look.
+EDITOR_WAIT = 6.0
+
+
+def check_syntax(path: str) -> dict:
+    """Does this file still parse -- and, when the student's VS Code has the
+    project open, what do its own checkers say? They know far more than a
+    parser: TypeScript's types, Pylance's missing imports, CSS and HTML, for
+    whatever languages the student has set VS Code up for."""
+    result = _parse(path)
+    if result.get("status") != "success":
+        return result
+    try:
+        from ide import manager
+        found = manager.problems_for([result["path"]], wait=EDITOR_WAIT)
+    except Exception:
+        found = None
+    if not found:
+        return result
+    info = next(iter(found.values()))
+    problems = info.get("problems") or []
+    if problems:
+        errors = [p for p in problems if p.get("severity") == "error"]
+        result["editor_problems"] = problems
+        if errors and result.get("valid") is not False:
+            result["valid"] = False
+        listed = "; ".join(f"line {p.get('line')}: {p.get('message')}" for p in problems[:8])
+        result["result"] = f"{result['result']} VS Code reports: {listed}"
+    elif info.get("reported"):
+        result["result"] = f"{result['result']} VS Code's checker shows no problems in it."
+        if result.get("valid") is None:
+            result["valid"] = True
+    else:
+        # Open in VS Code and nothing said: most likely clean -- a clean file
+        # usually reports nothing -- but not a promise, so not "valid".
+        said = "" if result.get("valid") is None else f"{result['result']} "
+        result["result"] = (f"{said}VS Code has {Path(result['path']).name} open and reported "
+                            f"no problems in it within {EDITOR_WAIT:g}s.")
+    return result

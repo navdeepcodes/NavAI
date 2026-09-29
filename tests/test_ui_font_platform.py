@@ -93,21 +93,32 @@ def test_label_family_is_always_a_nonempty_css_family_list(monkeypatch, system):
 
 
 @pytest.mark.parametrize("system", ["Darwin", "Windows", "Linux"])
-def test_panel_style_functions_delegate_to_tokens_not_a_hardcoded_copy(monkeypatch, system):
-    """ui/panel/style.py's font FUNCTIONS re-resolve on every call, so they
-    can be checked live against a simulated platform."""
+def test_panel_style_takes_its_system_face_from_tokens(monkeypatch, system):
+    """ui/panel/style.py speaks in the bundled brand face and falls back to the
+    system one; that fallback (the CSS list and the QFont face) comes from
+    tokens, not a macOS-only literal of its own."""
     _qapp()
     from ui.instrument import tokens
     from ui.panel import style
 
     monkeypatch.setattr(tokens.platform, "system", lambda: system)
     monkeypatch.setattr(tokens, "_sans_cached", None)
-    monkeypatch.setattr(tokens, "_mono_cached", None)
+    monkeypatch.setattr(style, "_FONTS_LOADED", False)
 
-    assert style.voice().family() == tokens.ui_sans_family()
-    assert style.label().family() == tokens.ui_sans_family()
-    assert style.mono_family() == tokens.mono_family()
+    assert tokens.label_family() in style.ui_family()
     assert style.ui_family() == tokens.label_family()
+    if system != "Darwin":
+        assert ".AppleSystemUIFont" not in style.ui_family()
+
+
+def test_panel_style_face_is_never_the_macos_alias_off_macos():
+    _qapp()
+    import platform
+    from ui.panel import style
+
+    if platform.system() != "Darwin":
+        assert style._SYSTEM_UI != ".AppleSystemUIFont"
+        assert "Menlo" not in style.mono_family()
 
 
 def test_typography_constants_match_tokens_resolution_at_import_time():
