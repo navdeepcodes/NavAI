@@ -52,7 +52,7 @@ def _tray_icon() -> QIcon:
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor("#1E1F23"))
         painter.drawRoundedRect(QRectF(0, 0, size, size), size * 0.22, size * 0.22)
-        nib.paint_centred(painter, QRectF(0, 0, size, size), QColor("#D4D6DB"), scale=0.8)
+        nib.paint_centred(painter, QRectF(0, 0, size, size), QColor("#E3A46B"), scale=0.8)
         painter.end()
         icon.addPixmap(pixmap)
     return icon

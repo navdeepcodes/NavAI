@@ -29,7 +29,7 @@ PAPER_DIM = "#EEEEF0"
 INK = "#0E0E10"
 GRAPHITE = "#525459"
 MIST = "#DCDCE0"
-ACCENT = "#3B3E45"
+ACCENT = "#AE6534"
 GOOD = "#5F8D5A"
 UI_FONT = "Segoe UI"
 
@@ -100,8 +100,8 @@ class InstallerWindow(QWidget):
                     from ui.workspace import nib
                     p.setBrush(QColor("#1E1F23"))
                     p.drawRoundedRect(0, 0, 46, 46, 11, 11)
-                    nib.paint_centred(p, QRectF(0, 0, 46, 46), QColor("#D4D6DB"),
-                                      QColor("#6B6E76"), scale=0.72)
+                    nib.paint_centred(p, QRectF(0, 0, 46, 46), QColor("#E3A46B"),
+                                      QColor("#8A4E22"), scale=0.72)
                     return
                 except Exception:
                     pass

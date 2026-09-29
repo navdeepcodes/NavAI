@@ -1070,9 +1070,9 @@ class _SettingsView(QScrollArea):
     def _current_accent_name(self) -> str:
         try:
             from config import preferences
-            return str(preferences.get("accent", "silver") or "silver").lower()
+            return str(preferences.get("accent", "copper") or "copper").lower()
         except Exception:
-            return "silver"
+            return "copper"
 
     def _pick_accent(self, name: str) -> None:
         try:

@@ -363,7 +363,7 @@ class GeneralTab(_Tab):
         arow.setContentsMargins(0, 0, 0, 0)
         arow.setSpacing(6)
         self._swatches: list[_Swatch] = []
-        cur_accent = str(preferences.get("accent", "") or "silver").lower()
+        cur_accent = str(preferences.get("accent", "") or "copper").lower()
         for name, colour in style.accent_presets().items():
             sw = _Swatch(name, colour, self._set_accent)
             sw.set_selected(name == cur_accent)

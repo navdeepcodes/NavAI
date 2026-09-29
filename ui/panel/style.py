@@ -133,10 +133,14 @@ def is_dark() -> bool:
 
 # ── The accent: warm, living, personal. Read from preferences everywhere so
 #    a user's chosen colour flows through the whole surface from one setting.
-# Silver on the dark ground, graphite on the light: a metal, not a colour.
-# "silver" is the default and follows the theme; the rest are optional.
+# The grounds are black and grey; the accent is the one warm thing on them: a
+# muted copper, quieter than the old amber, so it gives the page life without
+# shouting. "copper" is the default and follows the theme (brighter on dark,
+# deeper on light); "silver" is the all-grey option; the rest are optional.
+_COPPER = {"dark": "#C98B56", "light": "#AE6534"}
 _SILVER = {"dark": "#C7C9CF", "light": "#3B3E45"}
 _ACCENT_PRESETS = {
+    "copper":   "#C98B56",
     "silver":   "#C7C9CF",
     "graphite": "#8A8D95",
     "sky":      "#5AA6E0",
@@ -146,7 +150,7 @@ _ACCENT_PRESETS = {
 
 # Semantic signal — separate from the accent, never used decoratively.
 GOOD = "#7FB37A"            # a step finished, and it worked
-WARN = "#E7A54F"            # needs you (shares the accent's warmth on purpose)
+WARN = "#D9A05A"            # needs you (shares the accent's warmth on purpose)
 STOP = "#E06A54"            # a real failure, or a destructive confirmation
 
 
@@ -156,18 +160,20 @@ def accent() -> str:
         from config import preferences
 
         chosen = str(preferences.get("accent", "") or "").strip().lower()
-        if chosen in _ACCENT_PRESETS and chosen != "silver":
+        if chosen == "silver":
+            return _SILVER["dark" if is_dark() else "light"]
+        if chosen in _ACCENT_PRESETS and chosen != "copper":
             return _ACCENT_PRESETS[chosen]
         if chosen.startswith("#") and len(chosen) in (4, 7):
             return chosen
     except Exception:
         pass
-    return _SILVER["dark" if is_dark() else "light"]
+    return _COPPER["dark" if is_dark() else "light"]
 
 
 def on_accent() -> str:
     """The text colour that reads on the accent: near-black on a light
-    accent (silver), near-white on a dark one (graphite)."""
+    accent (copper on dark, silver), near-white on a deep one."""
     c = QColor(accent())
     luma = (0.2126 * c.redF() + 0.7152 * c.greenF() + 0.0722 * c.blueF())
     return "#0F0F10" if luma > 0.5 else "#F5F5F6"
