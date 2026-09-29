@@ -218,5 +218,12 @@ class ThinkingLine(QWidget):
         else:
             return
 
-        # The words write themselves; no pen is drawn.
-        script.paint(p, baseline, sc, t, ink, wet, opacity)
+        tip = script.paint(p, baseline, sc, t, ink, wet, opacity)
+        if pen:
+            _x, _y, down = script.pen_at(t)
+            resting = self._phase == "hold"
+            if resting:
+                # pen lifted off the page at the end of the thought, poised
+                down = False
+            hw.paint_pen(p, tip, self._size * 2.3, QColor(style.accent()),
+                         QColor(style.accent()).darker(210), down)

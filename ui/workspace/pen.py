@@ -1,9 +1,9 @@
-"""The marker at the end of a reply as it streams in.
+"""The pen that writes Mike's answers.
 
-A small soft dot sits at the end of the text while a reply arrives: it glides
-to each new word, breathes gently while words pause, and fades when the
-answer is complete. (It was a writing nib in the accent colour; a plain dot
-reads cleaner.)
+While a reply streams in, the nib sits at the end of the text as if it were
+writing it: it glides to each new word, makes the small quick movements of a
+hand forming letters while words are arriving, rests when they pause, and
+lifts away and fades when the answer is complete.
 
 It lives on the conversation column rather than inside the reply, so the nib
 (which hangs below and to the right of its tip) is never clipped by the
@@ -14,18 +14,19 @@ from __future__ import annotations
 import math
 import time
 
-from PySide6.QtCore import QPoint, QPointF, Qt, QTimer
+from PySide6.QtCore import QPoint, QPointF, QTimer
 from PySide6.QtGui import QColor, QPainter, QTextCursor
 from PySide6.QtWidgets import QWidget
 
 from ui.panel import style
+from ui.workspace import nib as _nib
 
 
 class StreamingPen(QWidget):
     """A nib that follows the end of a streaming reply."""
 
-    DOT = 3.6          # the dot's radius, px
-    BOX = 16           # the widget's square
+    SIZE = 26          # the nib's height, px
+    BOX = 44           # the widget's square; the tip sits near its top-left
 
     def __init__(self, host: QWidget) -> None:
         super().__init__(host)
@@ -129,12 +130,15 @@ class StreamingPen(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
         p.setOpacity(self._opacity)
-        # A small soft dot at the end of the text, in the ink colour: steady
-        # while words arrive, breathing gently while they pause.
-        breathe = 0.0 if self._writing() else 0.5 + 0.5 * math.sin(self._t * 4.0)
-        r = self.DOT - 0.8 * breathe
-        ink = QColor(style.INK)
-        ink.setAlphaF(0.9 - 0.35 * breathe)
-        p.setPen(Qt.NoPen)
-        p.setBrush(ink)
-        p.drawEllipse(QPointF(4 + self.DOT, 4.0), r, r)
+        # tip at (4, 4) in widget space, plus the small movements of a hand
+        # forming letters while words are arriving; still when they pause
+        jx = jy = 0.0
+        tilt = 0.0
+        if self._writing():
+            jx = 1.6 * math.sin(self._t * 23.0) + 0.8 * math.sin(self._t * 37.0)
+            jy = 1.3 * math.sin(self._t * 29.0 + 1.1)
+            tilt = 3.0 * math.sin(self._t * 11.0)
+        lift = (1.0 - self._opacity) * 10.0          # rises as it fades out
+        tip = QPointF(4 + jx + lift * 0.4, 4 + jy - lift)
+        acc = QColor(style.accent())
+        _nib.paint(p, tip, self.SIZE, acc, acc.darker(210), _nib.ANGLE + tilt)
