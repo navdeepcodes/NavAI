@@ -20,6 +20,7 @@ from ui.panel import style
 from ui.workspace.chat_page import ChatPage
 from ui.workspace.icons import IconButton
 from ui.workspace.sidebar import Sidebar, sidebar_qss
+from ui.workspace.usage import UsageRing
 
 
 class MikeWorkspace(QWidget):
@@ -135,6 +136,13 @@ class MikeWorkspace(QWidget):
         self._title.setStyleSheet(f"color:{style.INK_SOFT};background:transparent;")
         self._title.setMinimumWidth(40)
         row.addWidget(self._title, 1, Qt.AlignVCenter)
+
+        # today's Fast mode allowance: a small ring that fills as it's used,
+        # there only while Fast mode is on; click for what's left
+        self.usage = UsageRing()
+        row.addWidget(self.usage, 0, Qt.AlignVCenter)
+        row.addSpacing(4)
+        self.usage.start()
 
         self._min = IconButton("minimise", "Minimise to the corner", size=34, icon_size=16)
         self._min.clicked.connect(self.minimise_requested.emit)

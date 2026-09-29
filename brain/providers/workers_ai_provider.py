@@ -75,6 +75,11 @@ def allowance_gone(detail: str) -> bool:
     text = (detail or "").lower()
     if "allocation" in text or "neuron" in text or "4006" in text:
         _allowance_gone_until = _next_utc_midnight()
+        try:
+            from brain import fast_usage
+            fast_usage.mark_used_up()
+        except Exception:
+            logger.debug("Couldn't note the used-up allowance.", exc_info=True)
         return True
     return False
 
@@ -130,6 +135,9 @@ class _Cloud(OpenAICompatibleProvider):
 
     def _payload(self, messages, tools, stream: bool, max_tokens: int | None = None) -> dict:
         body = super()._payload(fold_system_messages(messages), tools, stream, max_tokens)
+        if stream:
+            # Without this a streamed answer says nothing of what it cost.
+            body["stream_options"] = {"include_usage": True}
         # Gemma 4 and Qwen3 think before answering unless told not to. Measured
         # on Gemma: thinking on, 1.6s a call and sometimes the whole answer
         # left in the reasoning with an empty reply; off, 10/10 right first
@@ -240,6 +248,14 @@ class WorkersAIProvider(BrainProvider):
             threading.Thread(target=self._prepare_local, args=(str(system), list(tools or [])),
                              name="prepare-local-model", daemon=True).start()
 
+    def _count_usage(self) -> None:
+        """Add the cost of the call that just finished to today's total, and
+        arrange to say so once when most of the allowance is gone."""
+        from brain import fast_usage
+        fast_usage.record(self._cloud.last_usage())
+        if self._notice is None:
+            self._notice = fast_usage.warning()
+
     def take_notice(self) -> str | None:
         """The sentence about a switch, once."""
         notice, self._notice = self._notice, None
@@ -315,12 +331,14 @@ class WorkersAIProvider(BrainProvider):
                cancel: Any = None) -> Iterator[StreamEvent]:
         if self._use_cloud() and self._cloud._key():
             t0 = time.monotonic()
+            self._cloud._last_usage = None       # this call's cost, not the last one's
             first, events = self._cloud_start(messages, tools, cancel)
             if first is not None and first.kind != "error":
                 self._answered_by("cloud")
                 self._set_local_aside(messages, tools)
                 yield first
                 yield from events
+                self._count_usage()
                 logger.info("Model call (Cloudflare %s): %.2fs | %d messages, %d tools",
                             self._cloud._model, time.monotonic() - t0, len(messages),
                             len(tools or []))
@@ -337,11 +355,13 @@ class WorkersAIProvider(BrainProvider):
             from account import cloudflare
 
             for attempt in range(3):         # a refused token: as in _cloud_start
+                self._cloud._last_usage = None
                 result = self._cloud.complete(messages, tools, max_tokens=max_tokens)
                 if result.error is None or result.error.status not in (401, 403) \
                         or attempt == 2 or not cloudflare.retry_token():
                     break
             if result.error is None:
+                self._count_usage()
                 return result
             self._rest(result.error)
         self._prime_local(messages, tools)

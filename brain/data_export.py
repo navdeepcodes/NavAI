@@ -138,6 +138,7 @@ def _erase_traces() -> None:
         pass
     for path in (storage.recordings_dir() / "voice_input.wav",
                  storage.recordings_dir() / "voice_input_early.wav",    # read while you're still talking
+                 storage.data_dir() / "fast_usage.json",                # today's Fast mode count
                  storage.token_path()):
         try:
             path.unlink(missing_ok=True)

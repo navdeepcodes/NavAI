@@ -428,9 +428,18 @@ class GeneralTab(_Tab):
             card = _rows_card([
                 _row("Fast mode", what, switch),
                 _row("Cloudflare", self._fast_mode_line(name), disconnect),
+                _row("Today's allowance", self._fast_usage_line(), None),
             ])
         card.layout().addWidget(self._fast_note)
         return card
+
+    @staticmethod
+    def _fast_usage_line() -> str:
+        try:
+            from brain import fast_usage
+            return fast_usage.describe()
+        except Exception:
+            return "Not available right now."
 
     @staticmethod
     def _fast_mode_line(name: str) -> str:
