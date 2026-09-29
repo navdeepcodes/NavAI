@@ -103,7 +103,7 @@ analysis = Analysis(
         # starts, listens on 8787, and nothing ever connects, because the
         # .vsix that the other half of the protocol lives in was never
         # shipped. Bundling it is what lets Mike offer to install it.
-        (os.path.join(REPO_ROOT, "vscode-extension", "mike-bridge-0.3.0.vsix"),
+        (os.path.join(REPO_ROOT, "vscode-extension", "mike-bridge-0.3.1.vsix"),
          "vscode-extension"),
         # The Piper neural-voice runtime: piper.exe, its DLLs and espeak-ng
         # data, and the bundled English voice models. This is what makes Mike

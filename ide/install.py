@@ -32,7 +32,7 @@ EXTENSION_ID = "mike.mike-bridge"
 #: brought "Mike: Ask about this" and edits made in the editor itself; 0.3
 #: the terminal (what ran and what it printed, and Mike's servers running
 #: there) and VS Code's own checks on the files Mike writes.
-EXTENSION_VERSION = "0.3.0"
+EXTENSION_VERSION = "0.3.1"
 VSIX_NAME = f"mike-bridge-{EXTENSION_VERSION}.vsix"
 _PREF_KEY = "vscode_extension_offered"
 
