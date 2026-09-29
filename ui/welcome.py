@@ -118,15 +118,13 @@ class _Art(QWidget):
                 scale, pace = 2.0, 1.2
                 t = min(self._t * pace, script.duration + 1.0)
                 origin = QPointF(cx - script.width * scale / 2, cy + 16)
-                tip = script.paint(p, origin, scale, t, QColor(style.INK), accent)
-                _x, _y, down = script.pen_at(t)
-                hw.paint_pen(p, tip, 34, accent, accent.darker(210),
-                             down and t < script.duration)
+                # the words write themselves, in ink; no pen is drawn
+                script.paint(p, origin, scale, t, QColor(style.INK_SOFT), QColor(style.INK))
             return
 
         if self._kind == "presence":
-            # The first thing Mike ever does: write "Hello", by hand, with the
-            # nib that is his mark — then hold it, and write it again.
+            # The first thing Mike ever does: "Hello" writes itself, by hand,
+            # then holds, and writes again. No pen is drawn.
             from PySide6.QtCore import QPointF
             from ui.workspace import handwriting as hw
             if not hasattr(self, "_hello"):
@@ -142,9 +140,7 @@ class _Art(QWidget):
             cycle = script.duration / pace + 2.2
             t = (self._t % cycle) * pace
             origin = QPointF(cx - script.width * scale / 2, cy + 20)
-            tip = script.paint(p, origin, scale, t, QColor(style.INK), accent)
-            _x, _y, down = script.pen_at(t)
-            hw.paint_pen(p, tip, 40, accent, accent.darker(210), down)
+            script.paint(p, origin, scale, t, QColor(style.INK_SOFT), QColor(style.INK))
 
         elif self._kind == "doing":
             # Three tasks completing in sequence, over and over: the point is
