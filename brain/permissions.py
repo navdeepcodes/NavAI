@@ -44,6 +44,13 @@ ABILITIES: dict[str, tuple[str, str, frozenset[str]]] = {
         "Run programs and terminal commands.",
         frozenset({"run_command"}),
     ),
+    "documents": (
+        "Work with documents",
+        "Read long PDFs, Word files and slides, search them, read scanned pages, and make Word, "
+        "PDF and PowerPoint files. PDF tools never change the original.",
+        frozenset({"document_info", "search_document", "create_document",
+                   "create_presentation", "pdf_edit"}),
+    ),
     "coding": (
         "Work with code",
         "Read and edit code projects, run and watch dev servers, and use your code "

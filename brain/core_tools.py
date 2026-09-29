@@ -305,11 +305,11 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="read_document",
         description=(
-            "Read and extract text from a document file. "
-            "Supports PDF, DOCX, PPTX, CSV, JSON, and all text-based files. "
-            "Use this instead of read_file when the user asks about a document, "
-            "especially for PDF, DOCX, or PPTX files. "
-            "For plain text files (.txt, .md, .py, etc.), read_file also works."
+            "Read a document: PDF, Word (.docx), PowerPoint, CSV, JSON, text, or a "
+            "picture of text (photo of notes, a scan -- read by OCR). Returns a few "
+            "pages at a time with page numbers and says what page comes next; ask for "
+            "pages to go further. For a long document use document_info first, and "
+            "search_document to find the part you need."
         ),
         parameters_json_schema={
             "type": "object",
@@ -317,9 +317,158 @@ TOOL_DECLARATIONS = [
                 "path": {
                     "type": "string",
                     "description": "Path to the document file",
-                }
+                },
+                "pages": {
+                    "type": "string",
+                    "description": "Which pages (or slides, or sections): 3, 3-7, 1,4,9-11 or last. Omit to start at the beginning.",
+                },
             },
             "required": ["path"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="document_info",
+        description=(
+            "See how a document is laid out before reading it: pages (or slides, or "
+            "sections), title, outline of headings with their pages, and whether it's "
+            "a scan. Use it first for anything long -- a textbook chapter, a paper, a "
+            "thesis -- so you read the right pages instead of the start."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {"path": {"type": "string", "description": "The PDF, Word, PowerPoint, text or image file"}},
+            "required": ["path"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="search_document",
+        description=(
+            "Find where a document -- or every document in a folder -- says something, "
+            "with the page numbers (for citing) and the lines around each match. Reads "
+            "scanned pages by OCR. Use it to answer questions across long files or a "
+            "folder of papers instead of reading them all."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "A phrase, or several words that should appear on one page"},
+                "path": {"type": "string", "description": "A file or a folder (searched with everything in it). Defaults to the current folder."},
+                "regex": {"type": "boolean", "description": "Treat the query as a regular expression."},
+                "max_results": {"type": "integer", "description": "How many pages to list. Defaults to 15."},
+            },
+            "required": ["query"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="create_document",
+        description=(
+            "Make a Word (.docx), PDF, Markdown or text file from Markdown content: an "
+            "essay, report, resume, cover letter, lab write-up, study notes. Headings, "
+            "lists, tables, code, bold/italic, images and page breaks are supported. "
+            "style sets the formatting: mla, apa (double-spaced Times New Roman with "
+            "the running head or title page and hanging works cited), report, resume, "
+            "letter, or plain. A course's own rules win: override font, font_size, "
+            "line_spacing or page_size. Never replaces an existing file unless overwrite "
+            "is set. Write the whole document -- real content, in the student's own "
+            "material, not placeholders."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Where to save it; the ending (.docx, .pdf, .md, .txt) picks the format"},
+                "content": {"type": "string", "description": "The document, in Markdown. A blank line between paragraphs; # headings; - bullets; 1. numbers; | tables |; ![caption](image path)"},
+                "style": {"type": "string", "description": "mla, apa, report, resume, letter or plain (default plain)"},
+                "title": {"type": "string", "description": "The document's title (for a title page or the file's properties)"},
+                "author": {"type": "string", "description": "The student's name (MLA's running head, APA's title page)"},
+                "font": {"type": "string", "description": "Override the style's font, e.g. Arial"},
+                "font_size": {"type": "number", "description": "Override the size in points"},
+                "line_spacing": {"type": "number", "description": "1.0 single, 1.5, 2.0 double"},
+                "page_size": {"type": "string", "description": "letter or a4"},
+                "toc": {"type": "boolean", "description": "Add a table of contents (Word only)"},
+                "overwrite": {"type": "boolean", "description": "Replace the file if it exists (the old one is kept aside)"},
+            },
+            "required": ["path", "content"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="create_presentation",
+        description=(
+            "Make a PowerPoint (.pptx) deck: a class presentation, project pitch or study "
+            "deck. Give the slides; each has a title plus one of: bullets (short lines -- "
+            "few words, big type), body, an image, a table (rows), a quote, or left/right "
+            "columns; and speaker notes. The first slide with only a title is the title "
+            "slide; a slide with only a title is a section divider. theme: graphite "
+            "(black and grey) or light."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "Where to save it (.pptx)"},
+                "title": {"type": "string", "description": "The deck's title"},
+                "slides": {
+                    "type": "array",
+                    "description": "The slides, in order.",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "subtitle": {"type": "string"},
+                            "bullets": {"type": "array", "items": {"type": "string"}},
+                            "body": {"type": "string"},
+                            "image": {"type": "string", "description": "Path to a picture"},
+                            "caption": {"type": "string"},
+                            "table": {"type": "array", "items": {"type": "array", "items": {"type": "string"}}, "description": "Rows; the first is the header"},
+                            "quote": {"type": "string"},
+                            "attribution": {"type": "string"},
+                            "left": {"type": "array", "items": {"type": "string"}},
+                            "right": {"type": "array", "items": {"type": "string"}},
+                            "left_title": {"type": "string"},
+                            "right_title": {"type": "string"},
+                            "notes": {"type": "string", "description": "Speaker notes"},
+                        },
+                    },
+                },
+                "theme": {"type": "string", "description": "graphite (default) or light"},
+                "author": {"type": "string"},
+                "overwrite": {"type": "boolean", "description": "Replace the file if it exists"},
+            },
+            "required": ["path", "slides"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="pdf_edit",
+        description=(
+            "Work on PDFs, always into a NEW file beside the original (never changes the "
+            "original). action: merge (paths), extract (path, pages), delete_pages (path, "
+            "pages), rotate (path, degrees, optional pages), reorder (path, order), split "
+            "(path, every N pages or ranges like 1-3;4-9), compress (path: for an upload "
+            "limit), fields (path: list a form's fillable fields), fill (path, values: "
+            "field name -> value), from_images (paths: photos or scans -> one PDF), "
+            "info (path), convert (path, to: pdf from Word/PowerPoint; md or txt from "
+            "Word; txt, md or docx from PDF). pages like 3, 3-7 or 1,4,9-11."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "description": "merge, extract, delete_pages, rotate, reorder, split, compress, fields, fill, from_images, info or convert"},
+                "path": {"type": "string", "description": "The file to work on"},
+                "paths": {"type": "array", "items": {"type": "string"}, "description": "Several files (merge, from_images), in order"},
+                "pages": {"type": "string", "description": "Which pages: 3, 3-7 or 1,4,9-11"},
+                "order": {"type": "string", "description": "The new page order, like 3,1,2 (reorder)"},
+                "degrees": {"type": "integer", "description": "90, 180 or 270 (rotate)"},
+                "every": {"type": "integer", "description": "Split into files of this many pages"},
+                "ranges": {"type": "string", "description": "Split by ranges like 1-3;4-9;10-"},
+                "values": {"type": "object", "description": "Form values: field name -> text, or true/false for a checkbox (fill)"},
+                "to": {"type": "string", "description": "pdf, md, txt or docx (convert)"},
+                "out": {"type": "string", "description": "Where to save the result: use the exact path the student asked for. Default: beside the original."},
+                "out_dir": {"type": "string", "description": "Folder for split parts"},
+            },
+            "required": ["action"],
         },
     ),
 
@@ -1219,6 +1368,14 @@ def needs_confirmation(function_name: str, args: dict) -> bool:
     # This narrows the blast radius, it does not eliminate it: an unlabelled
     # button cannot be judged this way. The limit is documented rather than
     # papered over.
+    # A new document is just made; replacing one the student has is the thing to ask.
+    if function_name in ("create_document", "create_presentation") and args.get("overwrite"):
+        try:
+            from tools.filesystem.path_utils import resolve_path
+            return resolve_path(str(args.get("path") or "")).exists()
+        except Exception:
+            return True
+
     if function_name == "click_element" and args.get("ref"):
         try:
             from computer.session import SESSION
@@ -1325,6 +1482,11 @@ def confirmation_detail(function_name: str, args: dict) -> str:
             + (f" (sheet {args['sheet']})" if args.get("sheet") else "")
             + f":\n{listed}\nThe file is saved in place."
         )
+
+    if function_name in ("create_document", "create_presentation"):
+        target = str(args.get("path") or "?")
+        return (f"Replace {target} with a new version. The current one is kept aside, so it can be "
+                "undone from Mike's activity.")
 
     if function_name == "write_files":
         # Which files, and which of them already exist -- a new project's
@@ -1630,7 +1792,14 @@ def friendly_tool_name(function_name: str, args: dict) -> str:
         "run_command": f"Running: {a.get('command', '')}",
         "run_background": f"Starting: {a.get('command', '')}",
         "open_application": f"Opening {a.get('name') or _short_path(a.get('path')) or 'the app'}",
-        "read_document": f"Reading {path}",
+        "read_document": f"Reading {path}" + (f", pages {a.get('pages')}" if a.get("pages") else ""),
+        "document_info": f"Looking over {path}",
+        "search_document": "Searching " + (_short_path(a.get("path")) if a.get("path") else "the documents")
+                           + " for “" + _clip(a.get("query", "…")) + "”",
+        "create_document": f"Making {path}",
+        "create_presentation": f"Making the presentation {path}",
+        "pdf_edit": (str(a.get("action") or "working on").replace("_", " ").capitalize() + " "
+                     + (_short_path(a.get("path")) if a.get("path") else "PDFs")),
         "calculate": f"Working out {_clip(a.get('expression', ''), 60)}",
         "read_spreadsheet": f"Reading {path}",
         "edit_spreadsheet": f"Updating {path}",

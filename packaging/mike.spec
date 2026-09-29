@@ -57,6 +57,9 @@ hiddenimports = [
     # installed" on an attached PDF -- listed explicitly so a lazy import can
     # never again silently leave them out of the package.
     "pypdf",
+    # documents: the tools load lazily, and Qt's PDF renderer draws scanned pages for OCR
+    *collect_submodules("tools.documents"),
+    "PySide6.QtPdf",
     *collect_submodules("docx"),
     *collect_submodules("pptx"),
     "win32com.client",

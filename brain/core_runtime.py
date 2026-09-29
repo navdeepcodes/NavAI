@@ -89,6 +89,11 @@ _SPECIAL_TOOLS = frozenset({
     "search_files",
     "mission",
     "write_document_section",
+    "document_info",
+    "search_document",
+    "create_document",
+    "create_presentation",
+    "pdf_edit",
 })
 
 # Context size and generation limits are provider concerns and live at the
@@ -264,11 +269,24 @@ Anything that keeps running goes in run_background; process_output shows what it
 """
 
 
+# Offered with the document tools only (brain/permissions.py, "Work with documents").
+DOCUMENT_GUIDANCE = """
+Documents -- you help with coursework files:
+- A long document (a chapter, a paper, a thesis): document_info first for its pages and outline, then read_document with just the pages you need, or search_document to find where something is said. Give page numbers, so it can be cited. Don't read a whole long file.
+- Photos of notes and scanned pages are read by OCR, which can misread numbers and handwriting: say so when accuracy matters.
+- To make a paper, report, resume or letter: create_document -- .docx to edit in Word, .pdf to hand in. If the course names a format (MLA, APA) use that style. Write the real content from what they gave you; never invent sources, quotes, data or citations -- if a source is needed, say so. Slides: create_presentation, one idea a slide in short lines, speaker notes for what would be said.
+- PDFs: pdf_edit merges, splits, extracts, rotates, fills forms, compresses, turns photos into a PDF and converts between formats. The original is never changed; the result is a new file beside it, and you say where.
+- After making a file, say where it is and what's in it -- from what the tool read back, not from what you meant to write."""
+
+
 def system_prompt() -> str:
-    """Mike's fixed instructions, with the coding guidance when coding is on."""
+    """Mike's fixed instructions, with the coding and document guidance when those are on."""
+    text = SYSTEM_PROMPT
     if permissions.is_enabled("coding"):
-        return SYSTEM_PROMPT + CODE_GUIDANCE
-    return SYSTEM_PROMPT
+        text += CODE_GUIDANCE
+    if permissions.is_enabled("documents"):
+        text += DOCUMENT_GUIDANCE
+    return text
 
 
 class CoreRuntime:
@@ -1079,6 +1097,10 @@ class CoreRuntime:
                 return self._execute_vision(args)
             if function_name == "read_document":
                 return self._execute_read_document(args)
+            if function_name in ("document_info", "search_document", "create_document",
+                                 "create_presentation", "pdf_edit"):
+                from tools.documents.tool import TOOLS as document_tools
+                return document_tools[function_name](args)
             if function_name == "search_files":
                 return self._execute_search_files(args)
             if function_name == "mission":
@@ -1455,30 +1477,15 @@ class CoreRuntime:
     # =====================================================
 
     def _execute_read_document(self, args: dict) -> dict:
-        try:
-            from tools.filesystem.document_reader import (
-                DocumentUnreadable,
-                read_document,
-            )
-            path = args.get("path", "")
-            if not path:
-                return {"status": "error", "error": "No file path provided."}
-            text = read_document(path)
-            logger.info("Document read: %s (%d chars)", path, len(text))
-            return {"status": "success", "result": text}
-        except FileNotFoundError as exc:
-            return {"status": "error", "error": str(exc), "retry_safe": True}
-        except DocumentUnreadable as exc:
-            # The file is there and the path is right; the format or the file
-            # itself is the problem, so retrying the same call cannot help.
-            return {"status": "error", "error": str(exc), "retry_safe": False}
-        except Exception as exc:
-            logger.exception("Document read failed: %s", exc)
-            return {
-                "status": "error",
-                "error": f"Could not read {args.get('path', 'the document')}: {exc}",
-                "retry_safe": False,
-            }
+        """Read a document a few pages at a time (tools/documents): PDF, Word,
+        slides, text, or a picture of text by OCR, with page numbers and what
+        comes next."""
+        from tools.documents.tool import read_document
+        result = read_document(args)
+        if result.get("status") == "success":
+            logger.info("Document read: %s (pages %s of %s)", args.get("path"),
+                        result.get("shown"), result.get("total"))
+        return result
 
     def _execute_search_files(self, args: dict) -> dict:
         """Find files by name.
