@@ -74,16 +74,27 @@ class _Server:
         routes_ = routes
 
         class Handler(http.server.BaseHTTPRequestHandler):
-            def do_GET(self):  # noqa: N802
-                body = routes_.get(self.path)
-                if body is None:
+            def _answer(self, with_body: bool):
+                route = routes_.get(self.path)
+                if route is None:
                     self.send_response(404)
                     self.end_headers()
                     return
-                self.send_response(200)
+                # bytes, or (status, headers, bytes) for redirects and refusals
+                status, headers, body = route if isinstance(route, tuple) else (200, {}, route)
+                self.send_response(status)
+                for k, v in headers.items():
+                    self.send_header(k, v)
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
-                self.wfile.write(body)
+                if with_body:
+                    self.wfile.write(body)
+
+            def do_GET(self):  # noqa: N802
+                self._answer(True)
+
+            def do_HEAD(self):  # noqa: N802
+                self._answer(False)
 
             def log_message(self, *a):
                 pass
@@ -147,6 +158,35 @@ def test_check_reads_the_feed(server, monkeypatch):
     monkeypatch.setenv("MIKE_UPDATE_FEED", f"{s.url}/releases")
     found = updates.check()
     assert found is not None and found.version == "99.0.0"
+
+
+def test_a_rate_limited_api_falls_back_to_the_latest_release_page(server, monkeypatch):
+    """GitHub's API allows 60 requests an hour per address, and a campus
+    network shares one: a refusal must not hide an update."""
+    data = _zip({"Mike/Mike.exe": b"new"})
+    s = server({
+        "/api/releases": (403, {}, b'{"message": "API rate limit exceeded"}'),
+        "/repo/releases/latest": (302, {"Location": "/repo/releases/tag/v99.0.0"}, b""),
+        "/repo/releases/tag/v99.0.0": b"<html>release page</html>",
+        "/repo/releases/download/v99.0.0/Mike-windows-99.0.0.zip": data,
+    })
+    monkeypatch.setenv("MIKE_UPDATE_FEED", f"{s.url}/api/releases")
+    monkeypatch.setenv("MIKE_UPDATE_LATEST", f"{s.url}/repo/releases/latest")
+    found = updates.check()
+    assert found is not None and found.version == "99.0.0"
+    assert found.size == len(data) and found.sha256 == ""
+    assert updates.download(found).read_bytes() == b"new"
+
+
+def test_the_fallback_ignores_a_release_without_a_windows_build(server, monkeypatch):
+    s = server({
+        "/api/releases": (429, {}, b""),
+        "/repo/releases/latest": (302, {"Location": "/repo/releases/tag/v99.0.0"}, b""),
+        "/repo/releases/tag/v99.0.0": b"page",
+    })
+    monkeypatch.setenv("MIKE_UPDATE_FEED", f"{s.url}/api/releases")
+    monkeypatch.setenv("MIKE_UPDATE_LATEST", f"{s.url}/repo/releases/latest")
+    assert updates.check() is None
 
 
 # ── swapping the install folder ────────────────────────────────

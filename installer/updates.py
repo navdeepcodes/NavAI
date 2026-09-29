@@ -40,8 +40,18 @@ ASSET = re.compile(r"^Mike-windows-(\d+(?:\.\d+)*)\.zip$", re.IGNORECASE)
 TIMEOUT = 20
 
 
+#: The public "latest release" page: GitHub redirects it to the newest
+#: release's tag. Used when the API refuses -- it allows 60 requests an hour
+#: per internet address, and a whole college network shares one.
+DEFAULT_LATEST = f"https://github.com/{REPO}/releases/latest"
+
+
 def feed() -> str:
     return os.environ.get("MIKE_UPDATE_FEED", "").strip() or DEFAULT_FEED
+
+
+def latest_page() -> str:
+    return os.environ.get("MIKE_UPDATE_LATEST", "").strip() or DEFAULT_LATEST
 
 
 @dataclass
@@ -114,11 +124,43 @@ def _get(url: str, timeout: float = TIMEOUT):
 def check() -> Update | None:
     """The newest version of Mike for Windows, if it is newer than this one.
     Raises on a network or GitHub failure, so the caller can say so."""
-    with _get(feed()) as response:
-        releases = json.loads(response.read().decode("utf-8"))
+    from urllib.error import HTTPError
+    try:
+        with _get(feed()) as response:
+            releases = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code not in (403, 429):
+            raise
+        return _from_latest_page()          # rate-limited: shared campus address
     if isinstance(releases, dict):          # a single release (releases/latest)
         releases = [releases]
     return newest(releases, current_version())
+
+
+def _from_latest_page() -> Update | None:
+    """The newest release from the public releases page, when the API is
+    rate-limited. No published SHA-256 comes this way; the download is still
+    checked -- HTTPS from GitHub, its full size, and every file's own CRC as the
+    zip is unpacked."""
+    from urllib.error import HTTPError
+    with _get(latest_page()) as response:   # redirected to .../releases/tag/v1.2.0
+        tag = response.geturl().rstrip("/").rsplit("/", 1)[-1]
+    version = ".".join(str(n) for n in version_tuple(tag))
+    if version_tuple(version) <= version_tuple(current_version()):
+        return None
+    base = latest_page().rsplit("/releases/", 1)[0]
+    url = f"{base}/releases/download/{tag}/Mike-windows-{version}.zip"
+    try:                                     # a release without a Windows build
+        request = Request(url, method="HEAD",
+                          headers={"User-Agent": f"Mike/{current_version()} (update check)"})
+        with urlopen(request, timeout=TIMEOUT) as response:
+            size = int(response.headers.get("Content-Length") or 0)
+    except HTTPError as exc:
+        if exc.code == 404:
+            return None
+        raise
+    return Update(version=version, url=url, size=size, sha256="", notes="",
+                  page=f"{base}/releases/tag/{tag}")
 
 
 def updates_dir() -> Path:
