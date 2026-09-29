@@ -38,6 +38,7 @@ Mike stores the following in its data folder on your computer
 | **Activity** — what Mike did (files written, apps opened, commands run) | So you can always see what Mike did | **Settings → Privacy → Clear activity history** |
 | **Preferences** — your name, theme, voice and other settings | To remember your choices | **Settings → Privacy → Reset Mike** |
 | **Logs** — technical records of what Mike did, which can include parts of your requests, file names and commands | To diagnose problems | Kept to a few MB and replaced automatically; erased by **Reset Mike** |
+| **Text read from scans and photos** — when you ask Mike to read a scanned PDF or a photo of notes, the words Windows' text reader found | So a scan is only read once | Erased by **Reset Mike**. Never leaves your computer |
 | **Your last voice recording** — a temporary file of the last thing you said by voice | To turn your speech into text | Overwritten by the next recording; erased by **Reset Mike** |
 | **Your Fast mode connection, if you connect it** — a Cloudflare sign-in token, and your Cloudflare account's ID and name | To use your Cloudflare account for Fast mode | **Settings → Speed → Disconnect**, or **Reset Mike**. On Windows it's encrypted so only your Windows user can read it |
 | **Your sign-in, if you have an account** — a session token, and a copy of your name, email and photo so Mike can show them offline | To keep you signed in | **Settings → Account → Sign out**, or **Reset Mike**. On Windows the session is encrypted so only your Windows user can read it |

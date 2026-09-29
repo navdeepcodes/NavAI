@@ -144,3 +144,9 @@ def _erase_traces() -> None:
             path.unlink(missing_ok=True)
         except Exception:
             logger.exception("Could not remove %s during reset.", path)
+    # Text Mike read out of scans and photos (OCR), kept so it's only paid for once.
+    try:
+        import shutil
+        shutil.rmtree(storage.data_dir() / "doc_cache", ignore_errors=True)
+    except Exception:
+        logger.exception("Could not remove the document cache during reset.")

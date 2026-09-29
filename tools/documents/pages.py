@@ -205,8 +205,9 @@ class Doc:
         raw = _read_text_file(self.file)
         if raw is None:
             raise DocumentUnreadable(
-                f"{self.file.name} isn't a text document Mike can read. Mike reads PDF, Word "
-                "(.docx), PowerPoint (.pptx), plain text and pictures of text.")
+                f"{self.file.name} is not a text document -- it looks like binary data. Mike reads PDF, "
+                "Word (.docx), PowerPoint (.pptx), plain text and pictures of text; for anything else, "
+                "see_screen shows what's on screen.")
         lines = raw.splitlines()
         part, size, first = [], 0, 1
         for number, line in enumerate(lines, start=1):
@@ -558,9 +559,15 @@ def read(path: str, pages=None, max_chars: int = READ_CHARS) -> dict:
     if shown and not any(doc.text(n)[0].strip() for n in shown):
         result["status"] = "error"
         result["retry_safe"] = False
-        result["error"] = f"No text could be read from {doc.file.name}" + (
-            f": it looks like a scan and {ocr.unavailable_reason()}."
-            if doc.kind in ("pdf", "image") and not ocr.available() else ".")
+        name = doc.file.name
+        if doc.kind == "image":
+            result["error"] = (f"No text could be read from {name}: it's a picture (binary data) with no text I can "
+                               "read in it. To see what a picture shows, use see_screen with it on screen.")
+        elif doc.kind == "pdf" and not ocr.available():
+            result["error"] = (f"No text could be extracted from {name}: it looks like a scan and "
+                               f"{ocr.unavailable_reason()}.")
+        else:
+            result["error"] = f"No text could be extracted from {name} ({doc.file.suffix or 'no extension'})."
     return result
 
 

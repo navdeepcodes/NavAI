@@ -33,20 +33,20 @@ Ollama (MIT, installed separately) and is subject to its own licence, which
 |---|---|---|---|
 | annotated-types | 0.7.0 | MIT License | https://github.com/annotated-types/annotated-types |
 | anyio | 4.14.1 | MIT | https://anyio.readthedocs.io/en/latest/ |
-| av | — | BSD-3-Clause |  |
+| av | 18.1.0 | BSD-3-Clause | https://github.com/PyAV-Org/PyAV/issues |
 | certifi | 2026.6.17 | MPL-2.0 | https://github.com/certifi/python-certifi |
 | cffi | 2.0.0 | MIT | https://cffi.readthedocs.io/ |
 | charset-normalizer | 3.4.7 | MIT | https://github.com/jawah/charset_normalizer/blob/master/CHANGELOG.md |
-| click | — | BSD-3-Clause |  |
-| comtypes | — | MIT |  |
+| click | 8.5.0 | BSD-3-Clause | https://click.palletsprojects.com/page/changes/ |
+| comtypes | 1.4.16 | MIT | https://github.com/enthought/comtypes |
 | cryptography | 49.0.0 | Apache-2.0 OR BSD-3-Clause | https://cryptography.io/en/latest/changelog/ |
-| ctranslate2 | — | MIT |  |
+| ctranslate2 | 4.8.2 | MIT | https://opennmt.net |
 | distro | 1.9.0 | Apache License, Version 2.0 | https://github.com/python-distro/distro |
 | et_xmlfile | 2.0.0 | MIT | https://foss.heptapod.net/openpyxl/et_xmlfile |
-| faster-whisper | — | MIT |  |
-| filelock | — | Unlicense |  |
-| flatbuffers | — | Apache-2.0 |  |
-| fsspec | — | BSD-3-Clause |  |
+| faster-whisper | 1.2.1 | MIT | https://github.com/SYSTRAN/faster-whisper |
+| filelock | 3.32.6 | MIT | https://py-filelock.readthedocs.io |
+| flatbuffers | 25.12.19 | Apache 2.0 | https://google.github.io/flatbuffers/ |
+| fsspec | 2026.7.0 | BSD-3-Clause | https://filesystem-spec.readthedocs.io/en/latest/changelog.html |
 | google-api-core | 2.31.0 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-api-core |
 | google-api-python-client | 2.198.0 | Apache 2.0 | https://github.com/googleapis/google-api-python-client/ |
 | google-auth | 2.55.1 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth |
@@ -54,11 +54,11 @@ Ollama (MIT, installed separately) and is subject to its own licence, which
 | google-auth-oauthlib | 1.4.0 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/google-auth-oauthlib |
 | googleapis-common-protos | 1.75.0 | Apache 2.0 | https://github.com/googleapis/google-cloud-python/tree/main/packages/googleapis-common-protos |
 | h11 | 0.16.0 | MIT | https://github.com/python-hyper/h11 |
-| hf-xet | — | Apache-2.0 |  |
+| hf-xet | 1.6.0 | Apache-2.0 | https://huggingface.co/docs/hub/xet/index |
 | httpcore | 1.0.9 | BSD-3-Clause | https://www.encode.io/httpcore |
 | httplib2 | 0.32.0 | MIT | https://github.com/httplib2/httplib2 |
 | httpx | 0.28.1 | BSD-3-Clause | https://github.com/encode/httpx/blob/master/CHANGELOG.md |
-| huggingface_hub | — | Apache-2.0 |  |
+| huggingface_hub | 1.31.0 | Apache-2.0 | https://github.com/huggingface/huggingface_hub |
 | idna | 3.18 | BSD-3-Clause | https://github.com/kjd/idna/blob/master/HISTORY.md |
 | jiter | 0.16.0 | MIT | https://github.com/pydantic/jiter/ |
 | lxml | 6.1.3 | BSD-3-Clause | https://lxml.de/ |
@@ -67,7 +67,7 @@ Ollama (MIT, installed separately) and is subject to its own licence, which
 | numpy | 2.5.0 | BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0 | https://numpy.org |
 | oauthlib | 3.3.1 | BSD-3-Clause | https://github.com/oauthlib/oauthlib |
 | ollama | 0.6.2 | MIT | https://ollama.com |
-| onnxruntime | — | MIT |  |
+| onnxruntime | 1.30.0 | MIT License | https://onnxruntime.ai |
 | openpyxl | 3.1.5 | MIT | https://openpyxl.readthedocs.io |
 | packaging | 26.2 | Apache-2.0 OR BSD-2-Clause | https://packaging.pypa.io/ |
 | pillow | 12.3.0 | MIT-CMU | https://pillow.readthedocs.io/en/stable/releasenotes/index.html |
@@ -91,15 +91,15 @@ Ollama (MIT, installed separately) and is subject to its own licence, which
 | python-docx | 1.2.0 | MIT | https://github.com/python-openxml/python-docx/blob/master/HISTORY.rst |
 | python-dotenv | 1.2.2 | BSD-3-Clause | https://github.com/theskumar/python-dotenv |
 | python-pptx | 1.0.2 | MIT | https://github.com/scanny/python-pptx/blob/master/HISTORY.rst |
-| pywin32 | — | PSF-2.0 |  |
-| PyYAML | — | MIT |  |
+| pywin32 | 312 | PSF | https://github.com/mhammond/pywin32 |
+| PyYAML | 6.0.3 | MIT | https://pyyaml.org/ |
 | requests | 2.34.2 | Apache-2.0 | https://requests.readthedocs.io |
 | requests-oauthlib | 2.0.0 | ISC | https://github.com/requests/requests-oauthlib |
 | shiboken6 | 6.11.1 | LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only | https://pyside.org |
 | sniffio | 1.3.1 | MIT OR Apache-2.0 | https://github.com/python-trio/sniffio |
 | sounddevice | 0.5.5 | MIT | https://python-sounddevice.readthedocs.io/ |
 | soundfile | 0.14.0 | BSD 3-Clause License | https://github.com/bastibe/python-soundfile |
-| tokenizers | — | Apache-2.0 |  |
+| tokenizers | 0.23.2 | Apache Software License | https://github.com/huggingface/tokenizers |
 | tqdm | 4.68.3 | MPL-2.0 AND MIT | https://tqdm.github.io |
 | typing-inspection | 0.4.2 | MIT | https://github.com/pydantic/typing-inspection |
 | typing_extensions | 4.15.0 | PSF-2.0 | https://github.com/python/typing_extensions/issues |
