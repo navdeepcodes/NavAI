@@ -1070,9 +1070,9 @@ class _SettingsView(QScrollArea):
     def _current_accent_name(self) -> str:
         try:
             from config import preferences
-            return str(preferences.get("accent", "amber") or "amber").lower()
+            return str(preferences.get("accent", "silver") or "silver").lower()
         except Exception:
-            return "amber"
+            return "silver"
 
     def _pick_accent(self, name: str) -> None:
         try:
@@ -1792,7 +1792,7 @@ QPushButton#stop {{
 }}
 QPushButton#stop:hover {{ color: {style.STOP}; border-color: {style.STOP}; }}
 QPushButton#allow {{
-    background: {style.accent()}; color: #17140F;
+    background: {style.accent()}; color: {style.on_accent()};
     border: none; border-radius: 8px; padding: 7px 18px;
     font-size: 13px; font-weight: 600;
 }}

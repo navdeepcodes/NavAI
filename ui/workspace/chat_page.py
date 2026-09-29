@@ -231,7 +231,7 @@ class _BrainBanner(QFrame):
             b.setFont(style.font(style.SMALL, QFont.Weight.DemiBold))
             if primary:
                 b.setStyleSheet(
-                    f"QPushButton{{background:{style.accent()};color:#17140F;border:none;"
+                    f"QPushButton{{background:{style.accent()};color:{style.on_accent()};border:none;"
                     f"border-radius:9px;padding:7px 14px;}}")
             else:
                 b.setStyleSheet(

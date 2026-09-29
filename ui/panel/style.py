@@ -28,21 +28,21 @@ from PySide6.QtGui import QColor, QFont
 #    apply_theme() before the UI is built is all it takes to dress the whole
 #    surface either way.
 _LIGHT = {
-    "GROUND": "#FAF9F7", "GROUND_RAISED": "#F1EFEB", "GROUND_SUNK": "#EBE9E4",
-    "HAIRLINE": "#DEDCD6",
-    "INK": "#0D0D0C", "INK_SOFT": "#55534F", "INK_MUTE": "#79766F",
-    "INK_FAINT": "#CECBC3",
+    "GROUND": "#F7F7F8", "GROUND_RAISED": "#EEEEF0", "GROUND_SUNK": "#E6E6E9",
+    "HAIRLINE": "#DCDCE0",
+    "INK": "#0E0E10", "INK_SOFT": "#525459", "INK_MUTE": "#787A80",
+    "INK_FAINT": "#CACBCF",
     # the lifted surface a hand rests on: the composer, the corner card
     "SURFACE": "#FFFFFF",
 }
 _DARK = {
-    # Deep graphite with only a trace of the warm key: darker and quieter
-    # than the old brown-black, so the words carry the page.
-    "GROUND": "#111111", "GROUND_RAISED": "#1A1A19", "GROUND_SUNK": "#0B0B0B",
-    "HAIRLINE": "#2A2A28",
-    "INK": "#F2F1EE", "INK_SOFT": "#B8B6B1", "INK_MUTE": "#85837E",
-    "INK_FAINT": "#3A3936",
-    "SURFACE": "#1C1C1B",
+    # Black and grey, no warm cast: deep near-black grounds, cool graphite
+    # surfaces, silver ink -- so the words carry the page.
+    "GROUND": "#0F0F10", "GROUND_RAISED": "#18181A", "GROUND_SUNK": "#09090A",
+    "HAIRLINE": "#28282B",
+    "INK": "#F3F3F4", "INK_SOFT": "#B9BAC0", "INK_MUTE": "#84858B",
+    "INK_FAINT": "#38383C",
+    "SURFACE": "#1B1B1D",
 }
 
 # Set at import to light, replaced by apply_theme() at startup. Declared here so
@@ -133,13 +133,15 @@ def is_dark() -> bool:
 
 # ── The accent: warm, living, personal. Read from preferences everywhere so
 #    a user's chosen colour flows through the whole surface from one setting.
-_DEFAULT_ACCENT = "#E7A54F"   # a warm amber-gold — presence, not decoration
+# Silver on the dark ground, graphite on the light: a metal, not a colour.
+# "silver" is the default and follows the theme; the rest are optional.
+_SILVER = {"dark": "#C7C9CF", "light": "#3B3E45"}
 _ACCENT_PRESETS = {
-    "amber":  "#E7A54F",
-    "coral":  "#E8795B",
-    "sky":    "#5AA6E0",
-    "sage":   "#8DB87A",
-    "orchid": "#B98AD6",
+    "silver":   "#C7C9CF",
+    "graphite": "#8A8D95",
+    "sky":      "#5AA6E0",
+    "sage":     "#8DB87A",
+    "orchid":   "#B98AD6",
 }
 
 # Semantic signal — separate from the accent, never used decoratively.
@@ -154,13 +156,21 @@ def accent() -> str:
         from config import preferences
 
         chosen = str(preferences.get("accent", "") or "").strip().lower()
-        if chosen in _ACCENT_PRESETS:
+        if chosen in _ACCENT_PRESETS and chosen != "silver":
             return _ACCENT_PRESETS[chosen]
         if chosen.startswith("#") and len(chosen) in (4, 7):
             return chosen
     except Exception:
         pass
-    return _DEFAULT_ACCENT
+    return _SILVER["dark" if is_dark() else "light"]
+
+
+def on_accent() -> str:
+    """The text colour that reads on the accent: near-black on a light
+    accent (silver), near-white on a dark one (graphite)."""
+    c = QColor(accent())
+    luma = (0.2126 * c.redF() + 0.7152 * c.greenF() + 0.0722 * c.blueF())
+    return "#0F0F10" if luma > 0.5 else "#F5F5F6"
 
 
 def accent_presets() -> dict[str, str]:

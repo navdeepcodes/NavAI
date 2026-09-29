@@ -67,12 +67,12 @@ def paint(p: QPainter, rect: QRectF, name: str, photo: Path | None) -> None:
         p.drawPath(circle)
         initial = (name[:1] or "").upper()
         if initial:
-            p.setPen(QColor("#17140F"))
+            p.setPen(QColor(style.on_accent()))
             p.setFont(style.font(max(11, int(rect.height() * 0.42)), QFont.Weight.DemiBold))
             p.drawText(rect, Qt.AlignCenter, initial)
         else:
             inset = rect.width() * 0.25
-            draw(p, "user", rect.adjusted(inset, inset, -inset, -inset), QColor("#17140F"),
+            draw(p, "user", rect.adjusted(inset, inset, -inset, -inset), QColor(style.on_accent()),
                  max(1.4, rect.width() / 20))
     p.restore()
 

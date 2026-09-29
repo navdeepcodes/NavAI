@@ -435,7 +435,8 @@ def test_the_app_icon_is_the_nib():
     assert {(16, 16), (32, 32), (256, 256)} <= set(im.info["sizes"])
     im.size = (256, 256)
     r, g, b, _a = im.convert("RGBA").getpixel((40, 128))
-    assert r > g > b, "the tile is the warm terracotta, not the old ink square"
+    assert max(r, g, b) < 90 and max(r, g, b) - min(r, g, b) < 24, (
+        "the tile is graphite: dark and grey, no colour cast")
 
 
 # ── voice: the nib draws the real sound ───────────────────────

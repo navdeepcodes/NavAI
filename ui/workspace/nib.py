@@ -11,7 +11,7 @@ from __future__ import annotations
 from functools import lru_cache
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QTransform
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPainterPath, QTransform
 
 #: The pointer angle: the nib leans back like a cursor (and like a pen held
 #: in a right hand), tip up-left.
@@ -59,6 +59,19 @@ def band() -> QPainterPath:
         b.intersected(up.map(_outline())))
 
 
+def _metal(tip: QPointF, angle: float, size: float, colour: QColor) -> QLinearGradient:
+    """A soft sheen down the nib's length -- brighter at the tip, deeper at the
+    heel -- so it reads as polished metal rather than a flat shape."""
+    import math
+    a = math.radians(angle)
+    axis = QPointF(-math.sin(a), math.cos(a))
+    grad = QLinearGradient(tip, QPointF(tip.x() + axis.x() * size, tip.y() + axis.y() * size))
+    grad.setColorAt(0.0, colour.lighter(128))
+    grad.setColorAt(0.5, colour)
+    grad.setColorAt(1.0, colour.darker(128))
+    return grad
+
+
 def paint(p: QPainter, tip: QPointF, size: float, colour: QColor,
           collar: QColor | None = None, angle: float = ANGLE) -> None:
     """Draw the nib with its writing tip at `tip`, `size` px tall."""
@@ -68,7 +81,7 @@ def paint(p: QPainter, tip: QPointF, size: float, colour: QColor,
     tr.scale(size / 0.68, size / 0.68)
     p.save()
     p.setPen(Qt.NoPen)
-    p.setBrush(colour)
+    p.setBrush(_metal(tip, angle, size, colour))
     p.drawPath(tr.map(body()))
     if collar is not None:
         p.setBrush(collar)

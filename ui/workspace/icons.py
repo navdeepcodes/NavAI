@@ -347,7 +347,7 @@ class IconButton(QAbstractButton):
             p.setPen(Qt.NoPen)
             p.setBrush(fill)
             p.drawEllipse(QRectF(0.5, 0.5, w - 1, h - 1))
-            ink = QColor("#17140F") if enabled else QColor(style.INK_MUTE)
+            ink = QColor(style.on_accent()) if enabled else QColor(style.INK_MUTE)
         elif self._variant == "solid":
             # a filled ink disc — used for Stop, which must be unmistakable
             p.setPen(Qt.NoPen)

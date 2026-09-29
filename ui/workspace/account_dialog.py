@@ -46,7 +46,7 @@ QPushButton#primary {{
     background: {style.INK}; color: {style.GROUND}; border: none;
     border-radius: 10px; padding: 11px 18px;
 }}
-QPushButton#primary:hover {{ background: {acc}; color: #17140F; }}
+QPushButton#primary:hover {{ background: {acc}; color: {style.on_accent()}; }}
 QPushButton#primary:disabled {{ background: {style.INK_FAINT}; color: {style.GROUND}; }}
 QPushButton#provider {{
     background: {style.GROUND_RAISED}; color: {style.INK};

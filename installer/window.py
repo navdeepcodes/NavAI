@@ -24,12 +24,12 @@ from installer import core
 
 # Mike's palette, restated rather than imported: the installer must keep
 # working even if it is ever shipped without the full ui package.
-PAPER = "#FAF9F7"
-PAPER_DIM = "#F1EFEB"
-INK = "#0D0D0C"
-GRAPHITE = "#55534F"
-MIST = "#DEDCD6"
-ACCENT = "#C46A3F"
+PAPER = "#F7F7F8"
+PAPER_DIM = "#EEEEF0"
+INK = "#0E0E10"
+GRAPHITE = "#525459"
+MIST = "#DCDCE0"
+ACCENT = "#3B3E45"
 GOOD = "#5F8D5A"
 UI_FONT = "Segoe UI"
 
@@ -84,7 +84,7 @@ class InstallerWindow(QWidget):
         p.drawPath(body)
 
     def _mark(self) -> QWidget:
-        """Mike's own mark: the nib on its terracotta tile, as on the app icon
+        """Mike's own mark: the nib on its graphite tile, as on the app icon
         (three bars on ink if the app's drawing isn't available)."""
         class Mark(QWidget):
             def __init__(self) -> None:
@@ -98,10 +98,10 @@ class InstallerWindow(QWidget):
                 try:
                     from PySide6.QtCore import QRectF
                     from ui.workspace import nib
-                    p.setBrush(QColor("#C4602F"))
+                    p.setBrush(QColor("#1E1F23"))
                     p.drawRoundedRect(0, 0, 46, 46, 11, 11)
-                    nib.paint_centred(p, QRectF(0, 0, 46, 46), QColor("#F6EFE3"),
-                                      QColor("#7A2F14"), scale=0.72)
+                    nib.paint_centred(p, QRectF(0, 0, 46, 46), QColor("#D4D6DB"),
+                                      QColor("#6B6E76"), scale=0.72)
                     return
                 except Exception:
                     pass

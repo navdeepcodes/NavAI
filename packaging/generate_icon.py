@@ -1,7 +1,7 @@
 """Regenerates packaging/icon.ico (and icon_256.png) from Mike's mark.
 
 The mark is the nib — a fountain-pen nib angled like a mouse pointer, cream on
-a warm terracotta tile — drawn from the very same shape the app paints at
+a graphite tile — drawn from the very same shape the app paints at
 runtime (ui/workspace/nib.py), so the taskbar, the Start menu, the shortcut
 and the window's own mark can never drift apart.
 
@@ -25,10 +25,10 @@ sys.path.insert(0, REPO_ROOT)
 
 SIZES = [16, 24, 32, 48, 64, 128, 256]
 
-TILE_TOP = "#D2703F"
-TILE_BOTTOM = "#B5552C"
-NIB = "#F6EFE3"
-COLLAR = "#7A2F14"
+TILE_TOP = "#33353B"
+TILE_BOTTOM = "#141517"
+NIB = "#D4D6DB"
+COLLAR = "#6B6E76"
 
 
 def render(px: int):

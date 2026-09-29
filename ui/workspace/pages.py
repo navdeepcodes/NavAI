@@ -215,7 +215,7 @@ QLineEdit#field:focus, QPlainTextEdit#field:focus {{
     border: 1px solid {style.accent()};
 }}
 QPushButton#pill {{
-    background: {style.accent()}; color: #17140F;
+    background: {style.accent()}; color: {style.on_accent()};
     border: none; border-radius: 9px; padding: 8px 18px;
 }}
 QPushButton#pill:hover {{ background: {QColor(style.accent()).lighter(106).name()}; }}
@@ -363,7 +363,7 @@ class GeneralTab(_Tab):
         arow.setContentsMargins(0, 0, 0, 0)
         arow.setSpacing(6)
         self._swatches: list[_Swatch] = []
-        cur_accent = str(preferences.get("accent", "") or "amber").lower()
+        cur_accent = str(preferences.get("accent", "") or "silver").lower()
         for name, colour in style.accent_presets().items():
             sw = _Swatch(name, colour, self._set_accent)
             sw.set_selected(name == cur_accent)
