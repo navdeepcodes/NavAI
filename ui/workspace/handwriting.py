@@ -6,8 +6,8 @@ domain; see ui/fonts/HERSHEY.txt). Each stroke is smoothed, then drawn over
 time at a human pace — faster on straight runs, slower through curves, a lift
 between strokes, a breath between words — with ink that swells and thins by
 the direction of travel, the way a broad fountain-pen nib does, and that
-lands slightly glossy before it dries to the page colour. No pen is drawn:
-the words write themselves.
+lands slightly glossy before it dries to the page colour. The nib itself rides
+the pen point the whole time.
 """
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from functools import lru_cache
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 
+from ui.workspace import nib as _nib
 
 #: Hershey units from the top of a capital to the baseline.
 _CAP = 21.0
@@ -167,3 +168,12 @@ class Script:
                        QPointF(ox + ex * scale, oy + ey * scale))
         px, py, _down = self.pen_at(t)
         return QPointF(ox + px * scale, oy + py * scale)
+
+
+def paint_pen(p: QPainter, tip: QPointF, size: float, colour: QColor,
+              collar: QColor | None, down: bool, wobble: float = 0.0) -> None:
+    """The nib at the pen point: pressed to the page while writing, lifted
+    a touch between strokes."""
+    lift = 0.0 if down else size * 0.08
+    _nib.paint(p, QPointF(tip.x() + lift * 0.6, tip.y() - lift), size, colour,
+               collar, _nib.ANGLE + wobble)
