@@ -121,8 +121,10 @@ class IDETool(BaseTool):
             if result.get("connected"):
                 return (f"Opened the folder {result['path']} in VS Code, and its window is "
                         "connected: files you write and servers you start there show in it.", True)
-            return (f"Opening the folder {result['path']} in VS Code, in its own window (or the "
-                    "one that already has it). It can take a few seconds to appear.", True)
+            return (f"Opened the folder {result['path']} in VS Code, but its window hasn't connected "
+                    "to me yet. A new folder usually shows VS Code's \"Do you trust the authors?\" "
+                    "prompt, and until they click \"Yes, I trust\" my extension stays off. Tell "
+                    "them that; files you write are still saved to disk.", True)
         where = f"{result['path']}:{line}" if line else result["path"]
         return (f"Opened {where} in VS Code and brought it to the front.", True)
 

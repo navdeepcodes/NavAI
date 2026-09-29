@@ -283,7 +283,7 @@ def _window_for(path: str) -> IDEContext | None:
 
 #: How long opening a project waits for its window to connect: a cold VS Code
 #: on the target laptop took 14.5s to open a folder and connect.
-FOLDER_CONNECT_SECONDS = 25.0
+FOLDER_CONNECT_SECONDS = 20.0
 
 
 def _await_window(folder: str) -> bool:

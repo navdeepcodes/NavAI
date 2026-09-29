@@ -247,6 +247,12 @@ function track(execution, terminal, byMike) {
   while (runs.length > MAX_RUNS) {
     const old = runs.shift();
     if (!old.byMike || !old.running) runsById.delete(old.id);
+    // Its output is no longer shared; don't keep it alive through the map.
+    if (!old.running) {
+      for (const [execution, run] of runsByExecution) {
+        if (run === old) runsByExecution.delete(execution);
+      }
+    }
   }
 
   (async () => {

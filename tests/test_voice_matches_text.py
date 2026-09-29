@@ -42,3 +42,11 @@ def test_a_long_first_sentence_starts_speaking_at_a_pause():
     assert len(first) == 1 and text[:first[0]].endswith("too far,")
     assert _sentence_cuts(text) == [], "only the very first words start early"
     assert _sentence_cuts("Sure, and", first=True) == [], "a short opening waits for its sentence"
+
+
+def test_a_list_marker_or_abbreviation_does_not_end_a_sentence():
+    text = "Steps:\n1. Install Node first, e.g. from the site. Then run it. Done"
+    ends = [text[:c] for c in _sentence_cuts(text)]
+    assert not any(e.endswith("\n1.") for e in ends), "cut after the list number"
+    assert not any(e.endswith("e.g.") for e in ends), "cut after an abbreviation"
+    assert ends[0].endswith("from the site.") and ends[-1].endswith("Then run it.")

@@ -264,6 +264,7 @@ class UIController(QObject):
         self._stream_bubble = None
         self._action_card = None
         self._response_text = ""
+        self._spoken_up_to = 0          # counted in _response_text: a stale one skips the next reply's first words
         self._speaker.stop()
         # A new turn is the right moment to give the preferred voice another
         # go. Retrying mid-reply turns one failure into a stutter of them;
@@ -642,6 +643,8 @@ class UIController(QObject):
 
         self._stream_bubble = None
         self._action_card = None
+        self._response_text = ""
+        self._spoken_up_to = 0
 
         self._page.input.set_enabled(True)
         self._page.input.focus()
@@ -1270,6 +1273,9 @@ def _humanize_error(error: str) -> str:
 #: few seconds to write, and the voice sat silent for all of it.
 _FIRST_CLAUSE_WORDS = 8
 
+#: Words a full stop after them doesn't end the sentence.
+_ABBREVIATIONS = frozenset({"e.g", "i.e", "vs", "mr", "mrs", "ms", "dr", "st", "no", "approx"})
+
 
 def _sentence_cuts(pending: str, first: bool = False) -> list[int]:
     """Where the not-yet-spoken text can be cut into finished sentences, as
@@ -1281,7 +1287,19 @@ def _sentence_cuts(pending: str, first: bool = False) -> list[int]:
     def outside_code(end: int) -> bool:
         return pending.count("```", 0, end) % 2 == 0
 
-    cuts = [m.end() for m in re.finditer(r"[.!?](?=\s)", pending) if outside_code(m.end())]
+    def ends_sentence(m) -> bool:
+        if not outside_code(m.end()):
+            return False
+        if m.group() != ".":
+            return True
+        line_start = pending.rfind("\n", 0, m.start()) + 1
+        before = pending[line_start:m.start()]
+        if re.fullmatch(r"\s*\d{1,2}", before):        # "1." opening a list item
+            return False
+        word = re.search(r"([A-Za-z.]+)$", before)
+        return not (word and word.group(1).lower() in _ABBREVIATIONS)
+
+    cuts = [m.end() for m in re.finditer(r"[.!?](?=\s)", pending) if ends_sentence(m)]
     if first and not cuts:
         for m in re.finditer(r"(?:,|\s[-–—])(?=\s)", pending):
             if len(pending[:m.end()].split()) >= _FIRST_CLAUSE_WORDS and outside_code(m.end()):

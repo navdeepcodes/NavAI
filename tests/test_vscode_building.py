@@ -356,3 +356,34 @@ def test_check_syntax_adds_what_vs_code_knows(tmp_path, monkeypatch):
         "reported": True, "problems": [{"line": 1, "severity": "error", "message": "Cannot find name 'missing'."}]}})
     result = checks.check_syntax(str(path))
     assert result["valid"] is False and "Cannot find name 'missing'" in result["result"]
+
+
+def test_a_stop_the_editor_did_not_confirm_is_not_reported_as_stopped(monkeypatch, tmp_path):
+    monkeypatch.setattr(manager, "run_in_terminal", lambda *a, **k: {
+        "ok": True, "id": "r9", "pid": 4343, "window": "w1", "terminal": "t", "running": True, "output": ""})
+    monkeypatch.setattr(manager, "run_output", lambda w, r: {"ok": True, "running": True, "output": ""})
+    monkeypatch.setattr(manager, "stop_run", lambda w, r: {"ok": False, "error": "no record"})
+    try:
+        actions.run_background("npm run dev", cwd=str(tmp_path))
+        result = actions.kill_process(4343)
+        assert "error" in result and "still be running" in result["error"]
+    finally:
+        with actions._processes_lock:
+            actions._processes.pop(4343, None)
+
+
+def test_a_run_the_editor_can_no_longer_answer_for_stops_showing_as_running(monkeypatch):
+    run = actions._EditorRun("w1", "r1", 4444, "t")
+    run.FRESH = 0.0
+    monkeypatch.setattr(manager, "run_output", lambda w, r: {"ok": False, "error": "window gone"})
+    assert run.poll() is None and run.poll() is None, "a miss or two isn't the end"
+    assert run.poll() == -1, "three misses in a row: it can't be called running"
+
+
+def test_output_buffers_of_a_long_running_command_stay_bounded():
+    import io
+    stream = io.StringIO("".join(f"line {i}\n" for i in range(5000)))
+    bucket, merged = [], []
+    actions._collect(stream, bucket, merged)
+    assert len(bucket) <= 2000 and len(merged) <= 2000
+    assert bucket[-1] == "line 4999\n", "the newest lines are the ones kept"

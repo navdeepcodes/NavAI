@@ -105,7 +105,6 @@ class _Art(QWidget):
         p.setRenderHint(QPainter.Antialiasing, True)
         cx, cy = self.width() / 2, self.height() / 2
         accent = style.qaccent()
-        ink = QColor(style.INK)
         mute = QColor(style.INK_FAINT)
 
         if self._kind == "sign":

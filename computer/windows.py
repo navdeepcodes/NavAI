@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import ctypes
 import re
-import subprocess
 import time
 from ctypes import wintypes
 

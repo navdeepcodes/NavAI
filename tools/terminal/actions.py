@@ -140,8 +140,10 @@ def _collect(stream, bucket: list[str], merged: list[str]) -> None:
         for line in iter(stream.readline, ""):
             bucket.append(line)
             merged.append(line)
-            if len(merged) > 2000:          # a chatty server can't grow this forever
-                del merged[:1000]
+            # a chatty server can't grow these forever
+            for lines in (bucket, merged):
+                if len(lines) > 2000:
+                    del lines[:1000]
     except Exception:
         pass
     finally:
@@ -222,6 +224,7 @@ class _EditorRun:
         self._state: dict = {"running": True}
         self._seen = 0.0
         self._ended = False
+        self._misses = 0
 
     def _look(self) -> dict:
         if self._ended or time.monotonic() - self._seen < self.FRESH:
@@ -231,8 +234,17 @@ class _EditorRun:
         self._seen = time.monotonic()
         if state.get("ok"):
             self._state = state
+            self._misses = 0
             if not state.get("running"):
                 self.returncode = state.get("exitCode")
+                self._ended = True
+        else:
+            # The editor can't say (its window closed, or it dropped the run
+            # from its history): a few misses in a row and it's no longer
+            # something Mike can call running.
+            self._misses += 1
+            if self._misses >= 3:
+                self._state = {"running": False, "output": self._state.get("output", "")}
                 self._ended = True
         return self._state
 
@@ -246,12 +258,16 @@ class _EditorRun:
     def output(self) -> str:
         return _clip(str(self._look().get("output") or "").strip())
 
-    def stop(self) -> None:
+    def stop(self) -> bool:
+        """True once the editor confirms it ended; False if it couldn't be
+        reached or no longer knows the run."""
         from ide import manager
         result = manager.stop_run(self.window, self.run_id)
-        if result.get("ok"):
-            self._state, self._ended = result, True
-            self.returncode = result.get("exitCode")
+        if not result.get("ok"):
+            return False
+        self._state, self._ended = result, True
+        self.returncode = result.get("exitCode")
+        return not result.get("running")
 
 
 #: Ids for editor runs whose shell didn't say its process id.
@@ -470,8 +486,11 @@ def kill_process(pid: int) -> dict:
         if entry.get("editor"):
             # In the student's VS Code terminal: stopped there (Ctrl+C, then
             # the terminal closed if that isn't enough).
-            process.stop()
-            return {"pid": pid, "running": False, "result": f"Stopped pid {pid} in their VS Code terminal."}
+            if process.stop():
+                return {"pid": pid, "running": False, "result": f"Stopped pid {pid} in their VS Code terminal."}
+            return {"error": f"Couldn't stop pid {pid}: VS Code didn't confirm it -- the window may be "
+                             "closed or reloaded. It may still be running; the student can stop it in "
+                             "the terminal."}
         # process was started with spawn_detached, so it leads its own
         # group/session — terminate_tree stops that whole group, which is
         # what actually reaches children a shell spawned (a dev server's

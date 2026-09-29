@@ -13,7 +13,6 @@ from brain.core_runtime import CoreRuntime
 from ide import manager as ide_manager
 from logs.logger import logger
 from ui.controller.ui_controller import UIController
-from ui.panel import style
 from ui.system.global_hotkey import GlobalHotkey
 from ui.workspace.workspace import MikeWorkspace
 from ui.workspace.corner import CornerPresence

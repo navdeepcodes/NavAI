@@ -25,7 +25,6 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any
 
 from brain import mission_checks as checks
 from hostplatform import storage

@@ -1406,12 +1406,13 @@ class CoreRuntime:
             return {
                 "status": "success",
                 "result": (
-                    f"This turned out to be a server: it's listening on port {ports} "
-                    f"and still running, so it was kept running in the background "
-                    f"(pid {result.get('pid')}) rather than waited for. check_url it; "
-                    "process_output shows what it prints, kill_process stops it. "
-                    "Start servers with run_background -- with their VS Code "
-                    "connected, that runs them in its terminal."
+                    f"This is still running and listening on port {ports}, so it was kept "
+                    f"running in the background (pid {result.get('pid')}) rather than "
+                    "waited for. If it's a server, check_url it. If it was meant to "
+                    "finish (a test run, a build), it hasn't: read process_output and "
+                    "list_processes until it exits before saying how it went. "
+                    "kill_process stops it. Start servers with run_background -- with "
+                    "their VS Code connected, that runs them in its terminal."
                 ),
                 **result,
             }

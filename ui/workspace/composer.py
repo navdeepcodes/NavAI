@@ -19,7 +19,6 @@ set_listening, set_responding), plus stop_requested for the Stop button.
 """
 from __future__ import annotations
 
-import math
 import os
 
 from PySide6.QtCore import QRectF, QSize, Qt, QTimer, Signal
