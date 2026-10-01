@@ -7,6 +7,10 @@ on:
         description: "Release tag to attach the build to (must already exist). Leave empty to only build."
         required: false
         default: ""
+      release_notes:
+        description: "Release notes (first line is shown in Mike's update banner)."
+        required: false
+        default: "Mike now has a real Setup.exe installer, and knows who built him."
 
 permissions:
   contents: write
@@ -41,11 +45,24 @@ jobs:
         # release tag by hand.
         run: python packaging/build_windows.py
 
+      - name: Build the Setup.exe installer (Inno Setup)
+        # The zip stays: installed copies update from it. First-time users get
+        # the Setup.exe, a normal wizard, instead of unzipping by hand.
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          $v = python -c "from config.settings import VERSION; print(VERSION)"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$v" packaging\mike.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "dist\Mike-Setup-$v.exe")) { throw "Setup.exe was not produced" }
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Mike-windows
-          path: dist/Mike-windows-*.zip
+          path: |
+            dist/Mike-windows-*.zip
+            dist/Mike-Setup-*.exe
           retention-days: 30
 
       - name: Attach to release
@@ -53,4 +70,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
-          files: dist/Mike-windows-*.zip
+          name: Mike ${{ inputs.release_tag }}
+          body: ${{ inputs.release_notes }}
+          files: |
+            dist/Mike-windows-*.zip
+            dist/Mike-Setup-*.exe

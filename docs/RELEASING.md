@@ -32,6 +32,11 @@ Windows build runs on GitHub's own Windows machines, so a Mac is enough.
    `packaging/build_windows.py`, and attaches `Mike-windows-1.1.1.zip` to the
    release. Until the zip is attached, installed copies simply don't see the
    release — there's no window where they'd try to download nothing.
+
+   The same run also builds `Mike-Setup-1.1.1.exe` (Inno Setup,
+   `packaging/mike.iss`) and attaches it. That is the file new users should
+   download: a normal install wizard, per-user, no unzipping. The zip stays
+   because installed copies update from it.
 5. **Point the website at it**: in `mike-website/public/index.html`, change
    the two `releases/download/v…/Mike-windows-….zip` links and
    `softwareVersion`; if the policy changed, run
