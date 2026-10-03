@@ -41,11 +41,76 @@ jobs:
         # release tag by hand.
         run: python packaging/build_windows.py
 
+      - name: Read the version
+        # Same single source of truth the zip name uses.
+        shell: pwsh
+        run: |
+          $v = python -c "from config.settings import VERSION; print(VERSION)"
+          "MIKE_VERSION=$v" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Mike $v"
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          if (-not (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) {
+            throw "Inno Setup did not install where expected"
+          }
+
+      - name: Build the installer (dist/Mike-Setup-<version>.exe)
+        # One double-click installer. Packages the dist/Mike folder that
+        # build_windows.py just produced; see packaging/mike.iss for why it
+        # installs per-user to the same folder as the in-app installer and
+        # keeps its uninstaller outside it.
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$env:MIKE_VERSION" packaging\mike.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          Get-ChildItem dist\Mike-Setup-*.exe | ForEach-Object { Write-Host ("{0} {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
+
+      - name: Smoke-test the installer (install, update swap, uninstall)
+        # Nobody has run this installer on a clean Windows machine yet, so CI
+        # does what a user would, silently, and fails the build if anything is
+        # off -- including the in-app updater's folder swap, which is what
+        # would strand an uninstaller kept inside the app folder.
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem dist\Mike-Setup-*.exe | Select-Object -First 1).FullName
+          $app   = Join-Path $env:LOCALAPPDATA "Programs\Mike"
+          $unins = Join-Path $env:LOCALAPPDATA "Programs\Mike Uninstall\unins000.exe"
+          $key   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6C1B0E5E-3F7A-4D58-9B2A-4D1E6A0F7C11}_is1"
+          $lnk   = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Mike.lnk"
+
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait
+          if (-not (Test-Path (Join-Path $app "Mike.exe"))) { throw "Mike.exe was not installed to $app" }
+          if (-not (Test-Path $unins))                      { throw "uninstaller missing at $unins" }
+          if (Test-Path (Join-Path $app "unins000.exe"))    { throw "uninstaller must not live inside the app folder" }
+          if (-not (Test-Path $key))                        { throw "no Apps & features entry" }
+          if (-not (Test-Path $lnk))                        { throw "no Start Menu shortcut" }
+          Write-Host "install OK"
+
+          # What the in-app updater does: swap the whole folder by renaming.
+          Move-Item $app "$app.old"
+          Copy-Item "$app.old" $app -Recurse
+          Remove-Item "$app.old" -Recurse -Force
+          if (-not (Test-Path $unins)) { throw "an update swap removed the uninstaller" }
+          Write-Host "update swap OK"
+
+          Start-Process -FilePath $unins -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          # The uninstaller hands off to a helper; give it a moment to finish.
+          for ($i = 0; $i -lt 30 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app)  { throw "uninstall left $app behind" }
+          if (Test-Path $key)  { throw "uninstall left the Apps & features entry" }
+          if (Test-Path $lnk)  { throw "uninstall left the Start Menu shortcut" }
+          Write-Host "uninstall OK"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: Mike-windows
-          path: dist/Mike-windows-*.zip
+          path: |
+            dist/Mike-windows-*.zip
+            dist/Mike-Setup-*.exe
           retention-days: 30
 
       - name: Attach to release
@@ -53,4 +118,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
-          files: dist/Mike-windows-*.zip
+          files: |
+            dist/Mike-windows-*.zip
+            dist/Mike-Setup-*.exe
