@@ -19,6 +19,10 @@ def _should_offer_install() -> bool:
     """Only for a frozen build sitting outside its install location."""
     if not getattr(sys, "frozen", False):
         return False
+    if sys.platform != "win32":
+        # The installer copies into %LOCALAPPDATA% and makes Start Menu
+        # shortcuts; a macOS .app is already its own installable unit.
+        return False
     if "--install" in sys.argv:
         return True
     if "--no-install" in sys.argv:

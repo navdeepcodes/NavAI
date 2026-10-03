@@ -220,6 +220,19 @@ def draw(p: QPainter, name: str, r: QRectF, col: QColor, width: float = 1.6) -> 
         p.drawPath(path)
         p.drawArc(QRectF(x + s * 0.44, y + s * 0.32, s * 0.24, s * 0.36), -60 * 16, 120 * 16)
         p.drawArc(QRectF(x + s * 0.44, y + s * 0.18, s * 0.40, s * 0.64), -60 * 16, 120 * 16)
+    elif name == "speaker-off":
+        # The speaker without its sound waves, struck through: "Mike is muted".
+        path = QPainterPath()
+        path.moveTo(pt(0.14, 0.40))
+        path.lineTo(pt(0.30, 0.40))
+        path.lineTo(pt(0.50, 0.22))
+        path.lineTo(pt(0.50, 0.78))
+        path.lineTo(pt(0.30, 0.60))
+        path.lineTo(pt(0.14, 0.60))
+        path.closeSubpath()
+        p.drawPath(path)
+        p.drawLine(pt(0.64, 0.38), pt(0.88, 0.62))
+        p.drawLine(pt(0.88, 0.38), pt(0.64, 0.62))
     elif name == "memory":
         star = QPainterPath()
         star.moveTo(cx, y + s * 0.10)

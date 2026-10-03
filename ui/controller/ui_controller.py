@@ -116,6 +116,10 @@ class UIController(QObject):
             self._on_voice_button
         )
 
+        mute_signal = getattr(self._page.input, "mute_toggled", None)
+        if mute_signal is not None:
+            mute_signal.connect(self._on_mute_toggled)
+
         self._voice.state_changed.connect(
             self._on_voice_state
         )
@@ -838,10 +842,26 @@ class UIController(QObject):
     def set_voice_enabled(self, enabled: bool) -> None:
         """Turning speech off should silence Mike immediately, not next turn."""
 
+        # Keep the composer's mute button in step when the change came from
+        # Settings rather than from the button itself.
+        set_muted = getattr(self._page.input, "set_muted", None)
+        if set_muted is not None:
+            set_muted(not enabled)
+
         if not enabled:
+            was_speaking = (self._speaker.is_speaking()
+                            or self._speech_pump_timer.isActive())
             self._speaker.stop()
             self._speech_pump_timer.stop()
             self._page.input.voice.set_state("idle")
+            if was_speaking:
+                # The pump that would have resumed the wake word is now off.
+                self._wake.resume()
+
+    def _on_mute_toggled(self, muted: bool) -> None:
+        """The composer's mute button: persist it, then silence Mike now."""
+        preferences.set_value("voice_enabled", not muted)
+        self.set_voice_enabled(not muted)
 
     def set_wake_word_enabled(self, enabled: bool) -> None:
 

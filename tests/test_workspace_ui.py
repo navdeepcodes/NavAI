@@ -237,6 +237,92 @@ def test_stop_silences_a_voice_reading_a_finished_answer():
     controller.shutdown()
 
 
+# ── Mute: one click, on screen, and it sticks ─────────────────
+
+def test_the_composer_has_a_mute_button_that_reflects_and_announces_state():
+    _app()
+    from config import preferences
+    from ui.workspace.composer import Composer
+
+    preferences.set_value("voice_enabled", True)
+    c = Composer()
+    seen = []
+    c.mute_toggled.connect(seen.append)
+    assert c._mute.is_muted() is False and c._mute._icon == "speaker"
+
+    c._mute.click()
+    assert seen == [True] and c._mute.is_muted() and c._mute._icon == "speaker-off"
+    assert "Unmute" in c._mute.toolTip()
+
+    c._mute.click()
+    assert seen == [True, False] and c._mute._icon == "speaker"
+
+    # Syncing from elsewhere (Settings) must not fire the signal back.
+    c.set_muted(True)
+    assert c._mute.is_muted() and seen == [True, False]
+    preferences.set_value("voice_enabled", True)
+
+
+def test_a_new_composer_starts_muted_when_voice_is_off():
+    _app()
+    from config import preferences
+    from ui.workspace.composer import Composer
+
+    preferences.set_value("voice_enabled", False)
+    try:
+        assert Composer()._mute.is_muted() is True
+    finally:
+        preferences.set_value("voice_enabled", True)
+
+
+def test_mute_button_silences_mike_now_and_persists():
+    _app()
+    from brain.core_runtime import CoreRuntime
+    from config import preferences
+    from ui.controller.ui_controller import UIController
+    from ui.workspace.workspace import MikeWorkspace
+
+    preferences.set_value("voice_enabled", True)
+    page = MikeWorkspace({})
+    controller = UIController(CoreRuntime(), page)
+    speaker = _Talking()
+    controller._speaker = speaker
+    controller._speech_pump_timer.start()
+    page.set_state("speaking")
+
+    page.input._mute.click()                   # the mute button
+    assert speaker.stopped, "muting must stop what Mike is saying right now"
+    assert preferences.get("voice_enabled") is False, "and stay muted next time"
+    assert not controller._speech_allowed()
+    assert not controller._speech_pump_timer.isActive()
+
+    page.input._mute.click()                   # unmute
+    assert preferences.get("voice_enabled") is True
+    assert controller._speech_allowed()
+    controller.shutdown()
+
+
+def test_turning_speech_off_in_settings_updates_the_mute_button():
+    _app()
+    from brain.core_runtime import CoreRuntime
+    from config import preferences
+    from ui.controller.ui_controller import UIController
+    from ui.workspace.workspace import MikeWorkspace
+
+    preferences.set_value("voice_enabled", True)
+    page = MikeWorkspace({})
+    controller = UIController(CoreRuntime(), page)
+    controller._speaker = _Talking()
+
+    preferences.set_value("voice_enabled", False)
+    controller.set_voice_enabled(False)        # what the Settings switch calls
+    assert page.input._mute.is_muted()
+    preferences.set_value("voice_enabled", True)
+    controller.set_voice_enabled(True)
+    assert not page.input._mute.is_muted()
+    controller.shutdown()
+
+
 def test_stopping_a_turn_marks_its_running_step_stopped():
     _app()
     from ui.workspace.chat_page import ChatPage

@@ -304,6 +304,10 @@ class CoreRuntime:
 
         logger.info("Initializing CoreRuntime...")
 
+        # Consecutive identical tool failures; see MAX_IDENTICAL_FAILURES.
+        self._repeat_key: str | None = None
+        self._repeat_fails = 0
+
         # The brain is obtained through the provider boundary. Nothing below
         # this line knows which backend or model is actually answering.
         self._brain = get_provider()
@@ -1062,7 +1066,57 @@ class CoreRuntime:
     # Tool Execution
     # =====================================================
 
+    #: The same call failing this many times in a row is not going to work a
+    #: fourth time. Found in a real log: a tool that errored instantly was
+    #: retried with identical arguments until the step limit -- twenty times --
+    #: and the user got nothing but a wall of failed steps.
+    MAX_IDENTICAL_FAILURES = 2
+
     def _execute_tool(
+        self,
+        function_name: str,
+        args: dict,
+    ) -> dict:
+        """Run a tool, refusing to repeat a call that keeps failing.
+
+        Only *consecutive* identical failures count: run the tests, fix the
+        code, run them again is ordinary work, because something different
+        happened in between.
+        """
+        try:
+            key = f"{function_name}:{json.dumps(args, sort_keys=True, default=str)}"
+        except Exception:
+            key = f"{function_name}:{args!r}"
+
+        if key == self._repeat_key and self._repeat_fails >= self.MAX_IDENTICAL_FAILURES:
+            logger.warning(
+                "Refusing to repeat %s: it has failed %d times in a row with the "
+                "same arguments.", function_name, self._repeat_fails)
+            return {
+                "status": "error",
+                "error": (
+                    f"{function_name} has already failed {self._repeat_fails} times in a "
+                    "row with exactly these arguments, so it was not run again."
+                ),
+                "retry_safe": False,
+                "note": (
+                    "Stop retrying this. Tell the user plainly, in a sentence or two, "
+                    "that this isn't working right now and what you were trying to do. "
+                    "If another tool could still help, try that once; otherwise offer "
+                    "what you can do without it."
+                ),
+            }
+
+        result = self._dispatch_tool(function_name, args)
+
+        if isinstance(result, dict) and result.get("status") == "error":
+            self._repeat_fails = self._repeat_fails + 1 if key == self._repeat_key else 1
+            self._repeat_key = key
+        else:
+            self._repeat_key, self._repeat_fails = None, 0
+        return result
+
+    def _dispatch_tool(
         self,
         function_name: str,
         args: dict,
@@ -1702,6 +1756,8 @@ class CoreRuntime:
         It is also the more truthful representation: what was on screen during
         an earlier turn is a fact about that turn, not about this one.
         """
+        # A new message is a fresh start: what failed last turn may work now.
+        self._repeat_key, self._repeat_fails = None, 0
         snapshot = self._volatile_context(message)
         if snapshot:
             self._core.history.append({"role": "system", "content": snapshot})

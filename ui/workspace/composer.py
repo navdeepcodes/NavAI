@@ -158,6 +158,43 @@ class MicButton(IconButton):
             draw(p, "mic", icon_r, acc)
 
 
+class MuteButton(IconButton):
+    """Mute / unmute Mike's voice, one click, always on screen.
+
+    Speaking answers aloud used to be a switch three screens deep in Settings,
+    so when Mike started talking in a library there was no quick way to make
+    him stop for good. Clicking this both silences whatever he is saying now
+    and keeps him quiet until it is clicked again.
+    """
+
+    toggled_mute = Signal(bool)   # True = now muted
+
+    _TIP_ON = "Mute Mike's voice"
+    _TIP_OFF = "Unmute Mike's voice"
+
+    def __init__(self, muted: bool = False, parent=None) -> None:
+        super().__init__("speaker", self._TIP_ON, size=34, icon_size=19, parent=parent)
+        self._muted = False
+        self.set_muted(muted)
+        self.clicked.connect(self._on_click)
+
+    def is_muted(self) -> bool:
+        return self._muted
+
+    def set_muted(self, muted: bool) -> None:
+        """Show the state without announcing a change (used to stay in sync)."""
+        self._muted = bool(muted)
+        self.set_icon("speaker-off" if self._muted else "speaker")
+        self.set_tint(style.INK if self._muted else None)
+        tip = self._TIP_OFF if self._muted else self._TIP_ON
+        self.setToolTip(tip)
+        self.setAccessibleName(tip)
+
+    def _on_click(self) -> None:
+        self.set_muted(not self._muted)
+        self.toggled_mute.emit(self._muted)
+
+
 class _ComposeField(QPlainTextEdit):
     """The message itself: grows with what you write, up to a limit."""
 
@@ -325,6 +362,8 @@ class Composer(QFrame):
     attach_requested = Signal(list)
     attachment_removed = Signal(str)
     stop_requested = Signal()
+    #: The mute button was clicked; True means Mike is now muted.
+    mute_toggled = Signal(bool)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -369,6 +408,9 @@ class Composer(QFrame):
         self.voice = MicButton()
         self.voice.on_state(self._on_voice_state)
         row.addWidget(self.voice)
+        self._mute = MuteButton(muted=self._voice_is_off())
+        self._mute.toggled_mute.connect(self.mute_toggled.emit)
+        row.addWidget(self._mute)
         row.addStretch(1)
         self._send = IconButton("send", "Send (Enter)", size=34, icon_size=18, variant="primary")
         self._send.clicked.connect(self._on_send_clicked)
@@ -484,6 +526,18 @@ class Composer(QFrame):
     def set_responding(self, on: bool) -> None:
         self._responding = on
         self._sync_send()
+
+    @staticmethod
+    def _voice_is_off() -> bool:
+        try:
+            from config import preferences
+            return not preferences.get("voice_enabled", True)
+        except Exception:
+            return False
+
+    def set_muted(self, muted: bool) -> None:
+        """Reflect the mute state (changed elsewhere, e.g. in Settings)."""
+        self._mute.set_muted(muted)
 
     def sizeHint(self) -> QSize:  # noqa: N802 - Qt API
         return super().sizeHint()

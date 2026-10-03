@@ -1459,6 +1459,8 @@ class SettingsPage(QWidget):
 
     def reload(self) -> None:
         """Entering Settings: what Mike remembers and did may have changed."""
-        for key in ("memory", "activity"):
+        # "voice" too: the composer's mute button changes voice_enabled, and
+        # the "Speak answers aloud" switch was built from the old value.
+        for key in ("memory", "activity", "voice"):
             if key in self._tabs:
                 self._tabs[key].reload()
