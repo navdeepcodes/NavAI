@@ -29,9 +29,23 @@ Windows build runs on GitHub's own Windows machines, so a Mac is enough.
    ```
 
    It fetches the voice runtime (`packaging/fetch_runtime.py`), builds with
-   `packaging/build_windows.py`, and attaches `Mike-windows-1.1.1.zip` to the
-   release. Until the zip is attached, installed copies simply don't see the
-   release — there's no window where they'd try to download nothing.
+   `packaging/build_windows.py`, builds the one-file installer
+   (`packaging/mike.iss` → `Mike-Setup-1.1.1.exe`), and attaches both
+   `Mike-windows-1.1.1.zip` and `Mike-Setup-1.1.1.exe` to the release. The zip
+   is what installed copies update from; the Setup.exe is what a new person
+   downloads. Until the zip is attached, installed copies simply don't see
+   the release — there's no window where they'd try to download nothing.
+
+   The same run installs the Setup.exe silently on the Windows machine, runs
+   `Mike.exe --self-check` (fails the build if any tool is missing from the
+   package), simulates the in-app update's folder swap, and uninstalls. A red
+   run means don't release.
+
+   **macOS** has no updater yet. Build and verify with
+   `python packaging/build_macos.py <out>` (it runs the same `--self-check` on
+   the built app), then `ditto -c -k --keepParent <out>/Mike.app
+   Mike-macOS-1.1.1.zip`, attach it with `gh release upload`, and update the
+   version and `sha256` in the Homebrew cask.
 5. **Point the website at it**: in `mike-website/public/index.html`, change
    the two `releases/download/v…/Mike-windows-….zip` links and
    `softwareVersion`; if the policy changed, run
