@@ -36,6 +36,12 @@ def _should_offer_install() -> bool:
 
 
 if __name__ == "__main__":
+    # Before anything else, so the release process can ask a *built* app
+    # whether it has all its tools without a window, a model, or an install.
+    if "--self-check" in sys.argv:
+        from brain.self_check import run as _self_check
+        sys.exit(_self_check(sys.argv[sys.argv.index("--self-check") + 1:]))
+
     if "--uninstall" in sys.argv:
         from installer import core as installer_ui
         installer_ui.uninstall()

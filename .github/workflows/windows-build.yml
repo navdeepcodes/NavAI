@@ -89,6 +89,16 @@ jobs:
           if (-not (Test-Path $lnk))                        { throw "no Start Menu shortcut" }
           Write-Host "install OK"
 
+          # The installed app must have all its tools. Two releases shipped
+          # without some and nothing noticed: every search and "open an app"
+          # then failed with "Unknown tool", and Mike retried it until the
+          # step limit. --self-check loads the real registry, no window.
+          $report = Join-Path $env:TEMP "mike-selfcheck.json"
+          $p = Start-Process -FilePath (Join-Path $app "Mike.exe") -ArgumentList "--self-check",$report -Wait -PassThru
+          if (Test-Path $report) { Get-Content $report | Write-Host }
+          if ($p.ExitCode -ne 0) { throw "Mike.exe --self-check failed (exit $($p.ExitCode)): the build is missing tools" }
+          Write-Host "self-check OK"
+
           # What the in-app updater does: swap the whole folder by renaming.
           Move-Item $app "$app.old"
           Copy-Item "$app.old" $app -Recurse
