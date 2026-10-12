@@ -637,7 +637,7 @@ class VoiceTab(_Tab):
         follow = Switch(bool(preferences.get("voice_follow_up", True)))
         follow.toggled.connect(lambda on: preferences.set_value("voice_follow_up", on))
         self.add(_rows_card([
-            _row("“Hey Mike”", "Say it from anywhere to start talking, hands-free.", wake),
+            _row("“Hey Mike”", self._wake_description(), wake),
             _row("Keep the conversation going", "After answering something you said, Mike "
                  "listens for a few seconds, so you can reply without “Hey Mike”.", follow),
             _row("Talk with a click", "Click the mic in the message box, or press F6. "
@@ -653,6 +653,19 @@ class VoiceTab(_Tab):
         h = self._hooks.get(hook)
         if h:
             h(on)
+
+    @staticmethod
+    def _wake_description() -> str:
+        """What "Hey Mike" does -- or why it is waiting."""
+        try:
+            from hostplatform import audio
+            if audio.default_input_is_bluetooth():
+                return ("Paused while a Bluetooth headset is your microphone: listening "
+                        "would drop its sound to phone quality. Use F6 or the mic button, "
+                        "or switch your input to this computer's microphone.")
+        except Exception:
+            pass
+        return "Say it from anywhere to start talking, hands-free."
 
     def _voice_picker(self) -> list[QWidget]:
         try:

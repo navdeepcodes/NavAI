@@ -135,7 +135,12 @@ class PushToTalkRecorder:
                 self._take_preroll(np.asarray(preroll, dtype=np.float32).reshape(-1, 1))
 
             try:
+                from hostplatform import audio
                 self._stream = sd.InputStream(
+                    # None = the system default. On a Bluetooth headset it is
+                    # the computer's own microphone instead, so recording
+                    # doesn't drop the headset to phone-call quality.
+                    device=audio.recording_device(),
                     samplerate=SAMPLE_RATE,
                     channels=CHANNELS,
                     dtype="float32",

@@ -31,7 +31,22 @@ class WakeWordDetector:
         self._on_wake = on_wake
         self._backend: wake.WakeWordBackend | None = None
 
+    #: True while "Hey Mike" is held back because the microphone is a
+    #: Bluetooth headset (Settings explains why).
+    paused_for_bluetooth = False
+
     def start(self) -> bool:
+        # An always-open microphone on a Bluetooth headset drops the whole
+        # headset to phone-call quality for as long as Mike is open -- the
+        # music and every video sound muffled and bass-heavy. Wait instead;
+        # the mic button and F6 still work (and use the Mac's own microphone).
+        from hostplatform import audio
+        if audio.default_input_is_bluetooth():
+            self.paused_for_bluetooth = True
+            logger.info("Wake word not started: the microphone is a Bluetooth headset, "
+                        "and listening would degrade its sound.")
+            return False
+        self.paused_for_bluetooth = False
         if self._backend is None:
             try:
                 self._backend = wake.make_backend(self._on_wake)
