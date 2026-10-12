@@ -1249,13 +1249,13 @@ class AboutTab(_Tab):
     def _show_brain(self, h: dict) -> None:
         try:
             state = h.get("state")
-            ok = state in ("ready", "no_model")
+            ok = state in ("ready", "no_model", "downloading")
             self._brain_dot._ok = ok
             self._brain_dot.update()
             self._brain_title.setText(h.get("title", ""))
             self._brain_detail.setText(h.get("detail", ""))
             self._brain_btn.setText("Start Ollama" if h.get("can_start") else "Check again")
-            self._brain_btn.setEnabled(state not in ("checking", "starting"))
+            self._brain_btn.setEnabled(state not in ("checking", "starting", "downloading"))
         except RuntimeError:
             pass        # this tab was rebuilt; the old labels are gone
 

@@ -22,7 +22,7 @@ from brain.core_tools import (
     needs_confirmation,
     preparing_label,
 )
-from brain import environment, memory_store, permissions
+from brain import environment, memory_store, model_download, permissions, tool_router
 from brain.mike_core import MikeCore
 from config.ollama import (
     OLLAMA_CHAT_MODEL,
@@ -573,7 +573,10 @@ class CoreRuntime:
                         "may take a few minutes",
                     )
                     pull_failed: BrainError | None = None
-                    for update in self._brain.pull_model():
+                    # The shared download: it may already be running in the
+                    # background since Mike opened; if so this follows it
+                    # instead of starting a second one.
+                    for update in model_download.download.follow(self._brain):
                         if isinstance(update, BrainError):
                             pull_failed = update
                         else:
@@ -598,7 +601,7 @@ class CoreRuntime:
 
         # Fit the request to this brain before sending it. Tool schemas are
         # never truncated — a model holding half a definition calls it wrongly.
-        plan = plan_request(messages, permissions.allowed_tools(OLLAMA_TOOLS), self._capabilities)
+        plan = plan_request(messages, self._offered_tools(), self._capabilities)
         if not plan.fits:
             note = plan.error.human()
             self._core.history.append({"role": "assistant", "content": note})
@@ -995,10 +998,28 @@ class CoreRuntime:
         ChatResult so this method is provider-independent like the rest."""
 
         messages = self._build_messages()
-        plan = plan_request(messages, permissions.allowed_tools(OLLAMA_TOOLS), self._capabilities)
+        plan = plan_request(messages, self._offered_tools(), self._capabilities)
         if not plan.fits:
             return ChatResult(text=plan.error.human(), error=plan.error)
         return self._brain.complete(plan.messages, plan.tools)
+
+    def _offered_tools(self) -> list[dict]:
+        """The tools to send with this request.
+
+        The local model re-reads every tool description on every step, so it
+        gets only the ones this conversation is likely to need (see
+        brain/tool_router.py). Fast mode (the cloud) gets them all: extra
+        tools cost nothing there.
+        """
+        allowed = permissions.allowed_tools(OLLAMA_TOOLS)
+        try:
+            use_cloud = getattr(self._brain, "_use_cloud", None)
+            if callable(use_cloud) and use_cloud():
+                return allowed
+            return tool_router.route(allowed, self._core.history)
+        except Exception:
+            logger.exception("Tool routing failed; offering every tool.")
+            return allowed
 
     # =====================================================
     # Response Handling
