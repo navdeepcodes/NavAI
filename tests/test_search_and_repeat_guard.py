@@ -82,6 +82,17 @@ def test_different_arguments_are_a_different_call():
     assert len(calls) == 4
 
 
+def test_a_runtime_built_without_init_can_still_run_a_tool():
+    """Several tests (and any future harness) build a CoreRuntime with
+    object.__new__ and set only what they need. The guard's counters must not
+    be something only __init__ creates."""
+    from brain.core_runtime import CoreRuntime
+
+    rt = object.__new__(CoreRuntime)
+    rt._dispatch_tool = lambda name, args: _OK
+    assert rt._execute_tool("anything", {}) == _OK
+
+
 def test_a_new_message_starts_fresh():
     rt, calls = _runtime(lambda n, a: _FAIL)
     for _ in range(5):

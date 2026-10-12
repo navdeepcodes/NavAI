@@ -1111,6 +1111,11 @@ class CoreRuntime:
     #: and the user got nothing but a wall of failed steps.
     MAX_IDENTICAL_FAILURES = 2
 
+    # Class-level defaults, not only set in __init__: a runtime built without
+    # running __init__ (several tests do) must still be able to run a tool.
+    _repeat_key: str | None = None
+    _repeat_fails = 0
+
     def _execute_tool(
         self,
         function_name: str,
