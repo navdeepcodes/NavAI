@@ -93,6 +93,34 @@ def test_a_new_message_starts_fresh():
     assert len(calls) == rt.MAX_IDENTICAL_FAILURES + 1
 
 
+# ── a failed step must never look like a finished one ─────────
+
+def _ui_calls_it_a_failure(status: str) -> bool:
+    """The test the step card applies (ui_controller._on_tool_end)."""
+    lowered = status.lower()
+    return any(w in lowered for w in ("error", "failed", "cancelled", "denied"))
+
+
+def test_a_failed_step_is_reported_as_failed_even_with_a_blunt_message():
+    """'Unknown tool: system' has none of the words the UI looks for, so the
+    step card showed a green tick for each of fourteen steps that did nothing."""
+    from brain.core_runtime import tool_end_text
+
+    blunt = {"status": "error", "error": "Unknown tool: system"}
+    assert _ui_calls_it_a_failure(tool_end_text(blunt))
+    assert "Unknown tool: system" in tool_end_text(blunt), "the reason is kept"
+
+
+def test_step_text_is_left_alone_when_nothing_is_wrong():
+    from brain.core_runtime import tool_end_text
+
+    assert tool_end_text({"status": "success", "result": "Opened Visual Studio Code"}) \
+        == "Opened Visual Studio Code"
+    assert not _ui_calls_it_a_failure(tool_end_text({"status": "success", "result": "Done"}))
+    assert tool_end_text({"status": "error", "error": "Command failed (exit 1)"}) \
+        == "Command failed (exit 1)", "already says so; not prefixed twice"
+
+
 # ── web search ────────────────────────────────────────────────
 
 _BRAVE = (

@@ -119,6 +119,24 @@ _SPECIAL_TOOLS = frozenset({
 # reached rather than claiming success.
 MAX_AGENT_STEPS = 20
 
+
+def tool_end_text(result: dict) -> str:
+    """The one line a finished step reports to the screen.
+
+    The UI decides whether a step failed by looking for the words "error",
+    "failed", "cancelled" or "denied" in this text. A tool that failed with a
+    message like "Unknown tool: system" contains none of them, so the step
+    card showed a green tick for a step that did nothing -- fourteen times in
+    a row in one real session. So a failure always says so, in words the UI
+    already understands, whatever the tool's own message was.
+    """
+    text = str(result.get("result", result.get("error", "Done")))
+    if result.get("status") == "error":
+        lowered = text.lower()
+        if not any(word in lowered for word in ("error", "failed", "cancelled", "denied")):
+            text = f"Failed: {text}"
+    return text
+
 # How many times a recoverable model/protocol failure is retried before the
 # turn gives up. Small on purpose: this recovers a stochastic stumble, it does
 # not paper over a backend that is actually down.
@@ -801,7 +819,7 @@ class CoreRuntime:
                 "content": json.dumps(result),
             })
 
-            status = result.get("result", result.get("error", "Done"))
+            status = tool_end_text(result)
             self._core.add_tool_result(status)
             yield ("tool_end", status)
 
