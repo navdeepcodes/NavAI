@@ -10,28 +10,27 @@ Windows build runs on GitHub's own Windows machines, so a Mac is enough.
 ## Ship a fix
 
 1. **Fix it, and raise the version** in `config/settings.py`:
-   `VERSION = "1.1.1"`. The number must go up — that's how installed copies
+   `VERSION = "<version>"`. The number must go up — that's how installed copies
    know it's newer. If the Privacy Policy or Terms changed, also bump
    `LEGAL_VERSION` (everyone is asked to accept the new text once).
 2. **Run the tests** that cover what you changed, commit, and push to `main`.
-3. **Create the release** (the tag is made from `main`):
+3. **The release is created by the workflow in the next step**, after the
+   build and its tests pass, so a failed build never leaves a half-made
+   release behind. The tag is made from `main`, so the code must be pushed
+   there first. The first line of the notes is what Mike shows in the
+   update banner.
+4. **Build, test, and publish the Windows build** on GitHub's Windows machine:
 
    ```sh
-   gh release create v1.1.1 --title "Mike 1.1.1" --notes "What changed, in a sentence or two."
-   ```
-
-   The first line of the notes is what Mike shows in the update banner.
-4. **Build and attach the Windows zip** on GitHub's Windows machine:
-
-   ```sh
-   gh workflow run windows-build.yml -f release_tag=v1.1.1
+   gh workflow run windows-build.yml --ref main -f release_tag=v<version> \
+     -f release_notes="What changed, in a sentence or two."
    gh run watch
    ```
 
    It fetches the voice runtime (`packaging/fetch_runtime.py`), builds with
    `packaging/build_windows.py`, builds the one-file installer
-   (`packaging/mike.iss` → `Mike-Setup-1.1.1.exe`), and attaches both
-   `Mike-windows-1.1.1.zip` and `Mike-Setup-1.1.1.exe` to the release. The zip
+   (`packaging/mike.iss` → `Mike-Setup-<version>.exe`), and attaches both
+   `Mike-windows-<version>.zip` and `Mike-Setup-<version>.exe` to the release. The zip
    is what installed copies update from; the Setup.exe is what a new person
    downloads. Until the zip is attached, installed copies simply don't see
    the release — there's no window where they'd try to download nothing.
@@ -44,7 +43,7 @@ Windows build runs on GitHub's own Windows machines, so a Mac is enough.
    **macOS** has no updater yet. Build and verify with
    `python packaging/build_macos.py <out>` (it runs the same `--self-check` on
    the built app), then `ditto -c -k --keepParent <out>/Mike.app
-   Mike-macOS-1.1.1.zip`, attach it with `gh release upload`, and update the
+   Mike-macOS-<version>.zip`, attach it with `gh release upload`, and update the
    version and `sha256` in the Homebrew cask.
 5. **Point the website at it**: in `mike-website/public/index.html`, change
    the two `releases/download/v…/Mike-windows-….zip` links and

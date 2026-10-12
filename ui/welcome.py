@@ -61,6 +61,21 @@ CARDS = (
 )
 
 
+#: First-run permissions: asked once, before consent, never again. One card
+#: that asks for what actually needs asking on Windows — microphone (which
+#: Windows never prompts desktop apps for), Mike's abilities (same switches
+#: as Settings → Permissions), and start-at-sign-in + notifications. Screen
+#: reading and clicking need no Windows permission, so none is invented.
+PERMISSIONS = {
+    "art": "safe",
+    "key": "permissions",
+    "title": "Make Mike yours.",
+    "body": ("Choose what Mike can do, before he starts. Everything is on. "
+             "Anything you turn off is removed from what he can even plan "
+             "with. Screen reading and clicking need no Windows permission."),
+}
+
+
 #: The last card: agreeing to the Terms and Privacy Policy. Shown at the end of
 #: the tour, and on its own when the documents change.
 CONSENT = {
@@ -222,11 +237,17 @@ class WelcomeWindow(QWidget):
     def __init__(self, consent_only: bool = False) -> None:
         super().__init__()
         from brain import legal
-        # the tour's cards, then the consent card unless it's already agreed
+        # the tour's cards, then the permissions card, then consent unless agreed.
+        # consent_only (legal re-accept) never shows permissions.
         self._cards = [] if consent_only else list(CARDS)
+        if not consent_only:
+            self._cards.append(PERMISSIONS)
         if consent_only or not legal.accepted():
             self._cards.append(CONSENT)
         self._index = 0
+        self._ability_switches: dict = {}
+        self._login_switch = None
+        self._notify_switch = None
         self.setWindowTitle("Welcome to Mike")
         self.setFixedSize(self.WIDTH, self.HEIGHT)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -280,6 +301,22 @@ class WelcomeWindow(QWidget):
         self._body.setTextFormat(Qt.RichText)
         self._body.linkActivated.connect(self._open_link)
         outer.addWidget(self._body)
+
+        from PySide6.QtWidgets import QScrollArea
+        self._perms_scroll = QScrollArea()
+        self._perms_scroll.setWidgetResizable(True)
+        self._perms_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._perms_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._perms_scroll.setStyleSheet("background:transparent;border:none;")
+        self._perms_scroll.setFixedHeight(168)
+        self._perms = QWidget()
+        self._perms_layout = QVBoxLayout(self._perms)
+        self._perms_layout.setContentsMargins(0, 6, 4, 6)
+        self._perms_layout.setSpacing(8)
+        self._perms_scroll.setWidget(self._perms)
+        self._perms_scroll.hide()
+        outer.addWidget(self._perms_scroll)
+        self._build_perms()
         outer.addStretch(1)
 
         bottom = QHBoxLayout()
@@ -312,6 +349,148 @@ class WelcomeWindow(QWidget):
     def _consent_showing(self) -> bool:
         return self._cards[self._index] is CONSENT
 
+    def _is_permissions_showing(self) -> bool:
+        return self._cards[self._index] is PERMISSIONS
+
+    def _build_perms(self) -> None:
+        """Interactive controls for the permissions card.
+
+        All switches write through the same state Settings uses, so the
+        tour and Settings can never disagree: abilities via
+        brain/permissions.set_enabled, notifications via preferences,
+        sign-in via hostplatform/autostart.
+        """
+        from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout
+        from config import preferences
+
+        try:
+            from ui.workspace.pages import Switch
+        except Exception:
+            from PySide6.QtWidgets import QCheckBox as Switch  # type: ignore
+
+        def _switch_row(title: str, desc: str, initial: bool, on_toggle):
+            row = QWidget()
+            lay = QHBoxLayout(row)
+            lay.setContentsMargins(0, 2, 0, 2)
+            lay.setSpacing(12)
+            text = QVBoxLayout()
+            text.setSpacing(1)
+            t = QLabel(title)
+            t.setFont(style.font(style.SMALL, QFont.Weight.Medium))
+            t.setWordWrap(True)
+            t.setStyleSheet(f"color:{style.INK};background:transparent;")
+            d = QLabel(desc)
+            d.setFont(style.font(style.SMALL - 1))
+            d.setWordWrap(True)
+            d.setStyleSheet(f"color:{style.INK_MUTE};background:transparent;")
+            text.addWidget(t)
+            text.addWidget(d)
+            lay.addLayout(text, 1)
+            try:
+                sw = Switch(bool(initial))
+            except Exception:
+                from PySide6.QtWidgets import QCheckBox
+                sw = QCheckBox()
+                sw.setChecked(bool(initial))
+            # Normalise QCheckBox to toggled(bool) if we fell back.
+            try:
+                sw.toggled.connect(on_toggle)
+            except Exception:
+                sw.stateChanged.connect(lambda s: on_toggle(bool(s)))
+            lay.addWidget(sw, 0, Qt.AlignVCenter)
+            self._perms_layout.addWidget(row)
+            return sw
+
+        # Microphone — Windows only. Other OSes: nothing to ask.
+        import platform as _platform
+        if _platform.system() == "Windows":
+            from hostplatform import microphone as _mic
+            mic_status = ""
+            try:
+                mic_status = _mic.status()
+            except Exception:
+                mic_status = "unknown"
+            if mic_status == "denied":
+                mic_desc = ("Blocked: Settings → Privacy → Microphone → "
+                            "“Let desktop apps access your microphone” is off. "
+                            "Voice will be silently dead until you allow it.")
+            else:
+                mic_desc = ("If voice stays silent, check Settings → Privacy → "
+                            "Microphone → “Let desktop apps access it”.")
+            mic_row = QWidget()
+            mic_lay = QHBoxLayout(mic_row)
+            mic_lay.setContentsMargins(0, 2, 0, 2)
+            mic_lay.setSpacing(12)
+            mic_text = QVBoxLayout()
+            mic_text.setSpacing(1)
+            mic_title = QLabel("Microphone")
+            mic_title.setFont(style.font(style.SMALL, QFont.Weight.Medium))
+            mic_title.setStyleSheet(f"color:{style.INK};background:transparent;")
+            mic_body = QLabel(mic_desc)
+            mic_body.setFont(style.font(style.SMALL - 1))
+            mic_body.setWordWrap(True)
+            mic_body.setStyleSheet(f"color:{style.INK_MUTE};background:transparent;")
+            mic_text.addWidget(mic_title)
+            mic_text.addWidget(mic_body)
+            mic_lay.addLayout(mic_text, 1)
+            mic_btn = QPushButton("Open microphone settings")
+            mic_btn.setCursor(Qt.PointingHandCursor)
+            mic_btn.setFont(style.font(style.SMALL, QFont.Weight.Medium))
+            mic_btn.clicked.connect(lambda: _mic.open_settings())
+            mic_lay.addWidget(mic_btn, 0, Qt.AlignVCenter)
+            self._perms_layout.addWidget(mic_row)
+            self._mic_body = mic_body
+        else:
+            self._mic_body = None
+
+        # Abilities — same source of truth as Settings → Permissions.
+        try:
+            from brain import permissions as _perms_mod
+            for key, (title, desc, _tools) in _perms_mod.ABILITIES.items():
+                sw = _switch_row(title, desc, _perms_mod.is_enabled(key),
+                                 lambda on, k=key: _perms_mod.set_enabled(k, on))
+                self._ability_switches[key] = sw
+        except Exception:
+            pass
+
+        # Start at sign-in — ask, don't set silently.
+        try:
+            from hostplatform import autostart as _auto
+            if _auto.supported():
+                login_desc = "Mike starts quietly in the corner when you sign in."
+                login_initial = _auto.is_enabled()
+            else:
+                login_desc = "Available in the installed app on Windows."
+                login_initial = False
+            self._login_switch = _switch_row(
+                "Open Mike when you sign in", login_desc, login_initial,
+                self._set_login)
+            if not _auto.supported():
+                self._login_switch.setEnabled(False)
+        except Exception:
+            self._login_switch = None
+
+        # Notifications — same preference Settings uses.
+        try:
+            self._notify_switch = _switch_row(
+                "Notifications",
+                "A quiet note when Mike finishes or needs you.",
+                bool(preferences.get("notifications_enabled", True)),
+                lambda on: preferences.set_value("notifications_enabled", on))
+        except Exception:
+            self._notify_switch = None
+
+    def _set_login(self, on: bool) -> None:
+        from config import preferences
+        from hostplatform import autostart
+        ok = autostart.set_enabled(on)
+        preferences.set_value("launch_at_login", on if ok else autostart.is_enabled())
+        try:
+            if self._login_switch is not None and hasattr(self._login_switch, "set_on"):
+                self._login_switch.set_on(autostart.is_enabled())
+        except Exception:
+            pass
+
     def _render(self) -> None:
         card = self._cards[self._index]
         self._art.set_kind(card["art"])
@@ -321,6 +500,13 @@ class WelcomeWindow(QWidget):
         self._body.setText(card["body"].format(
             terms=link.format("terms", "Terms of Use"),
             privacy=link.format("privacy", "Privacy Policy")))
+        perms = self._is_permissions_showing()
+        try:
+            self._perms_scroll.setVisible(perms)
+            # Shorter body on the dense card so the window stays 470px.
+            self._body.setMinimumHeight(40 if perms else 86)
+        except Exception:
+            pass
         self._dots.set_active(self._index)
         self._dots.setVisible(len(self._cards) > 1)
         last = self._index == len(self._cards) - 1
@@ -356,12 +542,19 @@ class WelcomeWindow(QWidget):
         self._render()
 
     def _skip_pressed(self) -> None:
-        """Skip jumps past the tour — but never past the consent card."""
+        """Skip jumps past the tour — but never past permissions or consent."""
         if self._consent_showing():
             self._art.stop()
             self.close()
             self.declined.emit()
             return
+        # Land on the permissions card first so it can't be skipped
+        # accidentally; a second Skip from there goes to consent.
+        for i, c in enumerate(self._cards):
+            if c is PERMISSIONS and self._index < i:
+                self._index = i
+                self._render()
+                return
         if self._cards and self._cards[-1] is CONSENT:
             self._index = len(self._cards) - 1
             self._render()

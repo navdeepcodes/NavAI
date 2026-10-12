@@ -4,7 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "Release tag to attach the build to (must already exist). Leave empty to only build."
+        description: "Release tag to create and attach the build to (e.g. v1.1.2). Leave empty to only build. The tag is made from the branch this runs on, so run it on main."
+        required: false
+        default: ""
+      release_notes:
+        description: "Release notes (the first line is shown in Mike's update banner). Required when release_tag is set."
         required: false
         default: ""
 
@@ -15,6 +19,13 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
+      - name: Refuse a release with no notes
+        # The first line of the notes is what every installed Mike shows in
+        # its update banner; an empty one would ship a blank announcement.
+        if: ${{ inputs.release_tag != '' && inputs.release_notes == '' }}
+        shell: pwsh
+        run: throw "release_notes is required when release_tag is set"
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
@@ -58,33 +69,34 @@ jobs:
           }
 
       - name: Build the installer (dist/Mike-Setup-<version>.exe)
-        # One double-click installer. Packages the dist/Mike folder that
-        # build_windows.py just produced; see packaging/mike.iss for why it
-        # installs per-user to the same folder as the in-app installer and
-        # keeps its uninstaller outside it.
+        # One double-click installer. The zip stays: installed copies update
+        # from it. Packages the dist/Mike folder build_windows.py just made;
+        # see packaging/mike.iss for why it installs per-user to the same
+        # folder as the in-app installer and keeps its uninstaller outside it.
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=$env:MIKE_VERSION" packaging\mike.iss
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DAppVersion=$env:MIKE_VERSION" packaging\mike.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
+          if (-not (Test-Path "dist\Mike-Setup-$env:MIKE_VERSION.exe")) { throw "Setup.exe was not produced" }
           Get-ChildItem dist\Mike-Setup-*.exe | ForEach-Object { Write-Host ("{0} {1:N1} MB" -f $_.Name, ($_.Length / 1MB)) }
 
-      - name: Smoke-test the installer (install, update swap, uninstall)
-        # Nobody has run this installer on a clean Windows machine yet, so CI
-        # does what a user would, silently, and fails the build if anything is
-        # off -- including the in-app updater's folder swap, which is what
+      - name: Smoke-test the installer (install, self-check, update swap, uninstall)
+        # Nobody has run this installer on a clean Windows machine by hand, so
+        # CI does what a user would, silently, and fails the build if anything
+        # is off -- including the in-app updater's folder swap, which is what
         # would strand an uninstaller kept inside the app folder.
         shell: pwsh
         run: |
           $setup = (Get-ChildItem dist\Mike-Setup-*.exe | Select-Object -First 1).FullName
           $app   = Join-Path $env:LOCALAPPDATA "Programs\Mike"
           $unins = Join-Path $env:LOCALAPPDATA "Programs\Mike Uninstall\unins000.exe"
-          $key   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6C1B0E5E-3F7A-4D58-9B2A-4D1E6A0F7C11}_is1"
+          $key   = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F3B2C1A-8D54-4E0B-9A77-4D2C5B8E1F30}_is1"
           $lnk   = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Mike.lnk"
 
           Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-" -Wait
           if (-not (Test-Path (Join-Path $app "Mike.exe"))) { throw "Mike.exe was not installed to $app" }
           if (-not (Test-Path $unins))                      { throw "uninstaller missing at $unins" }
-          if (Test-Path (Join-Path $app "unins000.exe"))    { throw "uninstaller must not live inside the app folder" }
+          if (Test-Path (Join-Path $app "unins000.exe"))    { throw "a new install must keep its uninstaller outside the app folder" }
           if (-not (Test-Path $key))                        { throw "no Apps & features entry" }
           if (-not (Test-Path $lnk))                        { throw "no Start Menu shortcut" }
           Write-Host "install OK"
@@ -114,6 +126,46 @@ jobs:
           if (Test-Path $lnk)  { throw "uninstall left the Start Menu shortcut" }
           Write-Host "uninstall OK"
 
+      - name: Upgrade test (the published 1.1.1 Setup.exe, then this build over it)
+        # Real people installed with the 1.1.1 Setup.exe, which keeps its
+        # uninstaller INSIDE the app folder. Running the new Setup over that,
+        # and then the in-app updater's real folder swap (installer.core.
+        # copy_tree), must leave exactly one Apps & features entry and an
+        # uninstaller that still works.
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $new = (Get-ChildItem dist\Mike-Setup-*.exe | Select-Object -First 1).FullName
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Mike"
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F3B2C1A-8D54-4E0B-9A77-4D2C5B8E1F30}_is1"
+          $silent = "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-"
+          function Mike-Entries { @(Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" | Get-ItemProperty | Where-Object { $_.DisplayName -eq "Mike" }).Count }
+
+          gh release download v1.1.1 --repo $env:GITHUB_REPOSITORY --pattern "Mike-Setup-1.1.1.exe" --dir published
+          if ($LASTEXITCODE -ne 0) { throw "could not download the published 1.1.1 Setup.exe" }
+          Start-Process -FilePath "published\Mike-Setup-1.1.1.exe" -ArgumentList $silent -Wait
+          if (-not (Test-Path (Join-Path $app "Mike.exe"))) { throw "the published 1.1.1 Setup did not install" }
+          if ((Mike-Entries) -ne 1) { throw "expected one Apps & features entry after 1.1.1, found $(Mike-Entries)" }
+          Write-Host "1.1.1 installed: $((Get-ItemProperty $key).UninstallString)"
+
+          Start-Process -FilePath $new -ArgumentList $silent -Wait
+          if ((Mike-Entries) -ne 1) { throw "upgrading added a second Apps & features entry ($(Mike-Entries) now)" }
+          Write-Host "upgrade OK: still one entry; uninstaller is $((Get-ItemProperty $key).UninstallString)"
+
+          # The in-app updater's real swap, from this build's files.
+          python -c "from pathlib import Path; from installer.core import copy_tree; copy_tree(Path('dist/Mike'), Path(r'$app'), lambda p, m: None)"
+          if ($LASTEXITCODE -ne 0) { throw "the in-app update swap (copy_tree) failed" }
+          $unins = (Get-ItemProperty $key).UninstallString -replace '"',''
+          if (-not (Test-Path $unins)) { throw "the in-app update removed the uninstaller ($unins)" }
+          Write-Host "in-app update swap OK"
+
+          Start-Process -FilePath $unins -ArgumentList $silent -Wait
+          for ($i = 0; $i -lt 30 -and (Test-Path $app); $i++) { Start-Sleep -Seconds 1 }
+          if (Test-Path $app) { throw "uninstall after an upgrade left $app behind" }
+          if (Test-Path $key) { throw "uninstall after an upgrade left the Apps & features entry" }
+          Write-Host "upgrade-then-uninstall OK"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -128,6 +180,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release_tag }}
+          name: Mike ${{ inputs.release_tag }}
+          body: ${{ inputs.release_notes }}
           files: |
             dist/Mike-windows-*.zip
             dist/Mike-Setup-*.exe

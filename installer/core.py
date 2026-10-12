@@ -78,6 +78,15 @@ def copy_tree(source: Path, target: Path, on_progress) -> None:
         if index % 20 == 0 or index == total:
             on_progress(int(index / total * 95), f"Copying files… {index} of {total}")
 
+    # A Setup.exe install (1.1.1) keeps its uninstaller inside this folder
+    # (unins000.exe / .dat). Swapping the whole folder would delete it and
+    # leave a dead entry in Apps & features, so carry it across.
+    if target.exists():
+        for uninstaller in target.glob("unins*.*"):
+            carried = staging / uninstaller.name
+            if uninstaller.is_file() and not carried.exists():
+                shutil.copy2(uninstaller, carried)
+
     if target.exists():
         on_progress(96, "Replacing the old version…")
         _rename_with_patience(target, retired)
