@@ -691,6 +691,12 @@ def run():
 
     window = MikeWindow()
 
+    # The system's own Quit (Dock, the Mike menu, Log Out) must not be
+    # mistaken for "close the window": see QuitRequests.
+    from ui.system.lifecycle import QuitRequests
+    app._quit_requests = QuitRequests(lambda: setattr(window, "_quitting", True), app)
+    app.installEventFilter(app._quit_requests)
+
     _maybe_show_welcome(window)
 
     app.aboutToQuit.connect(window._teardown)

@@ -20,7 +20,7 @@ import re
 import sys
 import threading
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QEvent, QObject, Signal
 from PySide6.QtNetwork import QLocalServer, QLocalSocket
 
 from hostplatform import storage
@@ -125,3 +125,32 @@ class SingleInstance(QObject):
         if self._server is not None:
             self._server.close()
             self._server = None
+
+
+class QuitRequests(QObject):
+    """Let a real "quit" through the window that sends itself to the corner.
+
+    Closing Mike's window sends him to the corner instead of quitting (he
+    stays present for the hotkey and wake word), so his closeEvent refuses any
+    close that did not come from his own Quit. But the operating system's quit
+    arrives as exactly such a close: on macOS, Dock > Quit, the Mike menu >
+    Quit, Cmd+Q from another app's switcher, and Log Out / Shut Down all post a
+    quit request that Qt answers by asking every window to close. Mike refused
+    them all -- AppleScript reported "User cancelled" -- so the app could not be
+    quit by hand, and could hold up a shutdown.
+
+    This sees that request arrive and says so first, so the window agrees.
+    """
+
+    def __init__(self, on_quit, parent=None) -> None:
+        super().__init__(parent)
+        self._on_quit = on_quit
+
+    def eventFilter(self, _obj, event) -> bool:  # noqa: N802 - Qt API
+        if event.type() == QEvent.Quit:
+            logger.info("The system asked Mike to quit.")
+            try:
+                self._on_quit()
+            except Exception:
+                logger.exception("Could not mark the quit request.")
+        return False                      # never swallow it: Qt carries on and closes
