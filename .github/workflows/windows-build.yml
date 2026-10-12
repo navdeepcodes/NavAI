@@ -140,7 +140,8 @@ jobs:
           $app = Join-Path $env:LOCALAPPDATA "Programs\Mike"
           $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{6F3B2C1A-8D54-4E0B-9A77-4D2C5B8E1F30}_is1"
           $silent = "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-"
-          function Mike-Entries { @(Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" | Get-ItemProperty | Where-Object { $_.DisplayName -eq "Mike" }).Count }
+          # Inno names an entry "Mike version 1.1.1" unless told otherwise, so match the prefix.
+          function Mike-Entries { @(Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" | Get-ItemProperty | Where-Object { $_.DisplayName -like "Mike*" }).Count }
 
           gh release download v1.1.1 --repo $env:GITHUB_REPOSITORY --pattern "Mike-Setup-1.1.1.exe" --dir published
           if ($LASTEXITCODE -ne 0) { throw "could not download the published 1.1.1 Setup.exe" }
