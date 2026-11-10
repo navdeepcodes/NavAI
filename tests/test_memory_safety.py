@@ -248,6 +248,10 @@ def test_no_destructive_tool_is_left_ungated():
         # pages, beside the original, which is never touched (its results never
         # overwrite a file either). Nothing is destroyed.
         "pdf_edit",
+        # Reads a folder and returns a plan; it moves nothing. The word matched
+        # is "deleted" in "Nothing is ever deleted". Carrying the plan out is
+        # apply_organize, which is gated.
+        "preview_organize",
     }
     destructive_words = ("delete", "forget", "remove", "erase", "clear", "kill")
     unguarded = []

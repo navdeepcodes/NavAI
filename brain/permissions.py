@@ -37,7 +37,8 @@ ABILITIES: dict[str, tuple[str, str, frozenset[str]]] = {
         frozenset({"read_file", "write_file", "create_file", "create_folder",
                    "list_directory", "delete_path", "read_document",
                    "read_spreadsheet", "edit_spreadsheet", "search_files",
-                   "write_document_section", "mission"}),
+                   "write_document_section", "mission",
+                   "preview_organize", "apply_organize", "undo_organize"}),
     ),
     "commands": (
         "Run commands",

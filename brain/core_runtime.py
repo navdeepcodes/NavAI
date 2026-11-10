@@ -94,6 +94,9 @@ _SPECIAL_TOOLS = frozenset({
     "create_document",
     "create_presentation",
     "pdf_edit",
+    "preview_organize",
+    "apply_organize",
+    "undo_organize",
 })
 
 # Context size and generation limits are provider concerns and live at the
@@ -1208,6 +1211,8 @@ class CoreRuntime:
                 from tools.filesystem.document_writer import write_section
                 return write_section(str(args.get("path") or ""), str(args.get("heading") or ""),
                                      str(args.get("text") or ""))
+            if function_name in ("preview_organize", "apply_organize", "undo_organize"):
+                return _execute_organize(function_name, args)
             return self._execute_spreadsheet(function_name, args)
 
         # These return structured evidence — exit codes, diffs, line numbers,
@@ -2065,6 +2070,27 @@ def _command_folder(raw) -> str | None | dict:
                 "error": f"There's no folder at {folder} to run it in. Nothing was run."}
     given = Path(str(raw).strip()).expanduser()
     return str(given) if given.is_absolute() else str(folder)
+
+
+def _execute_organize(name: str, args: dict) -> dict:
+    """The folder organizer. Planning, moving and undoing all happen in
+    organizer/, which never deletes; this only routes and keeps a failure
+    from escaping as an exception."""
+    from organizer import chat as organize_chat
+
+    try:
+        if name == "preview_organize":
+            use_ai = args.get("use_ai")
+            return organize_chat.preview(
+                str(args.get("folder") or ""),
+                use_ai=True if use_ai is None else str(use_ai).lower() not in ("false", "0", "no"),
+            )
+        if name == "apply_organize":
+            return organize_chat.apply(str(args.get("plan_id") or ""))
+        return organize_chat.undo(args.get("run_id") or None)
+    except Exception as exc:
+        logger.exception("Organizer tool %s failed.", name)
+        return {"status": "error", "error": f"The organizer stopped: {exc}"}
 
 
 def _execute_mission(args: dict) -> dict:
