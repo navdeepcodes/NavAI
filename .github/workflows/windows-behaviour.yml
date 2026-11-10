@@ -31,6 +31,9 @@ jobs:
     timeout-minutes: 330
     env:
       QT_QPA_PLATFORM: offscreen
+      # offscreen Qt has no font list of its own; without this every PDF Mike
+      # writes comes out with invisible text (a CI artefact, not a user bug)
+      QT_QPA_FONTDIR: C:\Windows\Fonts
       PYTHONIOENCODING: utf-8
     steps:
       - uses: actions/checkout@v4
