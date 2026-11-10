@@ -15,6 +15,7 @@ costs only the part not yet fetched.
 """
 from __future__ import annotations
 
+import os
 import re
 import threading
 import time
@@ -52,6 +53,18 @@ class ModelDownload:
             return False
         with self._lock:
             if self.state in ("downloading", "done"):
+                return False
+            if os.environ.get("MIKE_NO_MODEL_DOWNLOAD"):
+                # The test suite sets this. Without it, every live-model test
+                # on a machine without the model silently started a multi-GB
+                # download and sat waiting on it, which looked like a hang.
+                from brain.providers.base import BrainError
+
+                self.state, self.detail = "failed", ""
+                self.error = BrainError(kind="model_missing",
+                                        message="The model isn't downloaded, and downloading "
+                                                "is turned off here (MIKE_NO_MODEL_DOWNLOAD).")
+                logger.info("Model download skipped: MIKE_NO_MODEL_DOWNLOAD is set.")
                 return False
             self.state, self.percent, self.detail, self.error = "downloading", None, "", None
             self._thread = threading.Thread(

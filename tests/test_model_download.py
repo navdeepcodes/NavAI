@@ -15,8 +15,33 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tests import _isolate  # noqa: F401
 
+import pytest
+
 from brain import model_download
 from brain.providers.base import BrainError
+
+
+@pytest.fixture(autouse=True)
+def _downloads_allowed(monkeypatch):
+    """These tests drive a fake provider, so nothing real is fetched: undo the
+    suite-wide MIKE_NO_MODEL_DOWNLOAD (tests/conftest.py) for this file."""
+    monkeypatch.delenv("MIKE_NO_MODEL_DOWNLOAD", raising=False)
+
+
+def test_downloading_can_be_turned_off(monkeypatch):
+    monkeypatch.setenv("MIKE_NO_MODEL_DOWNLOAD", "1")
+
+    class _Provider:
+        pulled = False
+
+        def pull_model(self):
+            _Provider.pulled = True
+            yield "pulling"
+
+    d = model_download.ModelDownload()
+    updates = list(d.follow(_Provider()))
+    assert not _Provider.pulled and d.state == "failed"
+    assert isinstance(updates[-1], BrainError) and updates[-1].kind == "model_missing"
 
 
 class _Provider:
