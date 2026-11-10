@@ -585,10 +585,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="apply_organize",
         description=(
-            "Carry out a plan from preview_organize. Call it in the same turn as the "
-            "preview, unless the user said not to move anything yet: the approval window "
-            "it opens IS the question -- the user sees the full plan there and says yes or "
-            "no, so don't also ask 'sound good?' in chat. Can be undone with undo_organize."
+            "Carry out a plan from preview_organize, once the user has said yes to it "
+            "('go ahead', 'do it', 'yes'). An approval window shows them the full "
+            "list before anything moves. If they said no or not yet, don't call it."
         ),
         parameters_json_schema={
             "type": "object",

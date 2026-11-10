@@ -136,10 +136,9 @@ def preview(folder: str, *, use_ai: bool = True) -> dict:
         "left_alone": len(plan.skipped),
         "notes": plan.notes,
         "note": ("Nothing has moved yet. Tell the user in a sentence or two what would "
-                 "change, then call apply_organize with this plan_id now -- unless they "
-                 "said not to move anything yet. Its approval window shows them the full "
-                 "list and asks yes or no, so don't ask in chat as well. Don't call "
-                 "undo_organize: nothing has been done."),
+                 "change and ask whether to go ahead. When they say yes, call "
+                 "apply_organize with this plan_id; its approval window shows them the "
+                 "full list. Nothing has been done, so there is nothing to undo."),
     }
 
 

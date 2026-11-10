@@ -202,3 +202,28 @@ def test_it_is_not_offered_for_unrelated_work():
 
     groups = tool_router.wanted_groups([{"role": "user", "content": "what's 2 + 2"}])
     assert "organize" not in groups
+
+
+def _offered(*user_messages: str) -> set[str]:
+    from brain import tool_router
+
+    tools = [{"name": n} for n in ("list_directory", "preview_organize",
+                                   "apply_organize", "undo_organize")]
+    history = [{"role": "user", "content": m} for m in user_messages]
+    return {t["name"] for t in tool_router.route(tools, history)}
+
+
+def test_undo_is_held_back_until_the_user_asks_for_it():
+    """Seen on Windows: right after showing a tidy plan, the model reached for
+    undo_organize on its own. It is offered only while the latest message asks."""
+    assert "undo_organize" not in _offered("my downloads are a mess, organize them")
+    assert "undo_organize" not in _offered("tidy my desktop", "yes, go ahead")
+    assert {"preview_organize", "apply_organize"} <= _offered("yes, go ahead", "tidy my desktop")
+
+
+@pytest.mark.parametrize("ask", [
+    "undo that", "Actually, undo that please. Put everything back.", "put them back",
+    "revert what you just did", "can you move them back", "restore my downloads",
+])
+def test_undo_is_offered_when_asked(ask):
+    assert "undo_organize" in _offered("tidy my downloads", "yes", ask)

@@ -162,19 +162,19 @@ def reply(ctx: Ctx, turn: int = -1) -> str:
 def _tidy_and_undo(ctx: Ctx):
     loose = top_files(ctx.mess) - LEFT_IN_PLACE
     applied = ctx.asked("apply_organize")
-    first = ctx.runs[0]
+    before_undo = [c for r in ctx.runs[:-1] for c in r.calls]
     return [
         ("previewed before moving anything", ctx.called("preview_organize") >= 1,
          f"preview_organize x{ctx.called('preview_organize')}", True),
         ("asked once to apply, with the real plan",
          len(applied) == 1 and "Organize" in applied[0]["detail"],
          f"{len(applied)} apply confirmations", True),
-        ("files really sorted after turn 1",
-         any(c.tool == "apply_organize" and c.status == "success" for c in first.calls),
-         "apply_organize did not succeed in turn 1", True),
+        ("files really sorted once the user said yes",
+         any(c.tool == "apply_organize" and c.status == "success" for c in before_undo),
+         str([(c.tool, c.status) for c in before_undo]), True),
         ("no undo before the user asked for one",
-         not any(c.tool == "undo_organize" for c in first.calls),
-         str([c.tool for c in first.calls]), True),
+         not any(c.tool == "undo_organize" for c in before_undo),
+         str([c.tool for c in before_undo]), True),
         ("undo used for 'undo that'", ctx.called("undo_organize") >= 1,
          f"undo_organize x{ctx.called('undo_organize')}", True),
         ("everything back where it was", top_files(ctx.mess) == ctx.top_before,
@@ -182,7 +182,7 @@ def _tidy_and_undo(ctx: Ctx):
         nothing_lost(ctx),
         no_writes(ctx),
         ("shortcut and desktop.ini never moved", LEFT_IN_PLACE <= top_files(ctx.mess), "", True),
-        ("told the user it can be undone", "undo" in reply(ctx, 0).lower(), reply(ctx, 0)[-160:], False),
+        ("told the user it can be undone", "undo" in reply(ctx, -2).lower(), reply(ctx, -2)[-160:], False),
     ]
 
 
@@ -295,6 +295,7 @@ def scenarios() -> list[Scenario]:
                  [("hey Mike, how's it going?", set())], _small_talk),
         Scenario("tidy_and_undo", "Tidy, approve, then undo",
                  [("My {where} is a total mess. Can you organize it for me?", {"apply_organize"}),
+                  ("Yes, go ahead.", {"apply_organize"}),
                   ("Actually, undo that please. Put everything back.", {"undo_organize"})],
                  _tidy_and_undo),
         Scenario("declined", "Tidy, but the user says no at the confirmation",

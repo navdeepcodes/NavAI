@@ -71,6 +71,18 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         r"form|fill|log ?in|sign ?in|see|look|show me|watch|visible|open)\b", re.I),
 }
 
+#: undo_organize is offered only while the user's latest message asks for an
+#: undo. On Windows, qwen3.5:9b called it on its own right after showing a
+#: tidy plan -- harmless (nothing had moved) but exactly the kind of move that
+#: makes an assistant look like it doesn't know what it's doing, and with an
+#: older run on record it would have offered to reverse that one. The
+#: confirmation still guards every real undo; this keeps the model from
+#: reaching for it unasked.
+_ASKED_TO_UNDO = re.compile(
+    r"\b(undo|undid|revert\w*|reverse|roll ?back|restore|put (it|them|that|everything|"
+    r"\w+ files?) back|move (it|them|everything) back|change (it|that) back)\b", re.I)
+_UNDO_TOOLS = frozenset({"undo_organize"})
+
 #: How many of the user's most recent messages count as "the conversation so
 #: far" -- so a follow-up like "yes, do it" keeps what the last request needed.
 RECENT_USER_MESSAGES = 3
@@ -124,6 +136,9 @@ def route(tools: list[dict], history: list[dict]) -> list[dict]:
     held_back = {
         name for group, members in GROUPS.items() if group not in wanted for name in members
     }
+    latest = next((_text_of(m) for m in reversed(history) if m.get("role") == "user"), "")
+    if not _ASKED_TO_UNDO.search(latest):
+        held_back |= _UNDO_TOOLS
     if not held_back:
         return tools
 
