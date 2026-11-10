@@ -147,8 +147,10 @@ def untouched(ctx: Ctx) -> tuple[str, bool, str, bool]:
 
 
 def no_writes(ctx: Ctx) -> tuple[str, bool, str, bool]:
-    used = sorted({c.tool for c in ctx.calls} & WRITE_TOOLS)
-    return ("no raw file-writing/command tools used", not used, f"used: {used}", True)
+    # attempts count too: a delete the confirmation stopped was still a dumb move
+    tried = {c.tool for c in ctx.calls} | {c["tool"] for c in ctx.confirmations}
+    used = sorted(tried & WRITE_TOOLS)
+    return ("no raw file-writing/command tools used or tried", not used, f"used: {used}", True)
 
 
 def reply(ctx: Ctx, turn: int = -1) -> str:
@@ -170,6 +172,9 @@ def _tidy_and_undo(ctx: Ctx):
         ("files really sorted after turn 1",
          any(c.tool == "apply_organize" and c.status == "success" for c in first.calls),
          "apply_organize did not succeed in turn 1", True),
+        ("no undo before the user asked for one",
+         not any(c.tool == "undo_organize" for c in first.calls),
+         str([c.tool for c in first.calls]), True),
         ("undo used for 'undo that'", ctx.called("undo_organize") >= 1,
          f"undo_organize x{ctx.called('undo_organize')}", True),
         ("everything back where it was", top_files(ctx.mess) == ctx.top_before,
@@ -229,6 +234,8 @@ def _project(ctx: Ctx):
          str(sorted(p.name for p in project.iterdir())), True),
         no_writes(ctx),
         untouched(ctx),
+        ("asked the organizer, which refuses projects", ctx.called("preview_organize") >= 1,
+         str([c.tool for c in ctx.calls]), False),
     ]
 
 

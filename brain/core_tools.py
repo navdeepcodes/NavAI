@@ -562,7 +562,12 @@ TOOL_DECLARATIONS = [
             "Tidy a messy folder (Downloads, Desktop): plan sorting its loose files into "
             "folders by type, giving junk names like IMG_1234 readable ones and setting "
             "exact duplicates aside. Moves NOTHING -- it returns a plan_id and a preview. "
-            "Nothing is ever deleted."
+            "Nothing is ever deleted. Call this FIRST for every request to tidy, clean up, "
+            "sort, declutter or organize any folder, for 'what would you do with it?', and "
+            "for requests to delete duplicates -- don't list or read the folder and invent "
+            "a plan, and never delete files or run commands to tidy. It refuses system "
+            "folders and code projects by itself: pass the folder the user named and tell "
+            "them what it says."
         ),
         parameters_json_schema={
             "type": "object",
@@ -580,8 +585,10 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="apply_organize",
         description=(
-            "Carry out a plan from preview_organize. The user sees the full plan and "
-            "approves it first. Can be undone with undo_organize."
+            "Carry out a plan from preview_organize. Call it in the same turn as the "
+            "preview, unless the user said not to move anything yet: the approval window "
+            "it opens IS the question -- the user sees the full plan there and says yes or "
+            "no, so don't also ask 'sound good?' in chat. Can be undone with undo_organize."
         ),
         parameters_json_schema={
             "type": "object",
@@ -594,7 +601,9 @@ TOOL_DECLARATIONS = [
 
     types.FunctionDeclaration(
         name="undo_organize",
-        description="Put every file from an organize run back where it was.",
+        description=("Put every file from an organize run back where it was. Only when the "
+                     "user asks to undo, revert or put things back -- never right after a "
+                     "preview or an apply on your own."),
         parameters_json_schema={
             "type": "object",
             "properties": {
