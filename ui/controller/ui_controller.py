@@ -74,6 +74,11 @@ class UIController(QObject):
 
         self._wake_heard.connect(self._on_wake_word)
         self._wake = WakeWordDetector(on_wake=self._wake_heard.emit)
+        # Headsets come and go while Mike runs: pause "Hey Mike" on a
+        # Bluetooth microphone, bring it back after (see recheck()).
+        self._mic_watch = QTimer(self)
+        self._mic_watch.setInterval(3000)
+        self._mic_watch.timeout.connect(self._wake.recheck)
 
         self._ide_asked.connect(self._on_ide_ask)
         try:
@@ -181,6 +186,7 @@ class UIController(QObject):
 
         if preferences.get("wake_word_enabled", True):
             self._wake.start()
+        self._mic_watch.start()
 
         # Pay the model's cold prefill now, off the GUI thread, while the
         # user is still reading the greeting -- see CoreRuntime.warm(). On a
@@ -1220,6 +1226,7 @@ class UIController(QObject):
             logger.debug("Could not settle the mission on quit.", exc_info=True)
 
         self._speaker.stop()
+        self._mic_watch.stop()
         self._wake.stop()
 
         # Cut the speech-to-text prewarm's wait short and let the thread go.
