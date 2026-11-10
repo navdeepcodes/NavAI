@@ -18,6 +18,10 @@ on:
         description: "Comma-separated scenario names (empty = all)"
         required: false
         default: ""
+      variants:
+        description: "Runs per scenario, each with fresh wording"
+        required: false
+        default: "2"
   push:
     branches: ["test/**"]
 
@@ -79,7 +83,7 @@ jobs:
           if ($pulled.status -ne "success") { throw "pull failed: $($pulled | ConvertTo-Json)" }
           Invoke-RestMethod http://127.0.0.1:11434/api/tags | ConvertTo-Json -Depth 4
 
-          python tests/behaviour_v1.py --only "${{ inputs.only }}" --out behaviour-report.json
+          python tests/behaviour_v1.py --only "${{ inputs.only }}" --variants "${{ inputs.variants || '2' }}" --out behaviour-report.json
           exit $LASTEXITCODE
 
       - name: Keep the report

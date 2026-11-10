@@ -43,7 +43,6 @@ def preview(folder: Path) -> dict:
 def test_preview_is_free_and_moving_is_gated():
     assert not needs_confirmation("preview_organize", {"folder": "~/Downloads"})
     assert needs_confirmation("apply_organize", {"plan_id": "plan-1"})
-    assert needs_confirmation("undo_organize", {})
 
 
 def test_preview_moves_nothing_and_returns_a_plan(tmp_path):
@@ -185,45 +184,57 @@ def test_a_missing_folder_says_so(tmp_path):
     assert result["status"] == "error" and "isn't a folder" in result["error"]
 
 
-# ── offered when it's asked for ────────────────────────────
-
-@pytest.mark.parametrize("ask", [
-    "clean up my downloads", "can you organize my Desktop",
-    "my downloads folder is a mess, tidy it", "undo that", "put them back",
-])
-def test_the_organizer_is_offered_when_asked(ask):
-    from brain import tool_router
-
-    assert "organize" in tool_router.wanted_groups([{"role": "user", "content": ask}])
-
-
-def test_it_is_not_offered_for_unrelated_work():
-    from brain import tool_router
-
-    groups = tool_router.wanted_groups([{"role": "user", "content": "what's 2 + 2"}])
-    assert "organize" not in groups
-
+# ── always within reach ────────────────────────────────────
 
 def _offered(*user_messages: str) -> set[str]:
     from brain import tool_router
 
-    tools = [{"name": n} for n in ("list_directory", "preview_organize",
-                                   "apply_organize", "undo_organize")]
+    tools = [{"name": n} for n in ("list_directory", "preview_organize", "apply_organize",
+                                   "undo_organize", "send_email")]
     history = [{"role": "user", "content": m} for m in user_messages]
     return {t["name"] for t in tool_router.route(tools, history)}
 
 
-def test_undo_is_held_back_until_the_user_asks_for_it():
-    """Seen on Windows: right after showing a tidy plan, the model reached for
-    undo_organize on its own. It is offered only while the latest message asks."""
-    assert "undo_organize" not in _offered("my downloads are a mess, organize them")
-    assert "undo_organize" not in _offered("tidy my desktop", "yes, go ahead")
-    assert {"preview_organize", "apply_organize"} <= _offered("yes, go ahead", "tidy my desktop")
-
-
 @pytest.mark.parametrize("ask", [
-    "undo that", "Actually, undo that please. Put everything back.", "put them back",
-    "revert what you just did", "can you move them back", "restore my downloads",
+    "clean up my downloads",
+    "ugh I can't find anything, my files are everywhere",
+    "my desktop looks like a bomb went off",
+    "what's 2 + 2",
+    "yes",
+    "never mind, go back to how it was",
 ])
-def test_undo_is_offered_when_asked(ask):
-    assert "undo_organize" in _offered("tidy my downloads", "yes", ask)
+def test_the_organizer_is_offered_whatever_the_wording(ask):
+    """No keyword gate between a request and the organizer: the model decides
+    what a message needs. (The router once offered these tools only when the
+    message said "tidy", "organize", "downloads" and the like.)"""
+    assert {"preview_organize", "apply_organize", "undo_organize"} <= _offered(ask)
+
+
+@pytest.fixture
+def no_runs_yet(tmp_path, monkeypatch):
+    from organizer import journal
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(journal, "_runs_dir", lambda: runs)
+
+
+def test_undo_with_nothing_done_asks_nothing_and_says_so(tmp_path, no_runs_yet):
+    folder = tmp_path / "Downloads"
+    folder.mkdir()
+    make(folder, "Lab 3.pdf")
+    preview(folder)                                   # a preview moves nothing
+
+    assert not needs_confirmation("undo_organize", {})
+    result = _execute_organize("undo_organize", {})
+    assert result["status"] == "success" and result["moved"] == 0
+    assert "Nothing to undo" in result["result"]
+    assert files(folder) == {"Lab 3.pdf"}
+
+
+def test_undo_after_a_real_run_still_asks(tmp_path, no_runs_yet):
+    folder = tmp_path / "Downloads"
+    folder.mkdir()
+    make(folder, "Lab 3.pdf")
+    _execute_organize("apply_organize", {"plan_id": preview(folder)["plan_id"]})
+    assert needs_confirmation("undo_organize", {})

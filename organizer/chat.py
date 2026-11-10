@@ -161,7 +161,22 @@ def apply(plan_id: str) -> dict:
     return out
 
 
+def undoable(run_id: str | None = None) -> dict | None:
+    """The run an undo would reverse (the most recent one by default), or None
+    when nothing that moved files is waiting to be undone."""
+    runs = [r for r in list_runs() if r["state"] != "undone"]
+    if run_id:
+        return next((r for r in runs if r["run_id"] == run_id), None)
+    return runs[0] if runs else None
+
+
 def undo(run_id: str | None = None) -> dict:
+    if undoable(run_id) is None:
+        # Not a failure: it's the true state, said plainly, so the model can
+        # tell the user rather than retry or apologise for an error.
+        return {"status": "success", "moved": 0,
+                "result": ("Nothing to undo: no files have been moved by an organize run "
+                           "that's still in place (a preview moves nothing).")}
     try:
         result = undo_run(run_id or None)
     except LookupError as exc:
@@ -178,11 +193,7 @@ def undo(run_id: str | None = None) -> dict:
 
 
 def undo_confirmation_text(run_id: str | None) -> str:
-    runs = [r for r in list_runs() if r["state"] != "undone"]
-    if run_id:
-        run = next((r for r in runs if r["run_id"] == run_id), None)
-    else:
-        run = runs[0] if runs else None
+    run = undoable(run_id)
     if run is None:
         return "Undo an organize run -- but there's no matching run, so nothing will move."
     return (f"Undo organizing {_short(run['root'])} ({run['created_at'].replace('T', ' ')}): "

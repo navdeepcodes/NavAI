@@ -31,7 +31,10 @@ from collections.abc import Iterable
 from logs.logger import logger
 
 #: Specialist tools, by the kind of job that needs them. Anything not listed
-#: here is "everyday" and always offered.
+#: here is "everyday" and always offered -- the folder organizer among them:
+#: its three tools are small, and "my files are everywhere, I can't find
+#: anything" should reach them as surely as "tidy my Downloads". A keyword
+#: list can't know every way a person says that; the model can.
 GROUPS: dict[str, frozenset[str]] = {
     "documents": frozenset({
         "create_document", "pdf_edit", "create_presentation",
@@ -39,7 +42,6 @@ GROUPS: dict[str, frozenset[str]] = {
     }),
     "spreadsheet": frozenset({"edit_spreadsheet", "read_spreadsheet"}),
     "email": frozenset({"send_email"}),
-    "organize": frozenset({"preview_organize", "apply_organize", "undo_organize"}),
     "screen": frozenset({
         "click_element", "type_text", "press_keys", "scroll_ui", "see_ui",
         "focus_app", "list_windows", "see_screen",
@@ -62,26 +64,11 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         r"pivot|table|tabulate|budget|marks|grades)\b|\.(xlsx?|csv)\b", re.I),
     "email": re.compile(
         r"\b(e-?mails?|gmail|inbox|mail|send (it |this |that )?to|cc|bcc|draft|reply)\b", re.I),
-    "organize": re.compile(
-        r"\b(organi[sz]\w*|tidy|tidies|clean(ing)? ?up|declutter\w*|sort( out)?|messy|duplicates?|"
-        r"clutter\w*|downloads|desktop|undo|put (it|them|everything) back)\b", re.I),
     "screen": re.compile(
         r"\b(click|double[- ]?click|type|typing|press|scroll|windows?|screens?|screenshots?|"
         r"desktop|tabs?|buttons?|menus?|apps?|applications?|focus|switch|drag|dropdown|"
         r"form|fill|log ?in|sign ?in|see|look|show me|watch|visible|open)\b", re.I),
 }
-
-#: undo_organize is offered only while the user's latest message asks for an
-#: undo. On Windows, qwen3.5:9b called it on its own right after showing a
-#: tidy plan -- harmless (nothing had moved) but exactly the kind of move that
-#: makes an assistant look like it doesn't know what it's doing, and with an
-#: older run on record it would have offered to reverse that one. The
-#: confirmation still guards every real undo; this keeps the model from
-#: reaching for it unasked.
-_ASKED_TO_UNDO = re.compile(
-    r"\b(undo|undid|revert\w*|reverse|roll ?back|restore|put (it|them|that|everything|"
-    r"\w+ files?) back|move (it|them|everything) back|change (it|that) back)\b", re.I)
-_UNDO_TOOLS = frozenset({"undo_organize"})
 
 #: How many of the user's most recent messages count as "the conversation so
 #: far" -- so a follow-up like "yes, do it" keeps what the last request needed.
@@ -136,9 +123,6 @@ def route(tools: list[dict], history: list[dict]) -> list[dict]:
     held_back = {
         name for group, members in GROUPS.items() if group not in wanted for name in members
     }
-    latest = next((_text_of(m) for m in reversed(history) if m.get("role") == "user"), "")
-    if not _ASKED_TO_UNDO.search(latest):
-        held_back |= _UNDO_TOOLS
     if not held_back:
         return tools
 

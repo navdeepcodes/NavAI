@@ -1416,6 +1416,13 @@ _CONFIRM_ACTIONS = frozenset({
 
 
 def needs_confirmation(function_name: str, args: dict) -> bool:
+    if function_name == "undo_organize":
+        # Undo moves files back, so it asks -- but only when there is something
+        # to move. Asking "undo?" about nothing is noise the user learns to
+        # click through.
+        from organizer import chat as organize_chat
+        return organize_chat.undoable(args.get("run_id") or None) is not None
+
     if function_name in _CONFIRM_ACTIONS:
         return True
 
