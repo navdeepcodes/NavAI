@@ -39,12 +39,14 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pytest-timeout
+          pip install pytest pytest-timeout pytest-xdist
 
       - name: Run the test suite
         # A per-test limit, so one stuck test shows up by name instead of
-        # eating the whole job.
-        run: python -m pytest -p no:cacheprovider -rfE --timeout=180 --junitxml=test-results.xml -q
+        # eating the whole job. On Windows a timeout kills the process, so
+        # the tests run in one xdist worker that is restarted after a kill:
+        # the stuck test is reported and the rest of the suite still runs.
+        run: python -m pytest -p no:cacheprovider -n 1 --max-worker-restart=50 -rfE --timeout=180 --junitxml=test-results.xml -q
 
       - name: Keep the results
         if: always()

@@ -118,6 +118,14 @@ def test_resolve_start_app_matching_precedence(monkeypatch):
     assert shell._resolve_start_app("nonexistent-zzz") is None
 
 
+# These really open a browser and wait for its window to come forward. On a
+# GitHub runner there is no desktop for it to appear on, so the wait never
+# ends; they belong on a real Windows PC.
+_NO_DESKTOP = pytest.mark.skipif(os.environ.get("GITHUB_ACTIONS") == "true",
+                                 reason="opens a real browser; no desktop on CI")
+
+
+@_NO_DESKTOP
 @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only behaviour")
 def test_open_browser_does_not_depend_on_default_browser_setting(monkeypatch):
     """The regression: DEFAULT_BROWSER defaults to "Opera", which most
@@ -128,6 +136,7 @@ def test_open_browser_does_not_depend_on_default_browser_setting(monkeypatch):
     shell.open_browser()  # must not raise
 
 
+@_NO_DESKTOP
 @pytest.mark.skipif(platform.system() != "Windows", reason="Windows-only behaviour")
 def test_open_url_normalizes_and_does_not_raise():
     shell.open_url("example.com")
