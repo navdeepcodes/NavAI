@@ -1,0 +1,81 @@
+name: Windows behaviour (real model)
+
+# Mike with the real local model on real Windows, through the v1 launch
+# scenarios in tests/behaviour_v1.py: tidy + approve + undo, a "no" at the
+# confirmation, preview only, small talk, system and project folders, a request
+# to delete duplicates, an already-tidy folder, a folder that doesn't exist.
+# Pass/fail comes from what happened on disk and at the confirmation gate,
+# never from Mike's wording.
+#
+# Slow on purpose: GitHub's runners have no GPU, so every model turn runs on
+# CPU. Not on every push -- run it from the Actions tab, or push to a test/
+# branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated scenario names (empty = all)"
+        required: false
+        default: ""
+  push:
+    branches: ["test/**"]
+
+concurrency:
+  group: windows-behaviour-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  behaviour:
+    runs-on: windows-latest
+    timeout-minutes: 330
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install and start Ollama
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\ollama"
+          Invoke-WebRequest "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -OutFile "$dir.zip"
+          Expand-Archive "$dir.zip" -DestinationPath $dir
+          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          Start-Process -FilePath "$dir\ollama.exe" -ArgumentList "serve" -WindowStyle Hidden `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\ollama.log" -RedirectStandardError "$env:RUNNER_TEMP\ollama.err"
+          for ($i = 0; $i -lt 60; $i++) {
+            try { Invoke-RestMethod http://127.0.0.1:11434/api/version | Out-Null; Write-Host "ollama up"; exit 0 }
+            catch { Start-Sleep 2 }
+          }
+          throw "Ollama did not start"
+
+      - name: Pull Mike's model
+        shell: pwsh
+        run: |
+          $model = python -c "from config.ollama import OLLAMA_CHAT_MODEL; print(OLLAMA_CHAT_MODEL)"
+          ollama pull $model
+          ollama list
+
+      - name: Run the v1 behaviour scenarios
+        run: python tests/behaviour_v1.py --only "${{ inputs.only }}" --out behaviour-report.json
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-behaviour-report
+          path: |
+            behaviour-report.json
+            ${{ runner.temp }}/ollama.log
+            ${{ runner.temp }}/ollama.err

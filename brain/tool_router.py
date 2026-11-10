@@ -63,7 +63,7 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
     "email": re.compile(
         r"\b(e-?mails?|gmail|inbox|mail|send (it |this |that )?to|cc|bcc|draft|reply)\b", re.I),
     "organize": re.compile(
-        r"\b(organi[sz]\w*|tidy|tidies|clean(ing)? ?up|declutter\w*|sort( out)?|messy|"
+        r"\b(organi[sz]\w*|tidy|tidies|clean(ing)? ?up|declutter\w*|sort( out)?|messy|duplicates?|"
         r"clutter\w*|downloads|desktop|undo|put (it|them|everything) back)\b", re.I),
     "screen": re.compile(
         r"\b(click|double[- ]?click|type|typing|press|scroll|windows?|screens?|screenshots?|"
