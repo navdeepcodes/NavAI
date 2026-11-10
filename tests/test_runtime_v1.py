@@ -81,8 +81,11 @@ def test_command_reports_cwd_and_respects_it():
         # rather than a hand-rolled drive-letter mapping, because MSYS mounts
         # some paths specially — tempfile.mkdtemp() lands under Windows TEMP,
         # which Git Bash mounts as /tmp, not /c/Users/.../AppData/Local/Temp.
+        # The same Git Bash Mike uses: a bare "bash" can be System32's, which
+        # starts WSL instead.
+        from hostplatform.processes import _find_git_bash
         expected = subprocess.run(
-            ["bash", "-c", f"cygpath -u '{tmp}'"], capture_output=True, text=True,
+            [_find_git_bash() or "bash", "-c", f"cygpath -u '{tmp}'"], capture_output=True, text=True,
         ).stdout.strip()
         assert reported == expected
     else:
