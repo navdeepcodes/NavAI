@@ -1,0 +1,54 @@
+name: Windows tests
+
+# The whole test suite on real Windows, on every push and pull request.
+# Until this existed the suite only ever ran on a Mac, and the Windows build
+# workflow checks install / self-check / update / uninstall but never runs a
+# single test -- so Windows-only breakage went unseen until a user hit it.
+#
+# No model here: tests/conftest.py sets MIKE_NO_MODEL_DOWNLOAD, so tests that
+# need the real model fail fast instead of pulling several GB. Mike's
+# behaviour with the real model is windows-behaviour.yml.
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      # Qt widgets are built in tests; there is no display on the runner.
+      QT_QPA_PLATFORM: offscreen
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-timeout
+
+      - name: Run the test suite
+        # A per-test limit, so one stuck test shows up by name instead of
+        # eating the whole job.
+        run: python -m pytest -p no:cacheprovider -rfE --timeout=180 --junitxml=test-results.xml -q
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-test-results
+          path: test-results.xml
