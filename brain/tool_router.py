@@ -39,6 +39,7 @@ GROUPS: dict[str, frozenset[str]] = {
     }),
     "spreadsheet": frozenset({"edit_spreadsheet", "read_spreadsheet"}),
     "email": frozenset({"send_email"}),
+    "organize": frozenset({"preview_organize", "apply_organize", "undo_organize"}),
     "screen": frozenset({
         "click_element", "type_text", "press_keys", "scroll_ui", "see_ui",
         "focus_app", "list_windows", "see_screen",
@@ -61,6 +62,9 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         r"pivot|table|tabulate|budget|marks|grades)\b|\.(xlsx?|csv)\b", re.I),
     "email": re.compile(
         r"\b(e-?mails?|gmail|inbox|mail|send (it |this |that )?to|cc|bcc|draft|reply)\b", re.I),
+    "organize": re.compile(
+        r"\b(organi[sz]\w*|tidy|tidies|clean(ing)? ?up|declutter\w*|sort( out)?|messy|"
+        r"clutter\w*|downloads|desktop|undo|put (it|them|everything) back)\b", re.I),
     "screen": re.compile(
         r"\b(click|double[- ]?click|type|typing|press|scroll|windows?|screens?|screenshots?|"
         r"desktop|tabs?|buttons?|menus?|apps?|applications?|focus|switch|drag|dropdown|"

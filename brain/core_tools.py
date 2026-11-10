@@ -557,6 +557,57 @@ TOOL_DECLARATIONS = [
     ),
 
     types.FunctionDeclaration(
+        name="preview_organize",
+        description=(
+            "Tidy a messy folder (Downloads, Desktop): plan sorting its loose files into "
+            "folders by type, giving junk names like IMG_1234 readable ones and setting "
+            "exact duplicates aside. Moves NOTHING -- it returns a plan_id and a preview. "
+            "Nothing is ever deleted."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "folder": {"type": "string", "description": "Folder to tidy, e.g. ~/Downloads"},
+                "use_ai": {
+                    "type": "boolean",
+                    "description": "Read documents to name and group them (slower). Default true.",
+                },
+            },
+            "required": ["folder"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="apply_organize",
+        description=(
+            "Carry out a plan from preview_organize. The user sees the full plan and "
+            "approves it first. Can be undone with undo_organize."
+        ),
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "plan_id": {"type": "string", "description": "The plan_id preview_organize returned"},
+            },
+            "required": ["plan_id"],
+        },
+    ),
+
+    types.FunctionDeclaration(
+        name="undo_organize",
+        description="Put every file from an organize run back where it was.",
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "run_id": {
+                    "type": "string",
+                    "description": "The run to undo; omit for the most recent one",
+                },
+            },
+            "required": [],
+        },
+    ),
+
+    types.FunctionDeclaration(
         name="search_files",
         description=(
             "Find files by NAME. Use this when you know roughly what a file is "
@@ -1348,6 +1399,11 @@ _CONFIRM_ACTIONS = frozenset({
     # is for files. "forget everything" reaching the database unprompted was
     # the last ungated destructive tool.
     "forget_memory",
+    # Organizing moves (and renames) every loose file in a folder. Previewing
+    # is free; the move is the boundary, and the prompt shows the stored plan
+    # that will actually be carried out. Undo moves files too, so it asks as well.
+    "apply_organize",
+    "undo_organize",
 })
 
 
@@ -1398,6 +1454,16 @@ def confirmation_detail(function_name: str, args: dict) -> str:
     "Allow click_element?" tells them nothing. "Click button 'Send'" tells
     them what will happen.
     """
+    if function_name == "apply_organize":
+        # Read from the stored plan apply will carry out, never from the
+        # model's account of it.
+        from organizer import chat as organize_chat
+        return organize_chat.confirmation_text(str(args.get("plan_id") or ""))
+
+    if function_name == "undo_organize":
+        from organizer import chat as organize_chat
+        return organize_chat.undo_confirmation_text(args.get("run_id") or None)
+
     if function_name == "send_email":
         # The recipient and attachments are read back from the message that
         # would actually be sent, not from the model's description of it. A
@@ -1803,6 +1869,9 @@ def friendly_tool_name(function_name: str, args: dict) -> str:
         "calculate": f"Working out {_clip(a.get('expression', ''), 60)}",
         "read_spreadsheet": f"Reading {path}",
         "edit_spreadsheet": f"Updating {path}",
+        "preview_organize": f"Looking through {_short_path(a.get('folder'))}",
+        "apply_organize": "Organizing the folder",
+        "undo_organize": "Putting the files back",
         "search_files": f"Looking for “{_clip(a.get('query', '…'))}”",
         "see_screen": "Looking at your screen",
         "ide_context": "Checking your editor",

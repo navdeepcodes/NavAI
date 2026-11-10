@@ -31,6 +31,11 @@ if "MIKE_DATA_DIR" not in os.environ:
 os.environ.setdefault("MIKE_SUPABASE_URL", "")
 os.environ.setdefault("MIKE_SUPABASE_ANON_KEY", "")
 
+# A test run never downloads Mike's multi-GB model. Live-model tests fail fast
+# with "model missing" instead of starting a pull and waiting on it, which
+# looked like the suite hanging. Set MIKE_NO_MODEL_DOWNLOAD= to allow it.
+os.environ.setdefault("MIKE_NO_MODEL_DOWNLOAD", "1")
+
 
 # Manual end-to-end scripts, not pytest tests. Their step functions take
 # arguments and chain state through a __main__ block (a captured screenshot is
