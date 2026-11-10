@@ -45,30 +45,39 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Install and start Ollama
+      - name: Download Ollama
         shell: pwsh
         run: |
           $dir = "$env:RUNNER_TEMP\ollama"
           Invoke-WebRequest "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -OutFile "$dir.zip"
           Expand-Archive "$dir.zip" -DestinationPath $dir
-          "$dir" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
-          Start-Process -FilePath "$dir\ollama.exe" -ArgumentList "serve" -WindowStyle Hidden `
-            -RedirectStandardOutput "$env:RUNNER_TEMP\ollama.log" -RedirectStandardError "$env:RUNNER_TEMP\ollama.err"
-          for ($i = 0; $i -lt 60; $i++) {
-            try { Invoke-RestMethod http://127.0.0.1:11434/api/version | Out-Null; Write-Host "ollama up"; exit 0 }
-            catch { Start-Sleep 2 }
-          }
-          throw "Ollama did not start"
 
-      - name: Pull Mike's model
+      # One step: a server started in an earlier step is gone by the next one,
+      # and the ollama CLI then looks for the desktop app ("could not locate
+      # ollama app"). Serve, pull (over the API) and run, all here.
+      - name: Start Ollama, pull Mike's model, run the v1 behaviour scenarios
         shell: pwsh
         run: |
-          $model = python -c "from config.ollama import OLLAMA_CHAT_MODEL; print(OLLAMA_CHAT_MODEL)"
-          ollama pull $model
-          ollama list
+          $dir = "$env:RUNNER_TEMP\ollama"
+          Start-Process -FilePath "$dir\ollama.exe" -ArgumentList "serve" -WindowStyle Hidden `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\ollama.log" -RedirectStandardError "$env:RUNNER_TEMP\ollama.err"
+          $up = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            try { Invoke-RestMethod http://127.0.0.1:11434/api/version | Out-Null; $up = $true; break }
+            catch { Start-Sleep 2 }
+          }
+          if (-not $up) { throw "Ollama did not start" }
 
-      - name: Run the v1 behaviour scenarios
-        run: python tests/behaviour_v1.py --only "${{ inputs.only }}" --out behaviour-report.json
+          $model = python -c "from config.ollama import OLLAMA_CHAT_MODEL; print(OLLAMA_CHAT_MODEL)"
+          Write-Host "pulling $model"
+          $body = @{ model = $model; stream = $false } | ConvertTo-Json
+          $pulled = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:11434/api/pull -Body $body `
+            -ContentType "application/json" -TimeoutSec 3600
+          if ($pulled.status -ne "success") { throw "pull failed: $($pulled | ConvertTo-Json)" }
+          Invoke-RestMethod http://127.0.0.1:11434/api/tags | ConvertTo-Json -Depth 4
+
+          python tests/behaviour_v1.py --only "${{ inputs.only }}" --out behaviour-report.json
+          exit $LASTEXITCODE
 
       - name: Keep the report
         if: always()
