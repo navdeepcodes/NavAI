@@ -74,6 +74,10 @@ class MacWakeWord(WakeWordBackend):
             self._recognizer = None
             self._delegate = None
         self._active = False
+        # A stop while Mike was speaking would otherwise leave this set, and a
+        # later start() would ignore every "Hey Mike" (resume() is a no-op
+        # while stopped, so nothing would ever clear it).
+        self._suppressed = False
         logger.info("Wake word detector stopped")
 
     def suppress(self) -> None:

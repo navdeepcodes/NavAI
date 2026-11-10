@@ -69,8 +69,13 @@ def test_no_built_in_microphone_means_no_choice():
 def test_recording_uses_the_built_in_mic_only_when_the_default_is_bluetooth(monkeypatch):
     import sounddevice as sd
 
+    from types import SimpleNamespace
+
     monkeypatch.setattr(sd, "query_devices", lambda: DEVICES)
-    monkeypatch.setattr(sd.default, "device", (2, 3))
+    # Replace `sd.default` whole: patching `sd.default.device` "restores" a
+    # live view of the setting, leaving device 2 as the default for every
+    # later test (which then can't open a microphone).
+    monkeypatch.setattr(sd, "default", SimpleNamespace(device=(2, 3)))
     monkeypatch.setattr(audio, "default_input_is_bluetooth", lambda: True)
     assert audio.recording_device() == 0
     monkeypatch.setattr(audio, "default_input_is_bluetooth", lambda: False)
@@ -121,6 +126,74 @@ def test_the_wake_word_starts_once_the_headset_is_no_longer_the_microphone(monke
     assert detector.start() is False
     state["bt"] = False
     assert detector.start() is True and detector.paused_for_bluetooth is False
+
+
+class _StoppableBackend(_Backend):
+    def __init__(self):
+        self.running = False
+
+    def start(self):
+        self.running = True
+        return True
+
+    def stop(self):
+        self.running = False
+
+
+def _detector(monkeypatch, state):
+    from voice import wake, wake_word
+
+    backend = _StoppableBackend()
+    monkeypatch.setattr(wake, "make_backend", lambda cb: backend)
+    monkeypatch.setattr(audio, "default_input_is_bluetooth", lambda: state["bt"])
+    return wake_word.WakeWordDetector(on_wake=lambda: None), backend
+
+
+def test_a_headset_connected_while_mike_runs_pauses_the_wake_word(monkeypatch):
+    """AirPods put in after Mike opened become the microphone; the listener
+    follows the default, so it must let go of them."""
+    state = {"bt": False}
+    detector, backend = _detector(monkeypatch, state)
+    assert detector.start() is True and backend.running
+
+    state["bt"] = True
+    detector.recheck()
+    assert detector.paused_for_bluetooth is True and not backend.running
+
+    detector.recheck()                       # still Bluetooth: stays paused
+    assert not backend.running
+
+
+def test_the_wake_word_comes_back_when_the_headset_goes(monkeypatch):
+    state = {"bt": True}
+    detector, backend = _detector(monkeypatch, state)
+    assert detector.start() is False and not backend.running
+
+    state["bt"] = False
+    detector.recheck()
+    assert detector.paused_for_bluetooth is False and backend.running
+
+
+def test_recheck_never_starts_a_wake_word_the_user_switched_off(monkeypatch):
+    state = {"bt": True}
+    detector, backend = _detector(monkeypatch, state)
+    detector.start()
+    detector.stop()                          # Settings: "Hey Mike" off
+
+    state["bt"] = False
+    detector.recheck()
+    assert not backend.running
+
+
+def test_the_mac_listener_is_not_left_deaf_after_a_stop_mid_speech():
+    """Stopped while Mike was speaking, then started again: it must hear."""
+    import pytest
+
+    macos = pytest.importorskip("voice.wake.macos")
+    backend = macos.MacWakeWord(on_wake=lambda: None)
+    backend._active, backend._suppressed = True, True
+    backend.stop()
+    assert backend._suppressed is False
 
 
 # ── the recorder passes the choice to the audio system ────────
