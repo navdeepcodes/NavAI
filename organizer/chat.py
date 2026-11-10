@@ -105,7 +105,12 @@ def preview(folder: str, *, use_ai: bool = True) -> dict:
         return {"status": "error", "retry_safe": True,
                 "error": "Say which folder to organize, e.g. ~/Downloads."}
     try:
-        plan = build_plan(folder, use_model=use_ai)
+        # "Downloads", "~/Desktop", "Desktop/Screenshots" or a full path: the
+        # same resolution every file tool uses (Windows' real Desktop when
+        # OneDrive has moved it), never a path relative to Mike's own folder.
+        from tools.filesystem.path_utils import resolve_path
+
+        plan = build_plan(resolve_path(str(folder)), use_model=use_ai)
     except (NotADirectoryError, FileNotFoundError):
         return {"status": "error", "retry_safe": True,
                 "error": f"{folder} isn't a folder. Check the path, e.g. ~/Downloads."}

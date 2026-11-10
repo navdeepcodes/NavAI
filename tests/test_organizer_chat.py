@@ -148,6 +148,38 @@ def test_the_home_folder_itself_is_refused(tmp_path, monkeypatch):
     assert result["status"] == "error" and "too broad" in result["error"]
 
 
+def test_a_folder_name_means_the_users_folder_not_a_relative_path(tmp_path, monkeypatch):
+    """The model says "Downloads"; that is the user's Downloads, whatever
+    folder Mike itself happens to be running from."""
+    from tools.filesystem import path_utils
+
+    downloads = tmp_path / "home" / "Downloads"
+    make(downloads, "Lab 3.pdf")
+    monkeypatch.setitem(path_utils.SPECIAL_PATHS, "downloads", downloads)
+    monkeypatch.chdir(tmp_path)
+
+    for said in ("Downloads", "downloads"):
+        result = _execute_organize("preview_organize", {"folder": said, "use_ai": False})
+        assert result["status"] == "success", result
+        assert "1 files" in result["summary"]
+
+
+def test_windows_user_folders_come_from_windows():
+    """On Windows, Desktop/Documents/Downloads are asked of Windows itself
+    (OneDrive moves them); elsewhere they are the usual home folders."""
+    import sys
+
+    from tools.filesystem import path_utils
+
+    if sys.platform == "win32":
+        for folder in (path_utils.DESKTOP, path_utils.DOCUMENTS, path_utils.DOWNLOADS):
+            assert folder.is_absolute() and folder.is_dir(), folder
+        assert path_utils._known_folder("B4BFCC3A-DB2C-424C-B029-7FE99A87C641") == path_utils.DESKTOP
+    else:
+        assert path_utils._known_folder("B4BFCC3A-DB2C-424C-B029-7FE99A87C641") is None
+        assert path_utils.DESKTOP == path_utils.HOME / "Desktop"
+
+
 def test_a_missing_folder_says_so(tmp_path):
     result = preview(tmp_path / "nope")
     assert result["status"] == "error" and "isn't a folder" in result["error"]
