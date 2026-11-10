@@ -31,7 +31,7 @@ def make(folder: Path, name: str, content: str | None = None) -> Path:
 
 
 def files(folder: Path) -> set[str]:
-    return {str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_file()}
+    return {p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file()}
 
 
 def preview(folder: Path) -> dict:
