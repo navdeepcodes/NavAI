@@ -58,6 +58,23 @@ def test_preview_moves_nothing_and_returns_a_plan(tmp_path):
     assert any("IMG_0001.jpg -> Photo " in line for line in result["preview"])
 
 
+def test_the_duplicates_are_named_not_left_to_be_guessed(tmp_path):
+    # Photos taken seconds apart look like copies by name; only real copies count.
+    make(tmp_path, "Resume.pdf", "same bytes")
+    make(tmp_path, "Resume - Copy.pdf", "same bytes")
+    make(tmp_path, "IMG_20260104_103015.jpg")
+    make(tmp_path, "IMG_20260104_103122.jpg")
+
+    dupes = preview(tmp_path)["duplicates"]
+
+    assert len(dupes) == 1 and "Resume.pdf" in dupes[0]
+
+
+def test_no_duplicates_is_said_outright(tmp_path):
+    make(tmp_path, "IMG_0001.jpg")
+    assert preview(tmp_path)["duplicates"] == "none"
+
+
 def test_the_confirmation_shows_the_real_plan(tmp_path):
     make(tmp_path, "IMG_0001.jpg")
     make(tmp_path, "Lab 3.pdf")

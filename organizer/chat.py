@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from organizer import apply_plan, build_plan, list_runs, undo_run
+from organizer import classify
 from organizer.plan import Plan
 
 #: A stored plan older than this is refused: the folder has had time to change
@@ -134,11 +135,17 @@ def preview(folder: str, *, use_ai: bool = True) -> dict:
         "summary": summary_line(plan),
         "preview": describe(plan),
         "left_alone": len(plan.skipped),
+        # Spelled out, so a count or a "these are copies" is read, not inferred
+        # from file names that merely look alike.
+        "duplicates": [f"{m.src.name} ({m.reason})" for m in plan.moves
+                       if m.category == classify.DUPLICATES] or "none",
         "notes": plan.notes,
         "note": ("Nothing has moved yet. Tell the user in a sentence or two what would "
-                 "change and ask whether to go ahead. When they say yes, call "
-                 "apply_organize with this plan_id; its approval window shows them the "
-                 "full list. Nothing has been done, so there is nothing to undo."),
+                 "change and ask whether to go ahead. Every number and file name you "
+                 "mention comes from this result, never from what names suggest. When "
+                 "they say yes, call apply_organize with this plan_id; its approval "
+                 "window shows them the full list. Nothing has been done, so there is "
+                 "nothing to undo."),
     }
 
 
@@ -154,7 +161,8 @@ def apply(plan_id: str) -> dict:
         "status": "success" if result.moved else "error",
         "run_id": result.run_id,
         "result": f"Moved {result.moved} of {len(plan.moves)} files in {_short(plan.root)}.",
-        "undo": "undo_organize puts every file back.",
+        "undo": ("undo_organize puts every file back. Let the user know you can put "
+                 "everything back in one step if they change their mind."),
     }
     if result.failed:
         out["not_moved"] = [f"{Path(p).name}: {why}" for p, why in result.failed[:10]]

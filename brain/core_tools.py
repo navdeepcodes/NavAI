@@ -567,7 +567,9 @@ TOOL_DECLARATIONS = [
             "for requests to delete duplicates -- don't list or read the folder and invent "
             "a plan, and never delete files or run commands to tidy. It refuses system "
             "folders and code projects by itself: pass the folder the user named and tell "
-            "them what it says."
+            "them what it says. It only looks, so it's also how you find out what's in "
+            "a folder or whether it exists: call it when they only want to hear what "
+            "you'd do, too, and answer from what it returns."
         ),
         parameters_json_schema={
             "type": "object",
