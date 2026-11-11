@@ -98,7 +98,8 @@ try:
     # the same way.
     if sys.platform == "win32":
         expected_cwd = subprocess.run(
-            ["bash", "-c", f"cygpath -u '{sandbox}'"], capture_output=True, text=True,
+            [__import__("hostplatform.processes", fromlist=["_find_git_bash"])._find_git_bash() or "bash",
+             "-c", f"cygpath -u '{sandbox}'"], capture_output=True, text=True,
         ).stdout.strip()
     else:
         expected_cwd = sandbox

@@ -105,6 +105,8 @@ def is_junk_name(stem: str) -> bool:
 _UNSAFE_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
 _SPACES = re.compile(r"\s+")
 MAX_STEM = 80
+# Names Windows refuses for any file, whatever the extension ("CON.pdf" fails).
+_RESERVED = re.compile(r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.IGNORECASE)
 
 
 def clean_stem(stem: str) -> str:
@@ -114,6 +116,8 @@ def clean_stem(stem: str) -> str:
     stem = _SPACES.sub(" ", stem).strip(" .-_")
     if len(stem) > MAX_STEM:
         stem = stem[:MAX_STEM].rsplit(" ", 1)[0].strip(" .-_") or stem[:MAX_STEM]
+    if _RESERVED.match(stem):
+        stem = f"{stem} file"
     return stem
 
 

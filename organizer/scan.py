@@ -22,12 +22,37 @@ PARTIAL_SUFFIXES = frozenset({
 # whatever is writing it.
 RECENT_SECONDS = 60
 
+# Files Windows (and Finder) keep in folders for themselves. They don't start
+# with a dot, so the dotfile rule misses them; moving desktop.ini breaks the
+# folder's own look and name. Never shown, never moved.
+SYSTEM_FILE_NAMES = frozenset({
+    "desktop.ini", "thumbs.db", "ehthumbs.db", "ehthumbs_vista.db", "icon\r",
+})
+
+# Shortcuts. A Desktop is mostly app shortcuts; sweeping them into "Other"
+# would wreck it. They are the user's launchers, not clutter.
+SHORTCUT_SUFFIXES = frozenset({".lnk", ".url", ".webloc", ".desktop"})
+
+# Windows file attributes (stat().st_file_attributes).
+_HIDDEN, _SYSTEM = 0x2, 0x4
+# A OneDrive "online-only" file: its contents are not on this computer, and
+# reading them makes OneDrive download the file. Windows 11 backs up the
+# Desktop to OneDrive by default, so a Desktop can be full of these.
+_CLOUD_ONLY = 0x1000 | 0x40000 | 0x400000   # OFFLINE | RECALL_ON_OPEN | RECALL_ON_DATA_ACCESS
+
+
+def _attributes(stat) -> int:
+    return getattr(stat, "st_file_attributes", 0) or 0
+
 
 @dataclass
 class FileEntry:
     path: Path
     size: int
     modified: float
+    # Contents live in the cloud: moving is fine, reading is not (it would
+    # download the file). Never hashed for duplicates, never read by the model.
+    cloud_only: bool = False
     suffix: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -94,8 +119,8 @@ def scan(folder: str | Path, *, now: float | None = None) -> ScanResult:
 
     for entry in sorted(root.iterdir(), key=lambda p: p.name.lower()):
         name = entry.name
-        if name.startswith("."):
-            # .DS_Store, .localized, dotfiles -- system and tool state.
+        if name.startswith(".") or name.lower() in SYSTEM_FILE_NAMES:
+            # .DS_Store, .localized, desktop.ini, Thumbs.db -- system state.
             continue
         if entry.is_symlink():
             skipped.append((entry, "shortcut (symlink)"))
@@ -108,15 +133,23 @@ def scan(folder: str | Path, *, now: float | None = None) -> ScanResult:
         if entry.suffix.lower() in PARTIAL_SUFFIXES:
             skipped.append((entry, "unfinished download"))
             continue
+        if entry.suffix.lower() in SHORTCUT_SUFFIXES:
+            skipped.append((entry, "shortcut"))
+            continue
         try:
             stat = entry.stat()
         except OSError as exc:
             skipped.append((entry, f"unreadable ({exc.strerror or exc})"))
             continue
+        attributes = _attributes(stat)
+        if attributes & (_HIDDEN | _SYSTEM):
+            # Windows' own hidden and system files: not the user's clutter.
+            continue
         if now - stat.st_mtime < RECENT_SECONDS:
             skipped.append((entry, "changed in the last minute"))
             continue
-        files.append(FileEntry(path=entry, size=stat.st_size, modified=stat.st_mtime))
+        files.append(FileEntry(path=entry, size=stat.st_size, modified=stat.st_mtime,
+                               cloud_only=bool(attributes & _CLOUD_ONLY)))
 
     return ScanResult(root=root, files=files, skipped=skipped)
 
@@ -142,7 +175,8 @@ def find_duplicates(files: list[FileEntry]) -> dict[Path, Path]:
 
     by_size: dict[int, list[FileEntry]] = {}
     for f in files:
-        if f.size > 0:
+        # An online-only file would be downloaded just to hash it.
+        if f.size > 0 and not f.cloud_only:
             by_size.setdefault(f.size, []).append(f)
 
     duplicates: dict[Path, Path] = {}

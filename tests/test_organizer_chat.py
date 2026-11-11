@@ -31,7 +31,7 @@ def make(folder: Path, name: str, content: str | None = None) -> Path:
 
 
 def files(folder: Path) -> set[str]:
-    return {str(p.relative_to(folder)) for p in folder.rglob("*") if p.is_file()}
+    return {p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file()}
 
 
 def preview(folder: Path) -> dict:
@@ -43,7 +43,6 @@ def preview(folder: Path) -> dict:
 def test_preview_is_free_and_moving_is_gated():
     assert not needs_confirmation("preview_organize", {"folder": "~/Downloads"})
     assert needs_confirmation("apply_organize", {"plan_id": "plan-1"})
-    assert needs_confirmation("undo_organize", {})
 
 
 def test_preview_moves_nothing_and_returns_a_plan(tmp_path):
@@ -57,6 +56,23 @@ def test_preview_moves_nothing_and_returns_a_plan(tmp_path):
     assert files(tmp_path) == before
     assert "2 files" in result["summary"]
     assert any("IMG_0001.jpg -> Photo " in line for line in result["preview"])
+
+
+def test_the_duplicates_are_named_not_left_to_be_guessed(tmp_path):
+    # Photos taken seconds apart look like copies by name; only real copies count.
+    make(tmp_path, "Resume.pdf", "same bytes")
+    make(tmp_path, "Resume - Copy.pdf", "same bytes")
+    make(tmp_path, "IMG_20260104_103015.jpg")
+    make(tmp_path, "IMG_20260104_103122.jpg")
+
+    dupes = preview(tmp_path)["duplicates"]
+
+    assert len(dupes) == 1 and "Resume.pdf" in dupes[0]
+
+
+def test_no_duplicates_is_said_outright(tmp_path):
+    make(tmp_path, "IMG_0001.jpg")
+    assert preview(tmp_path)["duplicates"] == "none"
 
 
 def test_the_confirmation_shows_the_real_plan(tmp_path):
@@ -148,25 +164,94 @@ def test_the_home_folder_itself_is_refused(tmp_path, monkeypatch):
     assert result["status"] == "error" and "too broad" in result["error"]
 
 
+def test_a_folder_name_means_the_users_folder_not_a_relative_path(tmp_path, monkeypatch):
+    """The model says "Downloads"; that is the user's Downloads, whatever
+    folder Mike itself happens to be running from."""
+    from tools.filesystem import path_utils
+
+    downloads = tmp_path / "home" / "Downloads"
+    make(downloads, "Lab 3.pdf")
+    monkeypatch.setitem(path_utils.SPECIAL_PATHS, "downloads", downloads)
+    monkeypatch.chdir(tmp_path)
+
+    for said in ("Downloads", "downloads"):
+        result = _execute_organize("preview_organize", {"folder": said, "use_ai": False})
+        assert result["status"] == "success", result
+        assert "1 files" in result["summary"]
+
+
+def test_windows_user_folders_come_from_windows():
+    """On Windows, Desktop/Documents/Downloads are asked of Windows itself
+    (OneDrive moves them); elsewhere they are the usual home folders."""
+    import sys
+
+    from tools.filesystem import path_utils
+
+    if sys.platform == "win32":
+        for folder in (path_utils.DESKTOP, path_utils.DOCUMENTS, path_utils.DOWNLOADS):
+            assert folder.is_absolute() and folder.is_dir(), folder
+        assert path_utils._known_folder("B4BFCC3A-DB2C-424C-B029-7FE99A87C641") == path_utils.DESKTOP
+    else:
+        assert path_utils._known_folder("B4BFCC3A-DB2C-424C-B029-7FE99A87C641") is None
+        assert path_utils.DESKTOP == path_utils.HOME / "Desktop"
+
+
 def test_a_missing_folder_says_so(tmp_path):
     result = preview(tmp_path / "nope")
     assert result["status"] == "error" and "isn't a folder" in result["error"]
 
 
-# ── offered when it's asked for ────────────────────────────
+# ── always within reach ────────────────────────────────────
+
+def _offered(*user_messages: str) -> set[str]:
+    from brain import tool_router
+
+    tools = [{"name": n} for n in ("list_directory", "preview_organize", "apply_organize",
+                                   "undo_organize", "send_email")]
+    history = [{"role": "user", "content": m} for m in user_messages]
+    return {t["name"] for t in tool_router.route(tools, history)}
+
 
 @pytest.mark.parametrize("ask", [
-    "clean up my downloads", "can you organize my Desktop",
-    "my downloads folder is a mess, tidy it", "undo that", "put them back",
+    "clean up my downloads",
+    "ugh I can't find anything, my files are everywhere",
+    "my desktop looks like a bomb went off",
+    "what's 2 + 2",
+    "yes",
+    "never mind, go back to how it was",
 ])
-def test_the_organizer_is_offered_when_asked(ask):
-    from brain import tool_router
+def test_the_organizer_is_offered_whatever_the_wording(ask):
+    """No keyword gate between a request and the organizer: the model decides
+    what a message needs. (The router once offered these tools only when the
+    message said "tidy", "organize", "downloads" and the like.)"""
+    assert {"preview_organize", "apply_organize", "undo_organize"} <= _offered(ask)
 
-    assert "organize" in tool_router.wanted_groups([{"role": "user", "content": ask}])
+
+@pytest.fixture
+def no_runs_yet(tmp_path, monkeypatch):
+    from organizer import journal
+
+    runs = tmp_path / "runs"
+    runs.mkdir()
+    monkeypatch.setattr(journal, "_runs_dir", lambda: runs)
 
 
-def test_it_is_not_offered_for_unrelated_work():
-    from brain import tool_router
+def test_undo_with_nothing_done_asks_nothing_and_says_so(tmp_path, no_runs_yet):
+    folder = tmp_path / "Downloads"
+    folder.mkdir()
+    make(folder, "Lab 3.pdf")
+    preview(folder)                                   # a preview moves nothing
 
-    groups = tool_router.wanted_groups([{"role": "user", "content": "what's 2 + 2"}])
-    assert "organize" not in groups
+    assert not needs_confirmation("undo_organize", {})
+    result = _execute_organize("undo_organize", {})
+    assert result["status"] == "success" and result["moved"] == 0
+    assert "Nothing to undo" in result["result"]
+    assert files(folder) == {"Lab 3.pdf"}
+
+
+def test_undo_after_a_real_run_still_asks(tmp_path, no_runs_yet):
+    folder = tmp_path / "Downloads"
+    folder.mkdir()
+    make(folder, "Lab 3.pdf")
+    _execute_organize("apply_organize", {"plan_id": preview(folder)["plan_id"]})
+    assert needs_confirmation("undo_organize", {})

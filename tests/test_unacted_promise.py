@@ -72,6 +72,24 @@ def test_promises_are_recognised():
         "you've written so far and fill in the missing sections.")
 
 
+def test_saying_it_is_doing_something_now_counts_as_a_promise():
+    """Measured on Windows: after the user said "ok" to a tidy plan, the reply
+    was "Alright, going ahead with the organize now." -- and nothing moved."""
+    assert _promises_unperformed_action("Alright, going ahead with the organize now.")
+    assert _promises_unperformed_action("Sure \u2014 organizing your Downloads now.")
+    assert _promises_unperformed_action("Okay, putting everything back.")
+
+
+def test_a_promise_not_to_act_is_not_a_broken_promise():
+    """Measured on Windows: "no, leave it" drew "I'll leave your Downloads
+    folder as is", and the runtime added "(I haven't actually done that yet)"."""
+    for reply in ("Got it \u2014 I'll leave your Downloads folder as is.",
+                  "Understood \u2014 I'll leave everything as it is.",
+                  "I won't touch it.", "I'll keep that in mind.",
+                  "I'll hold off until you say so.", "I will not move anything."):
+        assert not _promises_unperformed_action(reply), reply
+
+
 def test_real_answers_are_left_alone():
     assert not _promises_unperformed_action("84.")
     assert not _promises_unperformed_action("Notepad is open.")
@@ -121,7 +139,8 @@ def test_a_confirmation_after_a_saved_memory_is_not_called_a_broken_promise(monk
 
     assert ran and ran[0][0] == "remember"
     assert text.strip() == "Got it. I'll keep that in mind.", "said once, and nothing false added"
-    assert "remember (success)" in str(brain.calls[2][-1].get("content")), "the retry saw what ran"
+    # "I'll keep that in mind" promises restraint, not an action: no retry at all
+    assert len(brain.calls) == 2, "no extra model call for a reply that is already true"
     assert [m.get("content") for m in rt._core.history if m.get("role") == "assistant"][-1] \
         == "Got it. I'll keep that in mind."
 

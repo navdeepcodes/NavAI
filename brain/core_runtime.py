@@ -179,6 +179,8 @@ done is not doing it. After it works, confirm briefly, once; don't narrate each 
 - If something fails, say what happened plainly.
 - Never claim you did something you didn't. Acknowledging what someone said \
 is not the same as acting on it — don't phrase the two alike.
+- Facts about their files come from looking with a tool, even when they \
+only want to be told, never from a guess.
 - Never expose internal tool names, function names, or system details.
 - If you're not confident what the user means, say so and ask a short clarifying question, \
 or explain what's missing. Never send back an empty or blank reply — always say something, \
@@ -2006,9 +2008,20 @@ _PROMISE = re.compile(
     re.IGNORECASE,
 )
 _PROGRESSIVE = re.compile(
-    r"^(?:ok(?:ay)?|sure|alright|got it|on it)?[\s,!.]*"
+    r"^(?:ok(?:ay)?|sure|alright|all right|right|got it|on it|great|perfect)?[\s,!.\u2014-]*"
     r"(?:opening|launching|switching|typing|clicking|starting|searching|"
-    r"closing|navigating|bringing|focusing|playing)\b",
+    r"closing|navigating|bringing|focusing|playing|going ahead|proceeding|applying|"
+    r"organi[sz]ing|sorting|tidying|moving|renaming|saving|writing|sending|undoing|"
+    r"putting|doing (?:it|that|this))\b",
+    re.IGNORECASE,
+)
+#: "I'll leave it as it is", "I'll keep that in mind", "I won't touch it":
+#: a promise NOT to act is kept by doing nothing. Measured on Windows: "no,
+#: leave it" drew "I'll leave your Downloads folder as is", and the runtime
+#: then told the user it "hadn't done that yet".
+_RESTRAINT = re.compile(
+    r"\s+(?:just\s+|simply\s+)?(?:leave|keep|hold off|wait|stop|stay|not\b|never\b|"
+    r"remember|let (?:it|them|that) be|stick)",
     re.IGNORECASE,
 )
 
@@ -2161,5 +2174,7 @@ def _promises_unperformed_action(text: str) -> bool:
     # "Let me explain: ..." goes on to say it -- the content is the answer.
     promise = _PROMISE.search(last)
     if promise and ":" in last[promise.end():]:
+        promise = None
+    if promise and _RESTRAINT.match(last[promise.end():]):
         promise = None
     return bool(promise or _PROGRESSIVE.match(last))

@@ -182,6 +182,66 @@ def test_category_blocked_by_a_file_is_skipped(tmp_path):
     assert any(p.name == "cat.png" for p, _ in plan.skipped)
 
 
+# ── Windows ────────────────────────────────────────────────
+
+def test_windows_system_files_and_shortcuts_stay_put(tmp_path):
+    """desktop.ini and Thumbs.db don't start with a dot, and a Desktop is
+    mostly .lnk shortcuts: moving any of them would wreck the folder."""
+    for name in ("desktop.ini", "Thumbs.db", "Chrome.lnk", "Course site.url", "notes.pdf"):
+        make(tmp_path, name, name)
+    plan = rules(tmp_path)
+
+    assert [m.src.name for m in plan.moves] == ["notes.pdf"]
+    reasons = {p.name: why for p, why in plan.skipped}
+    assert reasons.get("Chrome.lnk") == "shortcut" and reasons.get("Course site.url") == "shortcut"
+    assert "desktop.ini" not in reasons and "Thumbs.db" not in reasons  # not even mentioned
+
+
+def test_hidden_and_system_attributes_are_respected(tmp_path, monkeypatch):
+    from organizer import scan as scan_mod
+
+    for name in ("hidden.pdf", "system.pdf", "mine.pdf"):
+        make(tmp_path, name, name)
+    real = scan_mod._attributes
+    flags = {"hidden.pdf": 0x2, "system.pdf": 0x4}
+    monkeypatch.setattr(scan_mod, "_attributes", lambda st: flags.get(
+        next((n for n in flags if (tmp_path / n).stat().st_ino == st.st_ino), ""), real(st)))
+
+    assert [m.src.name for m in rules(tmp_path).moves] == ["mine.pdf"]
+
+
+def test_onedrive_online_only_files_are_moved_but_never_read(tmp_path, monkeypatch):
+    """Hashing or reading an online-only file makes OneDrive download it."""
+    from organizer import scan as scan_mod
+
+    make(tmp_path, "cloud a.pdf", "same")
+    make(tmp_path, "cloud b.pdf", "same")
+    make(tmp_path, "document(3).pdf", "local")
+    monkeypatch.setattr(scan_mod, "_attributes", lambda st: 0x400000)   # RECALL_ON_DATA_ACCESS
+    opened = []
+    monkeypatch.setattr(scan_mod, "content_hash", lambda p, *a: opened.append(p) or "h")
+    namer = FakeNamer({"document(3).pdf": Suggestion("Read Anyway", None)})
+
+    plan = build_plan(tmp_path, namer=namer)
+
+    assert opened == [] and plan.duplicate_count == 0
+    assert {m.src.name for m in plan.moves} == {"cloud a.pdf", "cloud b.pdf", "document(3).pdf"}
+    # FakeNamer doesn't check; the real ModelNamer must refuse.
+    from organizer.model import ModelNamer
+    from organizer.scan import FileEntry
+
+    real = ModelNamer.__new__(ModelNamer)
+    real._client = object()
+    assert real.suggest(FileEntry(tmp_path / "cloud a.pdf", 4, 0, cloud_only=True), "Documents") is None
+
+
+@pytest.mark.parametrize("stem", ["CON", "nul", "Com1", "lpt9"])
+def test_windows_reserved_names_are_never_suggested(stem):
+    from organizer.classify import clean_stem
+
+    assert clean_stem(stem).lower() != stem.lower()
+
+
 # ── the model path ─────────────────────────────────────────
 
 class FakeNamer:

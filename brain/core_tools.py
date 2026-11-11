@@ -562,7 +562,14 @@ TOOL_DECLARATIONS = [
             "Tidy a messy folder (Downloads, Desktop): plan sorting its loose files into "
             "folders by type, giving junk names like IMG_1234 readable ones and setting "
             "exact duplicates aside. Moves NOTHING -- it returns a plan_id and a preview. "
-            "Nothing is ever deleted."
+            "Nothing is ever deleted. Call this FIRST for every request to tidy, clean up, "
+            "sort, declutter or organize any folder, for 'what would you do with it?', and "
+            "for requests to delete duplicates -- don't list or read the folder and invent "
+            "a plan, and never delete files or run commands to tidy. It refuses system "
+            "folders and code projects by itself: pass the folder the user named and tell "
+            "them what it says. It only looks, so it's also how you find out what's in "
+            "a folder or whether it exists: call it when they only want to hear what "
+            "you'd do, too, and answer from what it returns."
         ),
         parameters_json_schema={
             "type": "object",
@@ -580,8 +587,9 @@ TOOL_DECLARATIONS = [
     types.FunctionDeclaration(
         name="apply_organize",
         description=(
-            "Carry out a plan from preview_organize. The user sees the full plan and "
-            "approves it first. Can be undone with undo_organize."
+            "Carry out a plan from preview_organize, once the user has said yes to it "
+            "('go ahead', 'do it', 'yes'). An approval window shows them the full "
+            "list before anything moves. If they said no or not yet, don't call it."
         ),
         parameters_json_schema={
             "type": "object",
@@ -594,7 +602,9 @@ TOOL_DECLARATIONS = [
 
     types.FunctionDeclaration(
         name="undo_organize",
-        description="Put every file from an organize run back where it was.",
+        description=("Put every file from an organize run back where it was. Only when the "
+                     "user asks to undo, revert or put things back -- never right after a "
+                     "preview or an apply on your own."),
         parameters_json_schema={
             "type": "object",
             "properties": {
@@ -1408,6 +1418,13 @@ _CONFIRM_ACTIONS = frozenset({
 
 
 def needs_confirmation(function_name: str, args: dict) -> bool:
+    if function_name == "undo_organize":
+        # Undo moves files back, so it asks -- but only when there is something
+        # to move. Asking "undo?" about nothing is noise the user learns to
+        # click through.
+        from organizer import chat as organize_chat
+        return organize_chat.undoable(args.get("run_id") or None) is not None
+
     if function_name in _CONFIRM_ACTIONS:
         return True
 

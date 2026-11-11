@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from organizer import apply_plan, build_plan, list_runs, undo_run
+from organizer import classify
 from organizer.plan import Plan
 
 #: A stored plan older than this is refused: the folder has had time to change
@@ -105,7 +106,12 @@ def preview(folder: str, *, use_ai: bool = True) -> dict:
         return {"status": "error", "retry_safe": True,
                 "error": "Say which folder to organize, e.g. ~/Downloads."}
     try:
-        plan = build_plan(folder, use_model=use_ai)
+        # "Downloads", "~/Desktop", "Desktop/Screenshots" or a full path: the
+        # same resolution every file tool uses (Windows' real Desktop when
+        # OneDrive has moved it), never a path relative to Mike's own folder.
+        from tools.filesystem.path_utils import resolve_path
+
+        plan = build_plan(resolve_path(str(folder)), use_model=use_ai)
     except (NotADirectoryError, FileNotFoundError):
         return {"status": "error", "retry_safe": True,
                 "error": f"{folder} isn't a folder. Check the path, e.g. ~/Downloads."}
@@ -129,10 +135,17 @@ def preview(folder: str, *, use_ai: bool = True) -> dict:
         "summary": summary_line(plan),
         "preview": describe(plan),
         "left_alone": len(plan.skipped),
+        # Spelled out, so a count or a "these are copies" is read, not inferred
+        # from file names that merely look alike.
+        "duplicates": [f"{m.src.name} ({m.reason})" for m in plan.moves
+                       if m.category == classify.DUPLICATES] or "none",
         "notes": plan.notes,
         "note": ("Nothing has moved yet. Tell the user in a sentence or two what would "
-                 "change, then call apply_organize with this plan_id. They will see the "
-                 "full list and approve it before anything moves."),
+                 "change and ask whether to go ahead. Every number and file name you "
+                 "mention comes from this result, never from what names suggest. When "
+                 "they say yes, call apply_organize with this plan_id; its approval "
+                 "window shows them the full list. Nothing has been done, so there is "
+                 "nothing to undo."),
     }
 
 
@@ -148,14 +161,30 @@ def apply(plan_id: str) -> dict:
         "status": "success" if result.moved else "error",
         "run_id": result.run_id,
         "result": f"Moved {result.moved} of {len(plan.moves)} files in {_short(plan.root)}.",
-        "undo": "undo_organize puts every file back.",
+        "undo": ("undo_organize puts every file back. Let the user know you can put "
+                 "everything back in one step if they change their mind."),
     }
     if result.failed:
         out["not_moved"] = [f"{Path(p).name}: {why}" for p, why in result.failed[:10]]
     return out
 
 
+def undoable(run_id: str | None = None) -> dict | None:
+    """The run an undo would reverse (the most recent one by default), or None
+    when nothing that moved files is waiting to be undone."""
+    runs = [r for r in list_runs() if r["state"] != "undone"]
+    if run_id:
+        return next((r for r in runs if r["run_id"] == run_id), None)
+    return runs[0] if runs else None
+
+
 def undo(run_id: str | None = None) -> dict:
+    if undoable(run_id) is None:
+        # Not a failure: it's the true state, said plainly, so the model can
+        # tell the user rather than retry or apologise for an error.
+        return {"status": "success", "moved": 0,
+                "result": ("Nothing to undo: no files have been moved by an organize run "
+                           "that's still in place (a preview moves nothing).")}
     try:
         result = undo_run(run_id or None)
     except LookupError as exc:
@@ -172,11 +201,7 @@ def undo(run_id: str | None = None) -> dict:
 
 
 def undo_confirmation_text(run_id: str | None) -> str:
-    runs = [r for r in list_runs() if r["state"] != "undone"]
-    if run_id:
-        run = next((r for r in runs if r["run_id"] == run_id), None)
-    else:
-        run = runs[0] if runs else None
+    run = undoable(run_id)
     if run is None:
         return "Undo an organize run -- but there's no matching run, so nothing will move."
     return (f"Undo organizing {_short(run['root'])} ({run['created_at'].replace('T', ' ')}): "

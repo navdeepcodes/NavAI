@@ -99,7 +99,8 @@ class ModelNamer:
     # ── the question ───────────────────────────────────────
 
     def suggest(self, entry: FileEntry, category: str) -> Suggestion | None:
-        if self._client is None:
+        if self._client is None or entry.cloud_only:
+            # Reading an online-only file makes OneDrive download it.
             return None
         try:
             if category in ("Images", "Screenshots"):

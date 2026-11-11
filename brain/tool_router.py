@@ -31,7 +31,10 @@ from collections.abc import Iterable
 from logs.logger import logger
 
 #: Specialist tools, by the kind of job that needs them. Anything not listed
-#: here is "everyday" and always offered.
+#: here is "everyday" and always offered -- the folder organizer among them:
+#: its three tools are small, and "my files are everywhere, I can't find
+#: anything" should reach them as surely as "tidy my Downloads". A keyword
+#: list can't know every way a person says that; the model can.
 GROUPS: dict[str, frozenset[str]] = {
     "documents": frozenset({
         "create_document", "pdf_edit", "create_presentation",
@@ -39,7 +42,6 @@ GROUPS: dict[str, frozenset[str]] = {
     }),
     "spreadsheet": frozenset({"edit_spreadsheet", "read_spreadsheet"}),
     "email": frozenset({"send_email"}),
-    "organize": frozenset({"preview_organize", "apply_organize", "undo_organize"}),
     "screen": frozenset({
         "click_element", "type_text", "press_keys", "scroll_ui", "see_ui",
         "focus_app", "list_windows", "see_screen",
@@ -62,9 +64,6 @@ _PATTERNS: dict[str, re.Pattern[str]] = {
         r"pivot|table|tabulate|budget|marks|grades)\b|\.(xlsx?|csv)\b", re.I),
     "email": re.compile(
         r"\b(e-?mails?|gmail|inbox|mail|send (it |this |that )?to|cc|bcc|draft|reply)\b", re.I),
-    "organize": re.compile(
-        r"\b(organi[sz]\w*|tidy|tidies|clean(ing)? ?up|declutter\w*|sort( out)?|messy|"
-        r"clutter\w*|downloads|desktop|undo|put (it|them|everything) back)\b", re.I),
     "screen": re.compile(
         r"\b(click|double[- ]?click|type|typing|press|scroll|windows?|screens?|screenshots?|"
         r"desktop|tabs?|buttons?|menus?|apps?|applications?|focus|switch|drag|dropdown|"

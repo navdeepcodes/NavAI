@@ -211,6 +211,17 @@ def run_agent(
         stopped = f"{type(exc).__name__}: {exc}"
     finally:
         core_runtime.needs_confirmation = original_needs
+        # A runtime reused for the next turn of a conversation must not keep
+        # this turn's wrappers: stacked, every later call was also recorded in
+        # the earlier turns' lists, so a turn looked like it had done things
+        # it never did (an "undo" right after a preview, apply-and-undo in one
+        # reply). Deleting the instance attributes restores the class methods.
+        for name, original in (("_execute_tool", original_execute),
+                               ("_streaming_loop", original_loop)):
+            if name in vars(runtime):
+                del runtime.__dict__[name]
+            if getattr(runtime, name) != original:
+                setattr(runtime, name, original)
 
     return Run(
         task=task, brain=brain, seconds=round(time.time() - started),

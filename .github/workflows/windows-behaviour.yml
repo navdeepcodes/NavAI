@@ -1,0 +1,97 @@
+name: Windows behaviour (real model)
+
+# Mike with the real local model on real Windows, through the v1 launch
+# scenarios in tests/behaviour_v1.py: tidy + approve + undo, a "no" at the
+# confirmation, preview only, small talk, system and project folders, a request
+# to delete duplicates, an already-tidy folder, a folder that doesn't exist.
+# Pass/fail comes from what happened on disk and at the confirmation gate,
+# never from Mike's wording.
+#
+# Slow on purpose: GitHub's runners have no GPU, so every model turn runs on
+# CPU. Not on every push -- run it from the Actions tab, or push to a test/
+# branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated scenario names (empty = all)"
+        required: false
+        default: ""
+      variants:
+        description: "Runs per scenario, each with fresh wording"
+        required: false
+        default: "2"
+  push:
+    branches: ["test/**"]
+
+concurrency:
+  group: windows-behaviour-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  behaviour:
+    runs-on: windows-latest
+    timeout-minutes: 330
+    env:
+      QT_QPA_PLATFORM: offscreen
+      # offscreen Qt has no font list of its own; without this every PDF Mike
+      # writes comes out with invisible text (a CI artefact, not a user bug)
+      QT_QPA_FONTDIR: C:\Windows\Fonts
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download Ollama
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\ollama"
+          Invoke-WebRequest "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -OutFile "$dir.zip"
+          Expand-Archive "$dir.zip" -DestinationPath $dir
+
+      # One step: a server started in an earlier step is gone by the next one,
+      # and the ollama CLI then looks for the desktop app ("could not locate
+      # ollama app"). Serve, pull (over the API) and run, all here.
+      - name: Start Ollama, pull Mike's model, run the v1 behaviour scenarios
+        shell: pwsh
+        run: |
+          $dir = "$env:RUNNER_TEMP\ollama"
+          Start-Process -FilePath "$dir\ollama.exe" -ArgumentList "serve" -WindowStyle Hidden `
+            -RedirectStandardOutput "$env:RUNNER_TEMP\ollama.log" -RedirectStandardError "$env:RUNNER_TEMP\ollama.err"
+          $up = $false
+          for ($i = 0; $i -lt 60; $i++) {
+            try { Invoke-RestMethod http://127.0.0.1:11434/api/version | Out-Null; $up = $true; break }
+            catch { Start-Sleep 2 }
+          }
+          if (-not $up) { throw "Ollama did not start" }
+
+          $model = python -c "from config.ollama import OLLAMA_CHAT_MODEL; print(OLLAMA_CHAT_MODEL)"
+          Write-Host "pulling $model"
+          $body = @{ model = $model; stream = $false } | ConvertTo-Json
+          $pulled = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:11434/api/pull -Body $body `
+            -ContentType "application/json" -TimeoutSec 3600
+          if ($pulled.status -ne "success") { throw "pull failed: $($pulled | ConvertTo-Json)" }
+          Invoke-RestMethod http://127.0.0.1:11434/api/tags | ConvertTo-Json -Depth 4
+
+          python tests/behaviour_v1.py --only "${{ inputs.only }}" --variants "${{ inputs.variants || '2' }}" --out behaviour-report.json
+          exit $LASTEXITCODE
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-behaviour-report
+          path: |
+            behaviour-report.json
+            ${{ runner.temp }}/ollama.log
+            ${{ runner.temp }}/ollama.err
